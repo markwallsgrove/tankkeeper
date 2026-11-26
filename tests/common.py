@@ -69,3 +69,8 @@ def str_of(value: JsonValueType) -> str:
     """A JSON string, checked."""
     assert isinstance(value, str)
     return value
+
+
+async def apply(caller: Caller, proposal: JsonObjectType) -> JsonObjectType:
+    """Apply a proposal with its code, as after the owner says yes."""
+    return await caller.ok("apply_change", proposal_id=proposal["proposal_id"], code=proposal["code"])

@@ -3,10 +3,11 @@
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from custom_components.tankkeeper.domain import TANK_ID, Collection, Source
+from custom_components.tankkeeper.plan import REMINDERS_ID
 from custom_components.tankkeeper.service import TankkeeperService
 
 NEW_DETAILS = {CONF_TANK_NAME: "Office", CONF_VOLUME: 80, CONF_DOSING_VOLUME: 72}
@@ -108,6 +109,66 @@ async def test_reconfigure_needs_the_tank_loaded(hass: HomeAssistant, loaded_ent
     assert await hass.config_entries.async_unload(loaded_entry.entry_id)
 
     result = await loaded_entry.start_reconfigure_flow(hass)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "not_loaded"
+
+
+async def test_options_suggest_the_reminder_settings(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    async_mock_service(hass, "notify", "mobile_app_phone")
+    async_mock_service(hass, "notify", "mobile_app_tablet")
+
+    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+
+    assert form["type"] is FlowResultType.FORM
+    assert form["step_id"] == "init"
+    schema = form["data_schema"]
+    assert schema is not None
+    suggested = {str(key): key.description["suggested_value"] for key in schema.schema}
+    assert suggested == {"notify": [], "task_time": "09:00", "dose_time": "12:00", "resend_time": "21:00"}
+    notify = schema.schema[next(key for key in schema.schema if str(key) == "notify")]
+    assert notify.config["options"] == ["mobile_app_phone", "mobile_app_tablet"]
+
+
+async def test_options_save_the_reminder_settings(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    async_mock_service(hass, "notify", "mobile_app_phone")
+    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"],
+        {"notify": ["mobile_app_phone"], "task_time": "08:30:00", "dose_time": "13:00:00", "resend_time": "21:00:00"},
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    service: TankkeeperService = loaded_entry.runtime_data
+    assert service.records(Collection.SETTINGS)[REMINDERS_ID] == {
+        "notify": ["mobile_app_phone"],
+        "task_time": "08:30",
+        "dose_time": "13:00",
+        "resend_time": "21:00",
+    }
+    [latest] = service.history(Collection.SETTINGS, REMINDERS_ID, 1)
+    assert latest.source is Source.PANEL
+
+
+async def test_options_with_the_same_settings_change_nothing(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry
+) -> None:
+    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {"notify": [], "task_time": "09:00:00", "dose_time": "12:00:00", "resend_time": "21:00:00"}
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "nothing_changed"
+
+
+async def test_options_need_the_tank_loaded(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    assert await hass.config_entries.async_unload(loaded_entry.entry_id)
+
+    result = await hass.config_entries.options.async_init(loaded_entry.entry_id)
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "not_loaded"

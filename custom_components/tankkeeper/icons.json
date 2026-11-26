@@ -10,6 +10,16 @@
       "last_test": {
         "default": "mdi:test-tube"
       }
+    },
+    "calendar": {
+      "plan": {
+        "default": "mdi:calendar-check"
+      }
+    },
+    "todo": {
+      "today": {
+        "default": "mdi:clipboard-list-outline"
+      }
     }
   }
 }

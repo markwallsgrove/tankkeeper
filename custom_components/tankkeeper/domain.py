@@ -33,6 +33,8 @@ class Collection(StrEnum):
     CONTENTS = "contents"
     LOG = "log"
     NOTES = "notes"
+    TASKS = "tasks"
+    SETTINGS = "settings"
 
 
 class Source(StrEnum):

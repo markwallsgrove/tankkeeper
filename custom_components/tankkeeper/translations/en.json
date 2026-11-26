@@ -48,6 +48,48 @@
       "last_test": {
         "name": "Last water test"
       }
+    },
+    "calendar": {
+      "plan": {
+        "name": "Plan"
+      }
+    },
+    "todo": {
+      "today": {
+        "name": "Today"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reminders",
+        "description": "Which devices get reminders, and when. The old settings stay in the history.",
+        "data": {
+          "notify": "Devices",
+          "task_time": "Task time",
+          "dose_time": "Dose time",
+          "resend_time": "Resend time"
+        },
+        "data_description": {
+          "notify": "Notify services that get a reminder with Complete and Skip buttons. Use the Home Assistant app on a phone or tablet for the buttons.",
+          "task_time": "When tasks are due. Open tasks from the last week are followed up at this time.",
+          "dose_time": "When doses are due.",
+          "resend_time": "When tasks still open today are sent again."
+        }
+      }
+    },
+    "abort": {
+      "not_loaded": "Tankkeeper isn't running. Fix the problem shown on the integration, then try again.",
+      "nothing_changed": "Nothing was changed."
+    }
+  },
+  "exceptions": {
+    "change_failed": {
+      "message": "{message}"
+    },
+    "repeat_not_supported": {
+      "message": "Tankkeeper tasks can't repeat. Add one task for each day"
     }
   }
 }

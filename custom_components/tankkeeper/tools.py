@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import cast, override
 
 from homeassistant.core import HomeAssistant
@@ -31,6 +31,20 @@ from .domain import (
     dosing_within_tank,
     merge_record,
 )
+from .plan import (
+    PlanEvent,
+    Reminders,
+    Slot,
+    Task,
+    TaskStatus,
+    add_summary,
+    change_summary,
+    import_tasks,
+    parse_time,
+    remove_summary,
+    slot_for,
+    sort_tasks,
+)
 from .service import Actor, TankkeeperService, Target
 
 MCP_PLATFORM = "mcp_server"
@@ -45,6 +59,9 @@ apply a change the owner has not seen.
 conversation_id it returns to every other Tankkeeper tool. Before you finish, call it again with a \
 summary and the key messages.
 - Before you answer, search past conversations for what the owner already said.
+- The plan is a list of tasks, each on a day in the task slot or the dose slot. When the owner says \
+a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_task straight away. Adding, \
+changing and removing tasks, reminder settings and importing a plan are proposals.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
 
 READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_world=False)
@@ -55,6 +72,10 @@ APPLY = ToolAnnotations(open_world=False)
 type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObjectType]]
 
 NON_EMPTY = p.All(str, p.Length(min=1))
+PLAN_DAYS = 7
+IMPORT_DAYS_BEFORE = 7
+IMPORT_DAYS_AFTER = 30
+NOTIFY_DOMAIN = "notify"
 POSITIVE = p.All(p.Coerce(float), p.Range(min=0, min_included=False))
 NOT_NEGATIVE = p.All(p.Coerce(float), p.Range(min=0))
 PH = p.All(p.Coerce(float), p.Range(min=0, max=14))
@@ -455,6 +476,143 @@ async def reject_change(service: TankkeeperService, data: Record, actor: Actor) 
     return {"rejected": True, "proposal": _proposal_json(proposal)}
 
 
+async def get_plan(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Tasks from start to end, by day and slot time, and the reminder settings."""
+    start = _day(data, "start", dt_util.now().date())
+    end = _day(data, "end", start + timedelta(days=PLAN_DAYS - 1))
+    _check_range(start, end)
+    reminders = service.reminders()
+    tasks = sort_tasks((task for task in service.tasks() if start <= task.day <= end), reminders)
+    return {
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "tasks": [_task_json(task, reminders) for task in tasks],
+        "reminders": reminders.to_json(),
+    }
+
+
+async def add_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose a new task. The slot defaults to dose for a product and amount in ml."""
+    text = _str(data, "text").strip()
+    slot = _optional_str(data, "slot")
+    task = Task(
+        id=ulid_now(),
+        day=_day(data, "date", dt_util.now().date()),
+        slot=slot_for(text, service.product_names()) if slot is None else Slot(slot),
+        text=text,
+        note=_optional_str(data, "note") or "",
+    )
+    return await _propose(
+        service, data, actor, tool="add_task", summary=add_summary(task), targets=[_task_target(task)]
+    )
+
+
+async def update_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose changes to a task."""
+    current = service.task(_str(data, "task_id"))
+    slot = _optional_str(data, "slot")
+    state = _optional_str(data, "state")
+    text = _optional_str(data, "text")
+    task = current.edit(
+        now=service.now(),
+        text=None if text is None else text.strip(),
+        day=None if "date" not in data else _day(data, "date", current.day),
+        slot=None if slot is None else Slot(slot),
+        status=None if state is None else TaskStatus(state),
+        note=_optional_str(data, "note"),
+    )
+    return await _propose(
+        service, data, actor, tool="update_task", summary=change_summary(task), targets=[_task_target(task)]
+    )
+
+
+async def remove_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose taking a task out of the plan."""
+    task = service.task(_str(data, "task_id"))
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="remove_task",
+        summary=remove_summary(task),
+        targets=[(Collection.TASKS, task.id, None)],
+    )
+
+
+async def complete_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Mark a task complete, straight away."""
+    return _recorded(
+        await service.async_finish_task(_str(data, "task_id"), TaskStatus.COMPLETE, _optional_str(data, "note"), actor)
+    )
+
+
+async def skip_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Mark a task skipped, straight away."""
+    return _recorded(
+        await service.async_finish_task(_str(data, "task_id"), TaskStatus.SKIP, _optional_str(data, "note"), actor)
+    )
+
+
+async def set_reminders(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose new reminder devices or times."""
+    current = service.reminders()
+    notify = current.notify
+    if "notify" in data:
+        notify = tuple(_notify_service(service, str(name)) for name in cast(list[JsonValue], data["notify"]))
+    reminders = Reminders(
+        notify=notify,
+        task_time=_time(data, "task_time", current.task_time),
+        dose_time=_time(data, "dose_time", current.dose_time),
+        resend_time=_time(data, "resend_time", current.resend_time),
+    )
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="set_reminders",
+        summary="Change the reminders",
+        targets=service.reminder_targets(reminders),
+    )
+
+
+async def import_plan(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose importing tasks from another calendar, keeping Complete: and Skip:."""
+    calendar = _str(data, "calendar")
+    if not calendar.startswith("calendar.") or service.hass.states.get(calendar) is None:
+        raise InvalidInputError(f"No calendar {calendar}")
+    today = dt_util.now().date()
+    start = _day(data, "start", today - timedelta(days=IMPORT_DAYS_BEFORE))
+    end = _day(data, "end", today + timedelta(days=IMPORT_DAYS_AFTER))
+    _check_range(start, end)
+    response = await service.hass.services.async_call(
+        "calendar",
+        "get_events",
+        {"start_date_time": _local_midnight(start), "end_date_time": _local_midnight(end + timedelta(days=1))},
+        target={"entity_id": calendar},
+        blocking=True,
+        return_response=True,
+    )
+    events = [
+        PlanEvent(
+            day=_event_day(str(event["start"])),
+            summary=str(event.get("summary") or ""),
+            description=str(event.get("description") or ""),
+        )
+        for event in cast(list[dict[str, object]], cast(dict[str, object], (response or {})[calendar])["events"])
+    ]
+    products = data.get("dose_products")
+    names = [str(name) for name in cast(list[JsonValue], products)] if products is not None else service.product_names()
+    tasks = import_tasks(service.tasks(), events, names, ulid_now)
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="import_plan",
+        summary=f"Import {len(tasks)} tasks from {calendar}",
+        targets=[_task_target(task) for task in tasks],
+    )
+
+
 async def _propose(
     service: TankkeeperService, data: Record, actor: Actor, *, tool: str, summary: str, targets: list[Target]
 ) -> JsonObjectType:
@@ -467,6 +625,65 @@ async def _propose(
         evidence=_optional_str(data, "evidence"),
     )
     return _proposal_json(proposal, with_code=True)
+
+
+def _task_target(task: Task) -> Target:
+    return (Collection.TASKS, task.id, task.to_record())
+
+
+def _task_json(task: Task, reminders: Reminders) -> JsonObjectType:
+    record = task.to_record()
+    return {
+        "id": task.id,
+        "date": record["date"],
+        "slot": record["slot"],
+        "time": reminders.to_json()[f"{task.slot.value}_time"],
+        "text": record["text"],
+        "state": record["state"],
+        "note": record["note"],
+        "done_at": record["done_at"],
+    }
+
+
+def _day(data: Record, key: str, default: date) -> date:
+    value = _optional_str(data, key)
+    if value is None:
+        return default
+    day = dt_util.parse_date(value)
+    if day is None:
+        raise InvalidInputError(f"{value} is not an ISO date")
+    return day
+
+
+def _check_range(start: date, end: date) -> None:
+    if start > end:
+        raise InvalidInputError("The start must not be after the end")
+
+
+def _time(data: Record, key: str, default: time) -> time:
+    value = _optional_str(data, key)
+    if value is None:
+        return default
+    try:
+        return parse_time(value)
+    except ValueError as err:
+        raise InvalidInputError(str(err)) from None
+
+
+def _notify_service(service: TankkeeperService, name: str) -> str:
+    action = name.removeprefix(f"{NOTIFY_DOMAIN}.")
+    if not service.hass.services.has_service(NOTIFY_DOMAIN, action):
+        raise InvalidInputError(f"No notify service {action}")
+    return action
+
+
+def _local_midnight(day: date) -> str:
+    return datetime.combine(day, time(), dt_util.get_default_time_zone()).isoformat()
+
+
+def _event_day(start: str) -> date:
+    """The local day of an event start. An all-day start has no time and is read as local midnight."""
+    return dt_util.as_local(dt_util.parse_datetime(start, raise_on_error=True)).date()
 
 
 def _product_with(product: Record, data: Record) -> Record:
@@ -862,5 +1079,114 @@ SPECS: tuple[Spec, ...] = (
         handler=reject_change,
         description="Close a proposal the owner said no to.",
         schema={p.Required("proposal_id"): NON_EMPTY, **CONVERSATION},
+    ),
+    Spec(
+        name="get_plan",
+        title="Get the plan",
+        annotations=READ,
+        handler=get_plan,
+        description="Tasks from start to end, by day and slot time, with their state and note, and the reminder "
+        "settings. start defaults to today and end to six days later.",
+        schema={
+            p.Optional("start", description="ISO date"): NON_EMPTY,
+            p.Optional("end", description="ISO date"): NON_EMPTY,
+        },
+    ),
+    Spec(
+        name="complete_task",
+        title="Complete a task",
+        annotations=RECORD,
+        handler=complete_task,
+        description="Mark a task complete, straight away, with an optional note.",
+        schema={p.Required("task_id"): NON_EMPTY, p.Optional("note"): str, **CONVERSATION},
+    ),
+    Spec(
+        name="skip_task",
+        title="Skip a task",
+        annotations=RECORD,
+        handler=skip_task,
+        description="Mark a task skipped, straight away, with an optional note on why.",
+        schema={p.Required("task_id"): NON_EMPTY, p.Optional("note"): str, **CONVERSATION},
+    ),
+    Spec(
+        name="add_task",
+        title="Propose a task",
+        annotations=PROPOSE,
+        handler=add_task,
+        description="Propose a task on a day. The slot defaults to dose for a product name and an amount in ml, "
+        "such as Bio-CO2 1.5 ml, and to task for anything else. Returns a confirm code; nothing changes until "
+        "tankkeeper__apply_change.",
+        schema={
+            p.Required("text"): NON_EMPTY,
+            p.Optional("date", description="ISO date. Defaults to today"): NON_EMPTY,
+            p.Optional("slot"): p.In(list(Slot)),
+            p.Optional("note"): str,
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="update_task",
+        title="Propose task changes",
+        annotations=PROPOSE,
+        handler=update_task,
+        description="Propose changes to a task, such as a new day, text or state. Returns a confirm code; nothing "
+        "changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("task_id"): NON_EMPTY,
+            p.Optional("text"): NON_EMPTY,
+            p.Optional("date", description="ISO date"): NON_EMPTY,
+            p.Optional("slot"): p.In(list(Slot)),
+            p.Optional("state"): p.In(list(TaskStatus)),
+            p.Optional("note"): str,
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="remove_task",
+        title="Propose removing a task",
+        annotations=PROPOSE,
+        handler=remove_task,
+        description="Propose taking a task out of the plan. Returns a confirm code; nothing changes until "
+        "tankkeeper__apply_change.",
+        schema={p.Required("task_id"): NON_EMPTY, **REASON, **CONVERSATION},
+    ),
+    Spec(
+        name="set_reminders",
+        title="Propose reminder settings",
+        annotations=PROPOSE,
+        handler=set_reminders,
+        description="Propose which notify services get reminders and the times, in HH:MM: task_time for tasks, "
+        "dose_time for doses and resend_time to send open tasks again. Returns a confirm code; nothing changes "
+        "until tankkeeper__apply_change.",
+        schema={
+            p.Optional("notify", description="Notify services, such as mobile_app_phone"): [NON_EMPTY],
+            p.Optional("task_time"): NON_EMPTY,
+            p.Optional("dose_time"): NON_EMPTY,
+            p.Optional("resend_time"): NON_EMPTY,
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="import_plan",
+        title="Propose importing a plan",
+        annotations=PROPOSE,
+        handler=import_plan,
+        description="Propose importing tasks from another calendar entity, such as calendar.fish_tank. Titles "
+        "that start Complete: or Skip: keep that state, and a title that lists tasks split on comma and space "
+        "makes one task each. Tasks already in the plan are left out. start defaults to a week ago and end to 30 "
+        "days ahead. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("calendar"): NON_EMPTY,
+            p.Optional("start", description="ISO date"): NON_EMPTY,
+            p.Optional("end", description="ISO date"): NON_EMPTY,
+            p.Optional(
+                "dose_products", description="Product names that make a task a dose. Defaults to the products"
+            ): [NON_EMPTY],
+            **REASON,
+            **CONVERSATION,
+        },
     ),
 )

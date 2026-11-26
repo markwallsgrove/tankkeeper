@@ -5,7 +5,7 @@ rules:
     comment: No service actions. The tools are shared through Home Assistant's LLM API.
   appropriate-polling:
     status: exempt
-    comment: Nothing is polled. Sensors update when the records change.
+    comment: Nothing is polled. The entities update when the records change.
   brands: done
   common-modules: done
   config-flow: done
@@ -36,17 +36,13 @@ rules:
   unique-config-entry: done
 
   # Silver
-  action-exceptions:
-    status: exempt
-    comment: No service actions. Tools return errors to the assistant as tool results.
+  action-exceptions: done
   config-entry-unloading: done
-  docs-configuration-parameters:
-    status: exempt
-    comment: No options flow.
+  docs-configuration-parameters: done
   docs-installation-parameters: done
   entity-unavailable:
     status: exempt
-    comment: The records are local, so the sensors are available while the entry is loaded.
+    comment: The records are local, so the entities are available while the entry is loaded.
   integration-owner: done
   log-when-unavailable:
     status: exempt
@@ -82,11 +78,9 @@ rules:
   entity-device-class: done
   entity-disabled-by-default:
     status: exempt
-    comment: Both sensors are core to the integration.
+    comment: Every entity is core to the integration.
   entity-translations: done
-  exception-translations:
-    status: exempt
-    comment: No HomeAssistantError is raised. Config flow aborts are translated.
+  exception-translations: done
   icon-translations: done
   reconfiguration-flow: done
   repair-issues:

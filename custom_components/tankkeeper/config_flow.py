@@ -1,19 +1,38 @@
-"""Set up a tank, and change its name and volumes later."""
+"""Set up a tank, change its name and volumes later, and set the reminders in the options."""
 
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntryState, ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryState,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
+    TimeSelector,
 )
 import probatio as p
 
 from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .domain import TANK_ID, Collection, NothingToChangeError, Source, dosing_within_tank, merge_record
+from .plan import Reminders, format_time, parse_time
 from .service import Actor, TankkeeperService
+
+NOTIFY_DOMAIN = "notify"
+NOT_DEVICES = frozenset({"send_message", "persistent_notification"})
+CONF_NOTIFY = "notify"
+CONF_TASK_TIME = "task_time"
+CONF_DOSE_TIME = "dose_time"
+CONF_RESEND_TIME = "resend_time"
 
 VOLUME = NumberSelector(
     NumberSelectorConfig(min=1, max=100000, step=1, unit_of_measurement="L", mode=NumberSelectorMode.BOX)
@@ -31,6 +50,12 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ask for the tank's name and volumes."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Set the reminders."""
+        return TankkeeperOptionsFlow()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Start a new tank."""
@@ -74,6 +99,50 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id="reconfigure", data_schema=self.add_suggested_values_to_schema(SCHEMA, suggested), errors=errors
         )
+
+
+class TankkeeperOptionsFlow(OptionsFlow):
+    """Pick the devices that get reminders, and the times they are sent."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the reminder settings, and store them through the service layer."""
+        if self.config_entry.state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="not_loaded")
+        service: TankkeeperService = self.config_entry.runtime_data
+        current = service.reminders()
+        if user_input is not None:
+            reminders = Reminders(
+                notify=tuple(user_input[CONF_NOTIFY]),
+                task_time=parse_time(user_input[CONF_TASK_TIME]),
+                dose_time=parse_time(user_input[CONF_DOSE_TIME]),
+                resend_time=parse_time(user_input[CONF_RESEND_TIME]),
+            )
+            actor = Actor(source=Source.PANEL, user_id=None, conversation_id=None)
+            try:
+                await service.async_set(service.reminder_targets(reminders), actor, "Change the reminders")
+            except NothingToChangeError:
+                return self.async_abort(reason="nothing_changed")
+            return self.async_create_entry(data={})
+        devices = sorted(
+            set(self.hass.services.async_services_for_domain(NOTIFY_DOMAIN)) - NOT_DEVICES | set(current.notify)
+        )
+        schema = p.Schema(
+            {
+                p.Required(CONF_NOTIFY): SelectSelector(
+                    SelectSelectorConfig(options=devices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+                ),
+                p.Required(CONF_TASK_TIME): TimeSelector(),
+                p.Required(CONF_DOSE_TIME): TimeSelector(),
+                p.Required(CONF_RESEND_TIME): TimeSelector(),
+            }
+        )
+        suggested = {
+            CONF_NOTIFY: list(current.notify),
+            CONF_TASK_TIME: format_time(current.task_time),
+            CONF_DOSE_TIME: format_time(current.dose_time),
+            CONF_RESEND_TIME: format_time(current.resend_time),
+        }
+        return self.async_show_form(step_id="init", data_schema=self.add_suggested_values_to_schema(schema, suggested))
 
 
 def _errors(user_input: dict[str, Any] | None) -> dict[str, str]:
