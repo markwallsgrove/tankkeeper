@@ -1,0 +1,14 @@
+{
+  "domain": "tankkeeper",
+  "name": "Tankkeeper",
+  "codeowners": ["@markwallsgrove"],
+  "config_flow": true,
+  "dependencies": ["llm"],
+  "documentation": "https://github.com/markwallsgrove/tankkeeper/blob/main/docs/integration.md",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/markwallsgrove/tankkeeper/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}

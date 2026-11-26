@@ -1,0 +1,106 @@
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: No service actions. The tools are shared through Home Assistant's LLM API.
+  appropriate-polling:
+    status: exempt
+    comment: Nothing is polled. Sensors update when the records change.
+  brands: done
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-actions:
+    status: exempt
+    comment: No service actions. The README lists every tool.
+  docs-conditions:
+    status: exempt
+    comment: No conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: No triggers.
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure:
+    status: exempt
+    comment: No device or service to connect to. The records live in Home Assistant storage.
+  test-before-setup:
+    status: exempt
+    comment: No device or service to connect to. The records live in Home Assistant storage.
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: No service actions. Tools return errors to the assistant as tool results.
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: No options flow.
+  docs-installation-parameters: done
+  entity-unavailable:
+    status: exempt
+    comment: The records are local, so the sensors are available while the entry is loaded.
+  integration-owner: done
+  log-when-unavailable:
+    status: exempt
+    comment: The records are local, so nothing becomes unavailable.
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: No authentication.
+  test-coverage: done
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: exempt
+    comment: A fish tank can't be discovered.
+  discovery-update-info:
+    status: exempt
+    comment: A fish tank can't be discovered.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices:
+    status: exempt
+    comment: A service, not a device integration.
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One service device per tank, created with the entry.
+  entity-category: done
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: exempt
+    comment: Both sensors are core to the integration.
+  entity-translations: done
+  exception-translations:
+    status: exempt
+    comment: No HomeAssistantError is raised. Config flow aborts are translated.
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: exempt
+    comment: Nothing the owner needs to repair.
+  stale-devices:
+    status: exempt
+    comment: The one device is removed with the entry.
+
+  # Platinum
+  async-dependency:
+    status: exempt
+    comment: No dependency library.
+  inject-websession:
+    status: exempt
+    comment: No HTTP calls.
+  strict-typing: done
