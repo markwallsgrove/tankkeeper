@@ -1,0 +1,1153 @@
+<title>Tankkeeper Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a single reading column for the report, with full-width bands that hold Home Assistant mockups. */
+:root {
+  --bg: #f3f6f6;
+  --surface: #ffffff;
+  --fg: #12232a;
+  --muted: #4f646c;
+  --line: #d3dee0;
+  --accent: #0b7a75;
+  --accent-soft: #d9efed;
+  --ok: #2e7d32; --ok-soft: #e3f2e4;
+  --warn: #b26a00; --warn-soft: #fff1d6;
+  --bad: #c62828; --bad-soft: #fde4e4;
+  --ha-bg: #fafafa; --ha-card: #ffffff; --ha-bar: #ffffff; --ha-side: #ffffff; --ha-primary: #03a9f4; --ha-text: #212121; --ha-sub: #727272; --ha-line: #e0e0e0;
+  --term-bg: #10181b; --term-fg: #d6e2e4; --term-dim: #7d9197; --term-acc: #5fd3c8;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0e1719; --surface: #152225; --fg: #e3ecee; --muted: #9db1b6; --line: #2a3b3f;
+  --accent: #4fc2ba; --accent-soft: #173a3a;
+  --ok: #7bc77f; --ok-soft: #1b3320; --warn: #f0b04f; --warn-soft: #3a2c12; --bad: #f08080; --bad-soft: #3b1c1c;
+  --ha-bg: #111111; --ha-card: #1c1c1c; --ha-bar: #1c1c1c; --ha-side: #1c1c1c; --ha-primary: #4fc3f7; --ha-text: #e1e1e1; --ha-sub: #9b9b9b; --ha-line: #333333;
+  --term-bg: #070c0d; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0e1719; --surface: #152225; --fg: #e3ecee; --muted: #9db1b6; --line: #2a3b3f;
+  --accent: #4fc2ba; --accent-soft: #173a3a;
+  --ok: #7bc77f; --ok-soft: #1b3320; --warn: #f0b04f; --warn-soft: #3a2c12; --bad: #f08080; --bad-soft: #3b1c1c;
+  --ha-bg: #111111; --ha-card: #1c1c1c; --ha-bar: #1c1c1c; --ha-side: #1c1c1c; --ha-primary: #4fc3f7; --ha-text: #e1e1e1; --ha-sub: #9b9b9b; --ha-line: #333333;
+  --term-bg: #070c0d; color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 1.0625rem; line-height: 1.6; }
+.wrap { max-width: 68rem; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 2.5rem 4rem; display: grid; gap: 3.5rem; }
+.prose { max-width: 42rem; display: grid; gap: 0.9rem; min-width: 0; }
+h1, h2, h3 { font-family: var(--display); line-height: 1.15; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); font-weight: 700; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 700; }
+h3 { font-size: 1.15rem; font-weight: 700; }
+p, ul, ol { margin: 0; }
+ul, ol { padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+a { color: var(--accent); }
+.eyebrow { font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--accent); }
+.lede { font-size: 1.2rem; color: var(--muted); }
+section { display: grid; gap: 1.4rem; min-width: 0; }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 0.8rem 1rem; border-radius: 0 8px 8px 0; }
+.note strong { color: var(--warn); }
+.facts { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.chip { font-family: var(--mono); font-size: 0.78rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+
+/* Channel table */
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; min-width: 40rem; font-size: 0.95rem; }
+th, td { text-align: left; padding: 0.7rem 0.9rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.pill { display: inline-block; font-family: var(--mono); font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+
+/* Diagram */
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem; }
+.diagram svg { display: block; min-width: 46rem; width: 100%; height: auto; }
+.d-box { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+.d-core { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.d-ext { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.d-zone { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 8 6; }
+.d-t { fill: var(--fg); font-family: var(--body); font-size: 13px; }
+.d-tb { fill: var(--fg); font-family: var(--display); font-size: 14px; font-weight: 700; }
+.d-s { fill: var(--muted); font-family: var(--mono); font-size: 11px; }
+.d-acc { fill: var(--accent); font-family: var(--mono); font-size: 11px; font-weight: 600; }
+.d-arrow { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.d-head { fill: var(--muted); }
+
+/* Mockup frames */
+.shots { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); align-items: start; }
+.shot { display: grid; gap: 0.6rem; min-width: 0; }
+.cap { font-size: 0.9rem; color: var(--muted); }
+.cap b { color: var(--fg); }
+.ha { background: var(--ha-bg); color: var(--ha-text); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-family: Roboto, "Segoe UI", system-ui, sans-serif; font-size: 14px; line-height: 1.45; }
+.ha-top { background: var(--ha-bar); border-bottom: 1px solid var(--ha-line); display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem; font-size: 1.15rem; }
+.ha-top .tabs { display: flex; gap: 1rem; margin-left: auto; font-size: 0.82rem; color: var(--ha-sub); flex-wrap: wrap; }
+.ha-top .tabs .on { color: var(--ha-primary); border-bottom: 2px solid var(--ha-primary); padding-bottom: 2px; }
+.ha-body { padding: 0.9rem; display: grid; gap: 0.9rem; }
+.ha-grid { display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); align-items: start; }
+.card { background: var(--ha-card); border-radius: 12px; border: 1px solid var(--ha-line); padding: 0.9rem 1rem; display: grid; gap: 0.6rem; min-width: 0; }
+.card h4 { margin: 0; font-size: 1rem; font-weight: 500; }
+.sub { color: var(--ha-sub); font-size: 0.82rem; }
+.row { display: flex; align-items: center; gap: 0.6rem; justify-content: space-between; flex-wrap: wrap; }
+.btn { font: inherit; font-size: 0.8rem; font-weight: 500; letter-spacing: 0.03em; border: 0; border-radius: 18px; padding: 0.35rem 0.9rem; background: var(--ha-primary); color: #fff; }
+.btn.ghost { background: transparent; color: var(--ha-primary); border: 1px solid var(--ha-line); }
+.status { border-radius: 12px; padding: 0.9rem 1rem; display: grid; gap: 0.35rem; }
+.status.watch { background: var(--warn-soft); border: 1px solid var(--warn); }
+.status .big { font-size: 1.35rem; font-weight: 500; color: var(--warn); }
+.task { display: flex; gap: 0.6rem; align-items: center; justify-content: space-between; border-top: 1px solid var(--ha-line); padding-top: 0.6rem; flex-wrap: wrap; }
+.task .done { color: var(--ok); }
+.kv { display: grid; grid-template-columns: auto 1fr auto; gap: 0.35rem 0.8rem; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.kv .v { text-align: right; }
+.spark { width: 100%; height: 90px; display: block; }
+.sp-grid { stroke: var(--ha-line); stroke-width: 1; }
+.sp-a { stroke: var(--warn); stroke-width: 2; fill: none; }
+.sp-n { stroke: var(--bad); stroke-width: 2; fill: none; }
+.sp-l { fill: var(--ha-sub); font-size: 10px; font-family: var(--mono); }
+.legend { display: flex; gap: 1rem; font-size: 0.78rem; color: var(--ha-sub); }
+.legend i { display: inline-block; width: 10px; height: 3px; vertical-align: middle; margin-right: 4px; }
+.prop { border: 1px dashed var(--ha-primary); border-radius: 10px; padding: 0.7rem 0.8rem; display: grid; gap: 0.4rem; }
+.mini { display: grid; grid-template-columns: 2.6rem 1fr auto; gap: 0.5rem; align-items: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.mini svg { width: 100%; height: 34px; display: block; }
+.mini .v { text-align: right; }
+.sp-t { stroke: var(--ha-sub); stroke-width: 1; stroke-dasharray: 3 3; }
+.sp-x { stroke: var(--bad); stroke-width: 1; stroke-dasharray: 3 3; }
+.hl { background: var(--warn-soft); border-left: 3px solid var(--warn); padding: 0.3rem 0.5rem; border-radius: 4px; }
+.photo { width: 100%; height: auto; display: block; border-radius: 8px; }
+.plist { display: grid; gap: 0.35rem; }
+.plist > span { border: 1px solid var(--ha-line); border-radius: 6px; padding: 0.3rem 0.7rem; font-size: 0.88rem; display: flex; justify-content: space-between; gap: 0.5rem; }
+
+/* Dialog (config flow) */
+.dialog { background: var(--ha-card); color: var(--ha-text); border: 1px solid var(--ha-line); border-radius: 24px; padding: 1.2rem 1.3rem; display: grid; gap: 0.8rem; font-family: Roboto, "Segoe UI", system-ui, sans-serif; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.12); }
+.dialog h4 { margin: 0; font-size: 1.2rem; font-weight: 400; }
+.step { font-family: var(--mono); font-size: 0.7rem; color: var(--ha-sub); letter-spacing: 0.06em; text-transform: uppercase; }
+.field { border: 1px solid var(--ha-line); border-radius: 6px; padding: 0.35rem 0.7rem 0.45rem; display: grid; }
+.field label { font-size: 0.72rem; color: var(--ha-primary); }
+.field span { font-size: 0.95rem; }
+.toggle { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; font-size: 0.9rem; }
+.sw { width: 34px; height: 14px; border-radius: 7px; background: var(--ha-primary); position: relative; flex: none; opacity: 0.7; }
+.sw::after { content: ""; position: absolute; right: -2px; top: -3px; width: 20px; height: 20px; border-radius: 50%; background: var(--ha-primary); }
+.sw.off { background: var(--ha-line); }
+.sw.off::after { right: auto; left: -2px; background: var(--ha-sub); }
+.combo { border: 1px solid var(--ha-line); border-radius: 6px; padding: 0.35rem 0.7rem 0.45rem; display: grid; gap: 0.3rem; }
+.combo label { font-size: 0.72rem; color: var(--ha-primary); }
+.combo .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.mchip { font-size: 0.78rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--ha-bg); border: 1px solid var(--ha-line); }
+.mchip::after { content: " ×"; color: var(--ha-sub); }
+.combo .caret { margin-left: auto; color: var(--ha-sub); font-size: 0.75rem; }
+.actions { display: flex; justify-content: flex-end; gap: 0.5rem; }
+.textbtn { color: var(--ha-primary); font-weight: 500; font-size: 0.85rem; letter-spacing: 0.03em; }
+
+/* Phone */
+.phone { width: min(100%, 19rem); margin: 0 auto; border: 9px solid var(--fg); border-radius: 34px; background: var(--ha-bg); color: var(--ha-text); overflow: hidden; font-family: -apple-system, Roboto, "Segoe UI", sans-serif; font-size: 13px; }
+.phone .bar { display: flex; justify-content: space-between; padding: 0.4rem 1rem 0.2rem; font-size: 0.75rem; font-weight: 600; }
+.phone .scr { padding: 0.6rem; display: grid; gap: 0.6rem; min-height: 26rem; align-content: start; }
+.lock { background: linear-gradient(160deg, #1d4f5a, #0b2a31); color: #f0f6f7; }
+.lock .time { text-align: center; font-size: 3rem; font-weight: 300; line-height: 1; margin-top: 0.6rem; }
+.lock .date { text-align: center; font-size: 0.85rem; opacity: 0.85; }
+.notif { background: rgba(255,255,255,0.88); color: #111; border-radius: 16px; padding: 0.6rem 0.75rem; display: grid; gap: 0.2rem; }
+.notif .app { font-size: 0.7rem; color: #555; text-transform: uppercase; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
+.nbtns { display: grid; background: rgba(255,255,255,0.88); border-radius: 14px; overflow: hidden; }
+.nbtns span { padding: 0.55rem 0.8rem; color: #0a64d6; border-top: 1px solid rgba(0,0,0,0.1); }
+.nbtns span:first-child { border-top: 0; }
+.bubble { max-width: 85%; padding: 0.5rem 0.7rem; border-radius: 14px; }
+.bubble.me { justify-self: end; background: var(--ha-primary); color: #fff; border-bottom-right-radius: 4px; }
+.bubble.ai { justify-self: start; background: var(--ha-card); border: 1px solid var(--ha-line); border-bottom-left-radius: 4px; }
+.bubble .tool { font-family: var(--mono); font-size: 0.68rem; color: var(--ha-sub); display: block; margin-bottom: 0.2rem; }
+.assist-in { margin-top: auto; border: 1px solid var(--ha-line); border-radius: 20px; padding: 0.45rem 0.8rem; color: var(--ha-sub); background: var(--ha-card); }
+
+/* Terminal */
+.term { background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 1rem 1.1rem; font-family: var(--mono); font-size: 0.8rem; line-height: 1.6; overflow-x: auto; white-space: pre; }
+.term .d { color: var(--term-dim); }
+.term .a { color: var(--term-acc); }
+
+/* Steps list */
+.flow { display: grid; gap: 0.8rem; counter-reset: s; list-style: none; padding: 0; }
+.flow li { counter-increment: s; display: grid; grid-template-columns: 2rem 1fr; gap: 0.6rem; align-items: start; }
+.flow li::before { content: counter(s); font-family: var(--mono); font-weight: 600; color: var(--accent); background: var(--accent-soft); border-radius: 50%; width: 1.8rem; height: 1.8rem; display: grid; place-items: center; font-size: 0.85rem; }
+
+.two { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); }
+.two > div { display: grid; gap: 0.6rem; align-content: start; min-width: 0; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.1rem; display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 0; }
+footer { color: var(--muted); font-size: 0.85rem; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+
+<header class="prose">
+  <span class="eyebrow">Design · draft for review · 26 Nov 2026 · a Home Assistant integration</span>
+  <h1>Tankkeeper</h1>
+  <p class="lede">Talk to Claude about your fish tank. Tankkeeper is a planned Home Assistant integration that holds the tank's plan, records and decisions, runs the reminders and checks the tank's status. It is MCP first: you set it up, change it and ask about it in a conversation with Claude, from Claude Code on your laptop or from Assist in Home Assistant. The panel is the fallback. It stays behind Tailscale.</p>
+  <div class="facts">
+    <span class="chip">HA Container 2026.11.2</span>
+    <span class="chip">MCP first</span>
+    <span class="chip">No GitHub or 1Password at run time</span>
+    <span class="chip">Anthropic API, outbound only</span>
+  </div>
+</header>
+
+<section class="prose">
+  <h2>Summary</h2>
+  <ul>
+    <li><b>MCP first.</b> Everything you can see or do in the panel, Claude can also see and do through its tools, in the same change. You set the tank up, edit it and ask about it in a conversation. The panel and dialogs are the fallback.</li>
+    <li><b>Talk to it any time, from two places:</b> Claude Code or Claude Desktop on your laptop, over MCP, or Assist inside Home Assistant on the phone or the web.</li>
+    <li><b>Conversations are kept.</b> Every conversation is stored with the changes it made. You can read past ones in the panel, and Claude reads them to remember what you discussed.</li>
+    <li><b>One integration, <code>tankkeeper</code></b>, replaces separate records, YAML packages and scripts. It stores everything in Home Assistant's own storage, which HA backups already include.</li>
+    <li><b>It owns its calendar.</b> The integration creates a <code>calendar.tankkeeper</code> entity, so a calendar is always installed and events can be renamed <code>Complete:</code> or <code>Skip:</code>.</li>
+    <li><b>Rules check the tank all the time</b> and set a status: On course, Watch or Act. A change of status sends a notification.</li>
+    <li><b>Talk to it three ways:</b> the Home Assistant app on your phone, Home Assistant in a web browser, and Claude Code or Claude Desktop. All three go through the Tailscale URL.</li>
+    <li><b>It can run the light (optional).</b> You tell it which lights the tank has. It owns their schedule and shows it on the dashboard.</li>
+    <li><b>You confirm every change.</b> Claude records what you tell it straight away. Anything that changes doses, the plan, the light schedule, decisions or the tank's details, Claude reads back to you first, and it changes only when you say yes, in the conversation or in the panel.</li>
+  </ul>
+  <p class="note"><strong>The claude.ai app and website can't connect.</strong> claude.ai calls connectors from Anthropic's cloud, not from your device, so it can't reach a server that only Tailscale can reach (<a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp">Anthropic support</a>). On your phone and the web you talk to the tank through Home Assistant's Assist chat instead, which uses the Anthropic API. The only way to use claude.ai would be to expose Home Assistant to the internet, which this design rules out.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Where you can use it</h2>
+    <p>Every channel reaches Home Assistant over Tailscale. Nothing listens on the internet.</p>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Device</th><th>How</th><th>Chat uses</th><th>Works behind Tailscale</th></tr></thead>
+      <tbody>
+        <tr><td><b>Phone</b></td><td>Home Assistant app: Tankkeeper panel, Assist chat, Complete and Skip notifications</td><td>Anthropic API key, through Assist</td><td><span class="pill ok">Yes</span></td></tr>
+        <tr><td><b>Web</b></td><td>Home Assistant in any browser at the Tailscale URL: same panel and Assist chat</td><td>Anthropic API key, through Assist</td><td><span class="pill ok">Yes</span></td></tr>
+        <tr><td><b>Claude Code</b></td><td>MCP server at <code>https://homeassistant.your-tailnet.ts.net/api/mcp</code></td><td>Your Claude Pro plan</td><td><span class="pill ok">Yes</span></td></tr>
+        <tr><td><b>Claude Desktop</b></td><td>The same MCP server, added as a local MCP server through a small proxy on a computer in the tailnet. Not as a custom connector: those connect from Anthropic's cloud (<a href="https://www.home-assistant.io/integrations/mcp_server/">HA docs</a>)</td><td>Your Claude Pro plan</td><td><span class="pill ok">Yes</span></td></tr>
+        <tr><td><b>claude.ai app and website</b></td><td>Custom connector</td><td>Your Claude Pro plan</td><td><span class="pill bad">No: needs a public server</span></td></tr>
+        <tr><td><b>Claude cloud routines</b></td><td>Scheduled cloud runs</td><td>Your Claude Pro plan</td><td><span class="pill bad">No: needs a public server</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>How it fits together</h2>
+    <p>The integration is the only place that stores data. Assist and the MCP server call the same tools, so a dose recorded from your phone and one recorded from Claude Code end up in the same log.</p>
+  </div>
+  <div class="diagram" role="img" aria-label="Architecture: devices on the tailnet talk to Home Assistant; the Tankkeeper integration holds storage, calendar, rules and tools; Assist calls the Anthropic API outbound; Claude Code uses the MCP server.">
+    <svg viewBox="0 0 900 440" xmlns="http://www.w3.org/2000/svg">
+      <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+      <rect x="10" y="20" width="660" height="400" rx="16" class="d-zone"/>
+      <text x="26" y="44" class="d-acc">TAILNET · only devices signed in to your Tailscale</text>
+
+      <rect x="30" y="70" width="170" height="64" rx="10" class="d-box"/>
+      <text x="46" y="96" class="d-tb">Phone</text><text x="46" y="116" class="d-s">HA app · Assist · alerts</text>
+      <rect x="30" y="160" width="170" height="64" rx="10" class="d-box"/>
+      <text x="46" y="186" class="d-tb">Web browser</text><text x="46" y="206" class="d-s">HA at the Tailscale URL</text>
+      <rect x="30" y="250" width="170" height="80" rx="10" class="d-box"/>
+      <text x="46" y="276" class="d-tb">Claude Code</text><text x="46" y="296" class="d-s">or Claude Desktop</text><text x="46" y="314" class="d-s">Pro plan</text>
+
+      <rect x="250" y="60" width="400" height="340" rx="14" class="d-box"/>
+      <text x="268" y="86" class="d-tb">Home Assistant</text>
+      <rect x="270" y="100" width="160" height="50" rx="8" class="d-box"/><text x="284" y="122" class="d-t">Tankkeeper panel</text><text x="284" y="139" class="d-s">dashboard + proposals</text>
+      <rect x="270" y="165" width="160" height="50" rx="8" class="d-box"/><text x="284" y="187" class="d-t">Assist</text><text x="284" y="204" class="d-s">Anthropic agent</text>
+      <rect x="270" y="270" width="160" height="50" rx="8" class="d-box"/><text x="284" y="292" class="d-t">MCP server</text><text x="284" y="309" class="d-s">/api/mcp · HA login</text>
+
+      <rect x="460" y="100" width="172" height="280" rx="10" class="d-core"/>
+      <text x="474" y="124" class="d-tb">tankkeeper</text>
+      <text x="474" y="150" class="d-t">Storage + history</text>
+      <text x="474" y="176" class="d-t">calendar.tankkeeper</text>
+      <text x="474" y="202" class="d-t">Reminders + to-do</text>
+      <text x="474" y="228" class="d-t">Rules → status</text>
+      <text x="474" y="254" class="d-t">Proposals</text>
+      <text x="474" y="280" class="d-t">Tools (LLM API)</text>
+      <text x="474" y="306" class="d-t">Event reviews</text>
+      <text x="474" y="346" class="d-s">in HA backups</text>
+
+      <rect x="710" y="150" width="175" height="80" rx="10" class="d-ext"/>
+      <text x="726" y="178" class="d-tb">Anthropic API</text><text x="726" y="198" class="d-s">HA calls out over HTTPS</text><text x="726" y="214" class="d-s">nothing calls in</text>
+
+      <path d="M200 102 H262" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M200 192 H262" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M200 102 C232 102 232 190 262 190" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M200 295 H262" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M430 125 H452" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M430 190 H452" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M430 295 H452" class="d-arrow" marker-end="url(#ah)"/>
+      <path d="M350 165 C350 150 380 40 690 40 C760 40 790 100 790 142" class="d-arrow" marker-end="url(#ah)"/>
+      <text x="560" y="34" class="d-s">Assist chat + reviews</text>
+    </svg>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Setting it up</h2>
+    <p>Install once, give the tank a name, then talk it through with Claude. Claude asks about the tank, the water, the products, what's in the tank, the light and the reminders, and sets it all up. The step-by-step dialogs stay as a fallback. Everything can be changed later the same way.</p>
+  </div>
+  <ol class="flow prose">
+    <li><div><b>Install the code.</b> <code>scripts/deploy.sh</code> copies <code>custom_components/tankkeeper</code> to Home Assistant's <code>config/</code> folder. Home Assistant restarts once.</div></li>
+    <li><div><b>Add the integration.</b> Settings → Devices &amp; services → Add integration → Tankkeeper. Give the tank a name and choose how to set it up: talk to Claude (Assist or Claude Code), or the step-by-step dialogs.</div></li>
+    <li><div><b>Set up chat.</b> Add Home Assistant's Anthropic integration with an API key, then pick it as Tankkeeper's agent. Optional: without it, the panel, reminders and rules still work.</div></li>
+    <li><div><b>Connect Claude Code.</b> Turn on Home Assistant's MCP Server integration and run one command on the Mac (shown further down).</div></li>
+  </ol>
+
+  <div class="shots">
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Start</span>
+        <h4>Set up Tankkeeper</h4>
+        <div class="plist">
+          <span>Talk to Claude in Assist <span class="sub">recommended · opens a conversation here</span></span>
+          <span>Talk to Claude in Claude Code <span class="sub">on your laptop, over MCP</span></span>
+          <span>Step by step here <span class="sub">fallback · 7 short steps</span></span>
+        </div>
+        <div class="field"><label>Name</label><span>Office tank</span></div>
+        <div class="actions"><span class="textbtn">SUBMIT</span></div>
+      </div>
+      <p class="cap"><b>Start with a conversation.</b> Both Claude options create an empty tank in setup mode. In Assist, Tankkeeper's own agent opens with its first question. In Claude Code, you can also point Claude at notes you already keep, and it reads them in. Assist needs the Anthropic API key from step 3.</p>
+    </div>
+
+    <div class="shot">
+      <div class="term"><span class="d">$</span> claude
+<span class="a">›</span> set up my tank from my notes in fish-tank/
+<span class="d">  set_tank · set_water · add_product ×5
+  add_content ×11 · set_light · set_reminders
+  import_log · import_decisions</span>
+Ready: 1 tank, 5 products, 11 items,
+light 12:00–20:00, 2 phones, 7 log
+entries, 10 decisions. Shall I save it?
+<span class="a">›</span> yes
+<span class="d">  apply_change</span>
+Saved. Tankkeeper is live.</div>
+      <p class="cap"><b>Setup over MCP.</b> In setup mode the tools fill a draft. Claude reads the whole draft back, and saves it only after you say yes. You can also accept it in the panel.</p>
+    </div>
+
+    <div class="shot">
+      <div class="phone">
+        <div class="bar"><span>19:05</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="row"><b>Assist · Tankkeeper</b><span class="sub">setup</span></div>
+          <div class="bubble ai">Hi. Let's set up Office tank. What tank is it, and how many litres?</div>
+          <div class="bubble me">Aqua One Horizon 182, planted, 25 degrees. Tap water, Severn Trent.</div>
+          <div class="bubble ai"><span class="tool">set_tank · set_water</span>Got it: 182 L tank, I'll dose for 180 L, 25 °C, tap water. Do you know your tap pH and hardness? I can use your water company's figures until you test.</div>
+          <div class="bubble me">7.4 and 9 GH. I've got driftwood, some coloured rocks and 9 plants.</div>
+          <div class="bubble ai"><span class="tool">add_content ×3</span>Added the wood and rocks. Which plants? A photo of the pot labels works too.</div>
+          <div class="assist-in">Answer Claude…</div>
+        </div>
+      </div>
+      <p class="cap"><b>Setup in Assist.</b> Claude asks one thing at a time and fills the draft as you answer. At the end it reads the draft back, the same as in Claude Code.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 1 of 7 · Tank</span>
+        <h4>Set up Tankkeeper</h4>
+        <div class="field"><label>Name</label><span>Office tank</span></div>
+        <div class="field"><label>Tank model</label><span>Aqua One Horizon 182</span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Volume for dosing (L)</label><span>180</span></div>
+          <div class="field" style="flex:1"><label>Temperature (°C)</label><span>25</span></div>
+        </div>
+        <div class="field"><label>Type</label><span>Tropical freshwater, planted</span></div>
+        <div class="actions"><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Tank.</b> The basics every dose is worked out from.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 2 of 7 · Water</span>
+        <h4>Tap water</h4>
+        <div class="field"><label>Water supplier</label><span>Severn Trent · Shipston (ZWA16)</span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>pH</label><span>7.42</span></div>
+          <div class="field" style="flex:1"><label>GH (dGH)</label><span>9.0</span></div>
+          <div class="field" style="flex:1"><label>Nitrate</label><span>20.6</span></div>
+        </div>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Water.</b> Starting values from the supplier. Your own tap tests replace them later.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 3 of 7 · Products</span>
+        <h4>What you use</h4>
+        <div class="field"><label>Product</label><span>ARKA Bio-CO2</span></div>
+        <div class="field"><label>What it's for</label><span>Liquid carbon for plants</span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Label dose</label><span>2 ml / 100 L, every 1–2 days</span></div>
+          <div class="field" style="flex:1"><label>Your dose</label><span>3.6 ml every other day</span></div>
+        </div>
+        <div class="field"><label>Notes for Claude</label><span>First dose was 18 ml. Measured with a syringe (decision 0010). Can rise slowly as the plants grow.</span></div>
+        <div class="plist">
+          <span>AquaCare Tap Water Conditioner <span class="sub">conditioner</span></span>
+          <span>AquaCare Bio Boost <span class="sub">filter bacteria</span></span>
+          <span>ARKA Plants Green <span class="sub">fertiliser</span></span>
+          <span>Dr Tim's Ammonium Chloride <span class="sub">cycling</span></span>
+        </div>
+        <span class="textbtn">+ ADD PRODUCT</span>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">SKIP</span><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Products.</b> Each product, what it's for, the label dose, the dose you use, and notes in your own words, such as "only during cycling" or "halve it if pH drops". Claude reads them for reviews, proposals and chat. Edit them later in the panel's Products tab or the options.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 4 of 7 · Contents</span>
+        <h4>What's in the tank</h4>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Type</label><span>Wood</span></div>
+          <div class="field" style="flex:2"><label>Name</label><span>Driftwood XL (Fishkeeper)</span></div>
+        </div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:2"><label>Where</label><span>Centre, back</span></div>
+          <div class="field" style="flex:1"><label>Added</label><span>21 Nov</span></div>
+        </div>
+        <div class="field"><label>Notes for Claude</label><span>Species unknown. Not pre-soaked. Expect tea-coloured water and falling pH.</span></div>
+        <div class="plist">
+          <span>Hygrophila rosae australis ×3 <span class="sub">plant</span></span>
+          <span>Riccia fluitans ×2 <span class="sub">plant · keeps floating loose</span></span>
+          <span>Echinodorus, Cryptocoryne ×4 <span class="sub">plants</span></span>
+          <span>Assorted coloured rocks <span class="sub">rock · vinegar test due</span></span>
+          <span>Flora Base, Nutri Base, gravel <span class="sub">substrate</span></span>
+        </div>
+        <span class="textbtn">+ ADD ITEM</span>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">SKIP</span><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Contents.</b> Plants, rocks, wood, substrate and decorations, later fish. Each has a type, name, where it sits, when it went in, and notes in your own words. Claude uses them to explain what it sees, for example "the driftwood may be pulling pH down". Edit them later in the panel's Contents tab, or tell Assist "I've added a Java fern".</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 5 of 7 · Light (optional)</span>
+        <h4>Your lights</h4>
+        <div class="field"><label>Light 1 · entity</label><span>switch.office_tank_light</span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Model</label><span>LED 10120</span></div>
+          <div class="field" style="flex:1"><label>Control</label><span>On/off (smart plug)</span></div>
+        </div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>On</label><span>12:00</span></div>
+          <div class="field" style="flex:1"><label>Off</label><span>20:00</span></div>
+        </div>
+        <span class="textbtn">+ ADD ANOTHER LIGHT</span>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">SKIP</span><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Light (optional).</b> Which lights, how each is controlled, and today's schedule. A dimmable light also gets a ramp and brightness. Skip it to add lights later from the options.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 6 of 7 · Reminders</span>
+        <h4>When to remind you</h4>
+        <div class="combo"><label>Send task reminders to</label><div class="chips"><span class="mchip">Owner's iPhone</span><span class="mchip">Second device</span><span class="caret">▼</span></div></div>
+        <div class="combo"><label>Send status alerts and proposals to</label><div class="chips"><span class="mchip">Owner's iPhone</span><span class="caret">▼</span></div></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Tasks</label><span>09:00</span></div>
+          <div class="field" style="flex:1"><label>Doses</label><span>Light on</span></div>
+          <div class="field" style="flex:1"><label>Resend</label><span>21:00</span></div>
+        </div>
+        <div class="toggle">Notify me when the status changes <span class="sw"></span></div>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">NEXT</span></div>
+      </div>
+      <p class="cap"><b>Reminders.</b> The same times as today's automation. Each list can hold several devices; Complete or Skip on one clears the notification on the others. Dose reminders follow the light-on time (decision 0005). Without a light, they use a fixed time, 12:00 by default.</p>
+    </div>
+
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Step 7 of 7 · Claude</span>
+        <h4>Talk to your tank</h4>
+        <div class="field"><label>Conversation agent</label><span>Claude (Anthropic)</span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+          <div class="field" style="flex:1"><label>Chat model</label><span>Claude Haiku 5.5 ▼</span></div>
+          <div class="field" style="flex:1"><label>Review model</label><span>Claude Sonnet 5.5 ▼</span></div>
+        </div>
+        <div class="combo"><label>Review after (choose any)</label><div class="chips"><span class="mchip">New tests</span><span class="mchip">Status changes</span><span class="mchip">Completed or skipped tasks</span><span class="caret">▼</span></div></div>
+        <div class="toggle">Add Claude's comments to reviews <span class="sw"></span></div>
+        <div class="row" style="gap:0.5rem; flex-wrap:nowrap; align-items:center">
+          <div class="toggle" style="flex:1">Also review daily <span class="sw off"></span></div>
+          <div class="field" style="width:6.5rem"><label>At</label><span>08:30</span></div>
+        </div>
+        <div class="toggle">Share tools with the MCP server <span class="sw"></span></div>
+        <p class="sub">Claude records what you tell it. Other changes need your yes, in the conversation or the panel.</p>
+        <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">SUBMIT</span></div>
+      </div>
+      <p class="cap"><b>Claude.</b> Pick the agent, a model for chat and a model for review comments (a cheaper one for chat is an option), choose any mix of events that start a review, set the daily review time if you want one, and share the tools with Claude Code. Sensor events join the list when hardware is added.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>The Tankkeeper panel</h2>
+    <p>A dashboard in the sidebar, the same on the web and in the phone app. It shows everything at a glance and is the fallback for every change. The status comes first, then today's tasks, then what Claude has proposed.</p>
+  </div>
+  <div class="ha">
+    <div class="ha-top"><span>Tankkeeper</span><span class="sub">Office tank · day 5</span>
+      <div class="tabs"><span class="on">OVERVIEW</span><span>PLAN</span><span>LOG</span><span>CONTENTS</span><span>PRODUCTS</span><span>DECISIONS</span><span>NOTES</span><span>CONVERSATIONS</span></div></div>
+    <div class="ha-body">
+      <div class="status watch">
+        <span class="sub" style="color:inherit">STATUS</span>
+        <span class="big">Watch</span>
+        <span>pH was 6.8 on 25 Nov, under the 7.0 target. The cycle can slow below 7.0. Test at 12:00 on Saturday; if pH is still under 7.0, change 25% of the water.</span>
+      </div>
+      <div class="ha-grid">
+        <div class="card">
+          <div class="row"><h4>Today · Thu 26 Nov</h4><span class="sub">2 tasks</span></div>
+          <div class="task"><span><span class="done">✓</span> Bio-CO2 5 ml <span class="sub">· 12:17</span></span><span class="sub">Complete</span></div>
+          <div class="task"><span>Top up water about 5 L</span><span class="row" style="gap:0.4rem"><button class="btn ghost" type="button">SKIP</button><button class="btn" type="button">COMPLETE</button></span></div>
+        </div>
+        <div class="card">
+          <h4>Cycle</h4>
+          <svg class="spark" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Ammonia 0.5 ppm and nitrite 0.75 ppm on 25 Nov; the next test is due 28 Nov">
+            <line x1="30" y1="10" x2="300" y2="10" class="sp-grid"/><line x1="30" y1="45" x2="300" y2="45" class="sp-grid"/><line x1="30" y1="80" x2="300" y2="80" class="sp-grid"/>
+            <text x="0" y="13" class="sp-l">2.0</text><text x="0" y="48" class="sp-l">1.0</text><text x="0" y="83" class="sp-l">0</text>
+            <polyline points="40,80 160,62.5" class="sp-a"/><circle cx="160" cy="62.5" r="3.5" fill="var(--warn)"/>
+            <polyline points="40,80 160,53.75" class="sp-n"/><circle cx="160" cy="53.75" r="3.5" fill="var(--bad)"/>
+          </svg>
+          <div class="legend"><span><i style="background:var(--warn)"></i>Ammonia 0.5</span><span><i style="background:var(--bad)"></i>Nitrite 0.75</span></div>
+          <div class="mini"><span>Nitrate</span>
+            <svg viewBox="0 0 200 34" aria-label="Nitrate: no tank test yet; the tap's 20 ppm shown as a dashed line"><line x1="0" y1="32" x2="200" y2="32" class="sp-grid"/><line x1="0" y1="17" x2="200" y2="17" class="sp-t"/><text x="4" y="13" class="sp-l">tap 20</text></svg>
+            <span class="v sub">no test yet</span></div>
+          <span class="sub">Started: nitrite is showing. Done when ammonia and nitrite are 0 and nitrate rises above the tap's 20.</span>
+        </div>
+        <div class="card">
+          <h4>Water chemistry</h4>
+          <div class="mini"><span>pH</span>
+            <svg viewBox="0 0 200 34" aria-label="pH 6.8 on 25 Nov, under the 7.0 target and above the 6.5 Act line; tap 7.42"><line x1="0" y1="17" x2="200" y2="17" class="sp-t"/><line x1="0" y1="24.5" x2="200" y2="24.5" class="sp-x"/><circle cx="20" cy="10.7" r="3" fill="none" stroke="var(--ha-primary)" stroke-width="1.5"/><circle cx="150" cy="20" r="3.5" fill="var(--warn)"/></svg>
+            <span class="v">6.8</span></div>
+          <div class="mini"><span>KH</span>
+            <svg viewBox="0 0 200 34" aria-label="KH: no test yet"><line x1="0" y1="32" x2="200" y2="32" class="sp-grid"/></svg>
+            <span class="v sub">no test yet</span></div>
+          <div class="mini"><span>GH</span>
+            <svg viewBox="0 0 200 34" aria-label="GH: no tank test yet; tap 9.0 dGH"><line x1="0" y1="32" x2="200" y2="32" class="sp-grid"/><circle cx="20" cy="14" r="3" fill="none" stroke="var(--ha-primary)" stroke-width="1.5"/></svg>
+            <span class="v sub">tap 9.0</span></div>
+          <div class="legend"><span><i style="background:var(--warn)"></i>Tank</span><span><i style="background:var(--ha-primary)"></i>Tap (hollow)</span><span><i style="background:var(--ha-sub)"></i>Target</span><span><i style="background:var(--bad)"></i>Act</span></div>
+          <span class="sub">pH target 7.0, Act under 6.5 (decision 0007). Temperature joins when a sensor is added.</span>
+        </div>
+        <div class="card">
+          <h4>Next 7 days</h4>
+          <div class="kv">
+            <span>Sat 28</span><span>Full test, tap test, Bio Boost 45 ml</span><span class="v sub">+1</span>
+            <span>Mon 30</span><span>Bio-CO2 3.6 ml</span><span class="v sub"></span>
+            <span>Wed 2</span><span>Test ammonia and nitrite</span><span class="v sub">+1</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row"><h4>Light</h4><span class="sub">On · off at 20:00</span></div>
+          <svg viewBox="0 0 240 34" style="width:100%; height:auto; display:block" aria-label="Light on from 12:00 to 20:00; now 16:40">
+            <rect x="0" y="4" width="240" height="12" rx="3" fill="var(--ha-line)"/>
+            <rect x="120" y="4" width="80" height="12" rx="3" fill="var(--warn)"/>
+            <line x1="166.7" y1="0" x2="166.7" y2="20" stroke="var(--ha-text)" stroke-width="1.5"/>
+            <text x="0" y="31" class="sp-l">00</text><text x="56" y="31" class="sp-l">06</text><text x="114" y="31" class="sp-l">12</text><text x="174" y="31" class="sp-l">18</text><text x="226" y="31" class="sp-l">24</text>
+          </svg>
+          <div class="kv">
+            <span>Schedule</span><span>12:00 – 20:00 · 8 h</span><span class="v sub"></span>
+            <span>Last change</span><span>None yet</span><span class="v sub"></span>
+          </div>
+          <span class="sub">Last 30 days · when it was really on</span>
+          <svg viewBox="0 0 284 166" style="width:100%; height:auto; display:block" aria-label="Light history for 30 days: on 12:00 to 20:00 most days; on 7 Nov it turned on at 12:40; on 15 Nov the plug was unavailable and it did not turn on">
+            <rect x="40" y="0" width="240" height="152" fill="var(--ha-bg)"/>
+            <rect x="160" y="2" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="7" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="12" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="17" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="22" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="27" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="32" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="37" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="42" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="47" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="52" width="80" height="4" fill="var(--warn)"/>
+            <rect x="166.7" y="57" width="73.3" height="4" fill="var(--warn)"/><circle cx="163" cy="59" r="2" fill="var(--bad)"/>
+            <rect x="160" y="62" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="67" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="72" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="77" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="82" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="87" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="92" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="97" width="80" height="4" fill="none" stroke="var(--bad)" stroke-dasharray="2 2"/>
+            <rect x="160" y="102" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="107" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="112" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="117" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="122" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="127" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="132" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="137" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="142" width="80" height="4" fill="var(--warn)"/>
+            <rect x="160" y="147" width="80" height="4" fill="var(--warn)"/>
+            <text x="0" y="7" class="sp-l">27 Oct</text>
+            <text x="0" y="42" class="sp-l">3 Nov</text>
+            <text x="0" y="77" class="sp-l">10 Nov</text>
+            <text x="0" y="112" class="sp-l">17 Nov</text>
+            <text x="0" y="147" class="sp-l">24 Nov</text>
+            <text x="40" y="163" class="sp-l">00</text><text x="94" y="163" class="sp-l">06</text><text x="154" y="163" class="sp-l">12</text><text x="214" y="163" class="sp-l">18</text><text x="268" y="163" class="sp-l">24</text>
+          </svg>
+          <div class="legend"><span><i style="background:var(--warn)"></i>On</span><span><i style="background:var(--bad)"></i>Late or missed</span></div>
+          <div class="row" style="justify-content:flex-end; gap:0.4rem"><button class="btn ghost" type="button">OFF FOR 1 H</button><button class="btn ghost" type="button">EDIT</button></div>
+        </div>
+        <div class="card">
+          <div class="row"><h4>Camera</h4><span class="sub">14:00 today</span></div>
+          <svg class="photo" viewBox="0 0 160 70" aria-label="Latest photo of the tank">
+            <rect width="160" height="70" fill="#9fc7a8"/><rect y="52" width="160" height="18" fill="#b9a27a"/>
+            <path d="M30 52 C28 30 36 18 34 6 M34 52 C40 34 44 26 50 14" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+            <path d="M110 52 C108 36 116 28 112 12" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+          </svg>
+          <span class="sub">Last check: water clear, light yellow tint. Plants look healthy.</span>
+          <div class="row" style="justify-content:flex-end; gap:0.4rem"><button class="btn ghost" type="button">PHOTOS</button><button class="btn ghost" type="button">CHECK NOW</button></div>
+        </div>
+        <div class="card">
+          <div class="row"><h4>Seen by the camera</h4><span class="sub">1 issue</span></div>
+          <svg class="photo" viewBox="0 0 160 70" aria-label="Photo with the front glass spots circled">
+            <rect width="160" height="70" fill="#9fc7a8"/><rect y="52" width="160" height="18" fill="#b9a27a"/>
+            <path d="M30 52 C28 30 36 18 34 6 M34 52 C40 34 44 26 50 14" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+            <path d="M110 52 C108 36 116 28 112 12" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+            <circle cx="80" cy="20" r="5" fill="#6ea05a" opacity="0.6"/><circle cx="95" cy="30" r="4" fill="#6ea05a" opacity="0.6"/><circle cx="70" cy="35" r="3" fill="#6ea05a" opacity="0.6"/>
+            <ellipse cx="82" cy="27" rx="22" ry="16" fill="none" stroke="var(--bad)" stroke-width="2"/>
+          </svg>
+          <div class="hl"><b>Seen:</b> green spots on the front glass, more than yesterday. Probably green spot algae.</div>
+          <span><b>Suggested:</b> wipe the glass at the next water change, and cut the light to 7.5 h for two weeks.</span>
+          <span class="sub">A best guess from one photo. Reflections and room light can fool it, so look at the photo first.</span>
+          <div class="row" style="justify-content:flex-end; gap:0.4rem"><button class="btn ghost" type="button">NOT A PROBLEM</button><button class="btn ghost" type="button">DISCUSS</button><button class="btn ghost" type="button">REJECT</button><button class="btn" type="button">ACCEPT</button></div>
+        </div>
+        <div class="card">
+          <div class="row"><h4>Waiting for you</h4><span class="sub">1 proposal</span></div>
+          <div class="prop">
+            <b>Add a 25% water change on Sat 28 Nov if pH is under 7.0</b>
+            <span class="sub">From Claude Code · based on decision 0007 and the 25 Nov test</span>
+            <div class="row" style="justify-content:flex-end; gap:0.4rem"><button class="btn ghost" type="button">DISCUSS</button><button class="btn ghost" type="button">REJECT</button><button class="btn" type="button">ACCEPT</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap">Mockup with your real records from this week, except the light history and the camera cards, which are made up to show the layout. Charts with different scales are kept apart; hollow points are tap readings. The Light card and both camera cards stay hidden until a light or camera is set up. Accept on a camera issue sends it through the normal proposal flow. Discuss, on every proposal and camera issue, opens Assist with the photo, finding or proposal already loaded, so you can ask about it before you decide. The integration keeps its own light on/off log, because Home Assistant's recorder keeps only 10 days by default. The tabs hold the full plan (the calendar), the log of doses and tests, the decisions, and notes (assumptions and open questions).</p>
+
+  <div class="ha" style="margin-top:1rem">
+    <div class="ha-top"><span>Tankkeeper</span><span class="sub">Office tank</span>
+      <div class="tabs"><span>OVERVIEW</span><span>PLAN</span><span>LOG</span><span class="on">CONTENTS</span><span>PRODUCTS</span><span>DECISIONS</span><span>NOTES</span><span>CONVERSATIONS</span></div></div>
+    <div class="ha-body">
+      <div class="ha-grid">
+        <div class="card">
+          <div class="row"><h4>In the tank</h4><button class="btn" type="button">+ ADD</button></div>
+          <div class="task"><span>Driftwood XL <span class="sub">· wood · since 21 Nov</span></span><button class="btn ghost" type="button">EDIT</button></div>
+          <div class="task"><span>Hygrophila rosae australis ×3 <span class="sub">· plant</span></span><button class="btn ghost" type="button">EDIT</button></div>
+          <div class="task"><span>Riccia fluitans ×2 <span class="sub">· plant</span></span><button class="btn ghost" type="button">EDIT</button></div>
+          <div class="task"><span>Assorted coloured rocks <span class="sub">· rock</span></span><button class="btn ghost" type="button">EDIT</button></div>
+          <span class="sub">+ 7 more · 0 removed</span>
+        </div>
+        <div class="card">
+          <h4>Edit · Riccia fluitans</h4>
+          <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
+            <div class="field" style="flex:1"><label>Type</label><span>Plant</span></div>
+            <div class="field" style="flex:1"><label>Count</label><span>2</span></div>
+          </div>
+          <div class="field"><label>Where</label><span>Tufts along the front of the gravel</span></div>
+          <div class="field"><label>Notes for Claude</label><span>Pushed into the gravel, not tied down. Pieces may break off and float.</span></div>
+          <span class="sub">History: added 22 Nov · notes changed 24 Nov by you</span>
+          <div class="row" style="justify-content:flex-end; gap:0.4rem"><button class="btn ghost" type="button">REMOVE</button><button class="btn" type="button">SAVE</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap"><b>Change anything, any time.</b> Every record has an edit view like this one: contents, products, the tank and water, the light, reminders and the Claude settings. Settings can also be changed in the integration's options. Removing an item keeps it in the history with the date. Every change records who made it and when. Every edit here has a tool too, so you can just tell Claude instead: "the Riccia is floating, I took one tuft out".</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Conversations</h2>
+    <p>Talk to Claude about the tank whenever you want: set new things up, change the tank's details, fix a record, or ask what to do next. Each conversation is kept with the changes it made.</p>
+  </div>
+  <div class="ha">
+    <div class="ha-top"><span>Tankkeeper</span><span class="sub">Office tank</span>
+      <div class="tabs"><span>OVERVIEW</span><span>PLAN</span><span>LOG</span><span>CONTENTS</span><span>PRODUCTS</span><span>DECISIONS</span><span>NOTES</span><span class="on">CONVERSATIONS</span></div></div>
+    <div class="ha-body">
+      <div class="ha-grid">
+        <div class="card">
+          <div class="row"><h4>Past conversations</h4><button class="btn" type="button">+ NEW</button></div>
+          <div class="task"><span>Riccia floating, removed a tuft <span class="sub">· Assist · today 21:40 · 2 changes</span></span></div>
+          <div class="task"><span>Water change if pH stays low <span class="sub">· Claude Code · 26 Nov · 1 change</span></span></div>
+          <div class="task"><span>Yellow water from the driftwood <span class="sub">· Assist · 25 Nov · 1 note</span></span></div>
+          <div class="task"><span>Setup <span class="sub">· Assist · 21 Nov · 31 changes</span></span></div>
+          <div class="field"><label>Search</label><span>driftwood</span></div>
+        </div>
+        <div class="card">
+          <div class="row"><h4>Riccia floating, removed a tuft</h4><button class="btn ghost" type="button">CONTINUE</button></div>
+          <div class="bubble me">Bits of Riccia keep floating up. I took one tuft out.</div>
+          <div class="bubble ai"><span class="tool">get_conversation · list_contents</span>On 24 Nov you said you'd watch for this. Shall I change Riccia to 1 tuft and add a note to tie the rest to a stone?</div>
+          <div class="bubble me">Yes</div>
+          <div class="bubble ai"><span class="tool">apply_change</span>Done.</div>
+          <span class="sub">Changes: Riccia count 2 → 1 · note added · <u>undo</u></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap"><b>Conversations tab.</b> Mockup. Each conversation shows where it happened, a title Claude gives it, the full text with the tools used, and the changes it made, each with undo. CONTINUE opens it again in Assist.</p>
+  <div class="two">
+    <div class="box">
+      <h3>How they're recorded</h3>
+      <ul>
+        <li><b>Assist:</b> Tankkeeper registers its own conversation agent, which calls the Anthropic API and stores every turn: your words, Claude's answer and each tool call.</li>
+        <li><b>Claude Code and Claude Desktop:</b> the MCP server only sees tool calls, not the chat. Tankkeeper groups the tool calls by MCP session, and its instructions ask Claude to call <code>save_conversation</code> with a title, a summary and the key messages before it finishes. An optional Claude Code hook can send the full transcript.</li>
+        <li>Every record change points to the conversation that made it.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>How Claude uses them</h3>
+      <ul>
+        <li>Before it answers, Claude can search past conversations for what you already said, for example "you said you'd watch for floating Riccia".</li>
+        <li>Reviews can look back over recent conversations and notice things you mentioned but never logged.</li>
+        <li>You can delete a conversation in the panel. Its changes stay in the history.</li>
+        <li>Conversations are kept in Home Assistant, for as long as you set (default: forever).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>On your phone</h2>
+    <p>Reminders work as they do today, with one notification per task. Assist is the chat: open it from the panel or with the Assist button, then type or speak.</p>
+  </div>
+  <div class="shots">
+    <div class="shot">
+      <div class="phone lock">
+        <div class="bar"><span>12:00</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="time">12:00</div><div class="date">Monday 30 November</div>
+          <div class="notif"><div class="app"><span>Home Assistant</span><span>now</span></div><b>Fish tank</b><span>Bio-CO2 3.6 ml</span></div>
+          <div class="nbtns"><span>Complete</span><span>Skip</span></div>
+        </div>
+      </div>
+      <p class="cap"><b>Reminder.</b> Press and hold to Complete or Skip. Tap to open the task and add a note.</p>
+    </div>
+
+    <div class="shot">
+      <div class="phone">
+        <div class="bar"><span>21:40</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="row"><b>Assist · Tankkeeper</b><span class="sub">Claude</span></div>
+          <div class="bubble me">Topped up about 5 litres, used 1.3 ml conditioner. Water looks a bit yellow.</div>
+          <div class="bubble ai"><span class="tool">complete_task · add_note</span>Done: top-up marked complete with 5 L and 1.3 ml conditioner. I noted the yellow water. That's probably tannins from the driftwood, which can lower pH. I added it to the watch list for Saturday's test.</div>
+          <div class="bubble me">Should I do a water change now?</div>
+          <div class="bubble ai"><span class="tool">get_status</span>Not yet. Ammonia and nitrite are far under the limit. Decision 0007 says change water if pH is under 7.0, and the next test is Saturday at 12:00.</div>
+          <div class="assist-in">Ask about your tank…</div>
+        </div>
+      </div>
+      <p class="cap"><b>Assist chat.</b> Uses the Anthropic API. It records things straight away. Plan changes it reads back first and saves only when you say yes.</p>
+    </div>
+
+    <div class="shot">
+      <div class="phone">
+        <div class="bar"><span>21:12</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="card"><div class="row"><b>Test results</b><span class="sub">just now</span></div>
+            <span><b style="color:var(--warn)">Watch.</b> Ammonia 0.5 and nitrite 0.75 are inside the limits. pH 6.8 is under 7.0. Test again on Saturday; if pH is still under 7.0, change 25% of the water.</span>
+            <span class="sub">From the rules · no API cost</span></div>
+          <div class="card"><div class="row"><b>Claude's view</b><span class="sub">just now</span></div>
+            <span>Nitrite showing 4 days after the fill means the cycle has started. pH is the one thing to watch; the driftwood may be pulling it down.</span>
+            <div class="row" style="justify-content:flex-end"><button class="btn ghost" type="button">OPEN PANEL</button></div></div>
+        </div>
+      </div>
+      <p class="cap"><b>Feedback after a test.</b> Logging readings starts a review straight away. The rules' result is free; Claude's comment is optional and uses the API.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>From Claude Code</h2>
+    <p>Claude Code connects to Home Assistant's MCP server over the Tailscale URL and uses your Pro plan. It gets the same tools as Assist, plus the integration's instructions, so it follows the rules we use today.</p>
+  </div>
+<div class="term"><span class="d">$ </span>claude mcp add --transport http tankkeeper https://homeassistant.your-tailnet.ts.net/api/mcp
+<span class="d">  → opens Home Assistant's login page in the browser, then saves the connection</span>
+
+<span class="d">&gt; </span>how is the tank doing, and is anything due this week?
+
+<span class="a">● tankkeeper · get_status</span>
+<span class="a">● tankkeeper · get_plan</span> <span class="d">(26 Nov – 2 Dec)</span>
+
+Status: <span class="a">Watch</span>. Ammonia 0.5 and nitrite 0.75 show the cycle has started.
+pH 6.8 is under the 7.0 target (decision 0007). Due this week:
+  • Thu 26  Top up water about 5 L        <span class="d">open</span>
+  • Sat 28  Full test, tap test, Bio Boost 45 ml, Bio-CO2 3.6 ml
+  • Mon 30  Bio-CO2 3.6 ml
+
+<span class="d">&gt; </span>plan a 25% water change on Saturday if pH is still under 7
+
+<span class="a">● tankkeeper · propose_change</span>
+Proposed: "25% water change on Sat 28 Nov if pH is under 7.0".
+Save it to the plan?
+
+<span class="d">&gt; </span>yes
+
+<span class="a">● tankkeeper · apply_change</span>
+Saved. It's on the calendar for Saturday 12:00.</div>
+  <p class="cap">The login step assumes Home Assistant's MCP server sign-in works with Claude Code. If it doesn't, a long-lived token in a header does the same job. Build step 1 checks this.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>How a change gets made</h2>
+    <p>The answers to decisions come from you. Claude records facts on its own. Anything else it reads back to you, and saves only when you say yes. You can say yes in the conversation or in the panel.</p>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>Claude does on its own</h3>
+      <ul>
+        <li>Record a dose, test or note</li>
+        <li>Complete or skip a task you said you did</li>
+        <li>Explain the status, plan and decisions</li>
+        <li>Add an open question or an assumption, marked as one</li>
+        <li>Propose a change</li>
+        <li>Save a conversation</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Only after your yes</h3>
+      <ul>
+        <li>Accept a decision, or replace one</li>
+        <li>Change a dose, the plan or a threshold</li>
+        <li>Change the tank, water, products or contents</li>
+        <li>Change the light schedule</li>
+        <li>Change reminders and Claude settings</li>
+        <li>Remove records (kept in the history)</li>
+        <li>Undo an earlier change</li>
+      </ul>
+      <h3>Only you, in Home Assistant</h3>
+      <ul>
+        <li>Turn the light on or off by hand</li>
+        <li>Change the API key, or turn the tools off</li>
+        <li>Delete a conversation or wipe the history</li>
+      </ul>
+    </div>
+  </div>
+  <ol class="flow prose">
+    <li><div>You ask in Assist or Claude Code, for example "plan a water change on Saturday".</div></li>
+    <li><div>Claude calls <code>propose_change</code> with what changes, why, and which decision or test it rests on. It gets back the change and a one-use confirm code.</div></li>
+    <li><div>Claude reads the change back to you in the conversation. It also shows in <b>Waiting for you</b> in the panel.</div></li>
+    <li><div>You say yes. Claude calls <code>apply_change</code> with the code. Or you tap Accept in the panel, or reject it.</div></li>
+    <li><div>The integration writes the change, updates the calendar, and keeps the old version with a link to the conversation. Undo puts it back.</div></li>
+  </ol>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>The light (optional)</h2>
+    <p>Without a light, the Light card, the light rule and <code>get_light</code> stay hidden. With one, the integration takes over the light schedule from today's automation. It knows which lights you have and how each is controlled, so Claude can work out a better schedule. Claude proposes it; you accept it, and you decide what's acceptable.</p>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>What you tell it</h3>
+      <ul>
+        <li><b>Each light:</b> its entity, model, and how it's controlled: on/off, dimmable, or colour.</li>
+        <li><b>Its schedule:</b> on and off times, and for a dimmable light the ramp and brightness.</li>
+      </ul>
+      <p class="cap">Claude also reads the plant list (with each plant's light needs), the notes and the tests.</p>
+    </div>
+    <div class="box">
+      <h3>When Claude proposes a change</h3>
+      <ul>
+        <li>From what you report, for example algae, plants growing poorly, or new plants.</li>
+        <li>From a review after a test or a note.</li>
+        <li>When you ask, for example "keep the light on until 22:00 tonight".</li>
+        <li>You say yes in the conversation, or accept from the notification or the panel. Nothing changes until you do.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="shots">
+    <div class="shot">
+      <div class="phone lock">
+        <div class="bar"><span>09:00</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="time">09:00</div><div class="date">Saturday 5 December</div>
+          <div class="notif"><div class="app"><span>Home Assistant</span><span>now</span></div><b>Light change proposed</b><span>From Monday: 12:00–19:30 (7.5 h, was 8 h). Why: you reported green dust algae on the glass on 3 Dec. Bio-CO2 reminders would move with it.</span></div>
+          <div class="nbtns"><span>Accept</span><span>Reject</span><span>Discuss</span></div>
+        </div>
+      </div>
+      <p class="cap"><b>A proposal, with the reason.</b> Accept or Reject straight from the notification. Accepted changes go in the log and the light's history.</p>
+    </div>
+    <div class="shot">
+      <div class="phone">
+        <div class="bar"><span>17:05</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="row"><b>Assist · Tankkeeper</b><span class="sub">Claude</span></div>
+          <div class="bubble me">I've got guests tonight. Can the light stay on until 22:00?</div>
+          <div class="bubble ai"><span class="tool">propose_change</span>I've proposed it for tonight only: off at 22:00, not 20:00, so 10 hours. Tomorrow goes back to 12:00–20:00. Accept it from the notification.</div>
+          <div class="bubble me">And I've added a Java fern.</div>
+          <div class="bubble ai"><span class="tool">add_content · get_light</span>Noted. Java fern needs little light, so the schedule stays as it is.</div>
+          <div class="assist-in">Ask about your tank…</div>
+        </div>
+      </div>
+      <p class="cap"><b>One-day changes</b> are proposals too. Once accepted, they go back by themselves the next day.</p>
+    </div>
+  </div>
+  <p class="note"><strong>Claude has no tool that switches the light.</strong> Only an accepted proposal or your own change in the panel does. If the plug stops responding, the integration keeps the last accepted schedule and sends a status alert.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Camera (optional)</h2>
+    <p>A small camera pointed at the front glass lets Claude look at the tank. Everything else works without it. You add it later from the integration's options.</p>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>What Claude can see</h3>
+      <ul>
+        <li>Water colour: yellow from the driftwood, green or cloudy</li>
+        <li>Algae on the glass, the plants or the stones</li>
+        <li>Plants yellowing, melting or floating loose (the Riccia)</li>
+        <li>Water level</li>
+        <li>Later, with fish: a fish that looks unwell</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>What it can't see</h3>
+      <ul>
+        <li>Ammonia, nitrite, nitrate or pH. The test kits stay.</li>
+        <li>Anything in the dark. Photos are taken only while the light is on.</li>
+      </ul>
+      <p class="cap">Reflections, room light and the camera's colour balance can fool it. Photos at the same time each day, with the same light, make comparisons fair.</p>
+    </div>
+  </div>
+  <div class="shots">
+    <div class="shot">
+      <div class="dialog">
+        <span class="step">Options · Camera</span>
+        <h4>Camera</h4>
+        <div class="field"><label>Camera</label><span>camera.tank (Tapo C110)</span></div>
+        <div class="field"><label>Photo check</label><span>Daily at 14:00, while the light is on</span></div>
+        <div class="toggle">Also check after each test <span class="sw"></span></div>
+        <div class="toggle">Alert me when something looks wrong <span class="sw"></span></div>
+        <div class="toggle">Keep photos for 30 days <span class="sw"></span></div>
+        <div class="actions"><span class="textbtn">SUBMIT</span></div>
+      </div>
+      <p class="cap"><b>Turned on later.</b> Pick the camera and when to check. Photos are kept in Home Assistant, so you can see changes over time.</p>
+    </div>
+    <div class="shot">
+      <div class="phone lock">
+        <div class="bar"><span>14:01</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="time">14:01</div><div class="date">Thursday 10 December</div>
+          <div class="notif"><div class="app"><span>Home Assistant</span><span>now</span></div><b>Fish tank: something to look at</b>
+            <svg viewBox="0 0 160 70" style="width:100%; height:auto; border-radius:8px; display:block; margin:0.2rem 0" aria-label="Photo of the tank">
+              <rect width="160" height="70" fill="#9fc7a8"/><rect y="52" width="160" height="18" fill="#b9a27a"/>
+              <path d="M30 52 C28 30 36 18 34 6 M34 52 C40 34 44 26 50 14" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+              <path d="M110 52 C108 36 116 28 112 12" stroke="#3f7f3a" stroke-width="3" fill="none"/>
+              <circle cx="80" cy="20" r="5" fill="#6ea05a" opacity="0.6"/><circle cx="95" cy="30" r="4" fill="#6ea05a" opacity="0.6"/><circle cx="70" cy="35" r="3" fill="#6ea05a" opacity="0.6"/>
+            </svg>
+            <span>Green spots on the front glass, more than yesterday. Probably green spot algae. Status: Watch.</span></div>
+          <div class="nbtns"><span>Discuss</span><span>Open in panel</span><span>Not a problem</span></div>
+        </div>
+      </div>
+      <p class="cap"><b>Photo alert.</b> The photo comes with the notification, and the issue waits in the panel's Seen by the camera card. "Not a problem" tells Claude to ignore that finding next time.</p>
+    </div>
+    <div class="shot">
+      <div class="phone">
+        <div class="bar"><span>19:20</span><span>●●●</span></div>
+        <div class="scr">
+          <div class="row"><b>Assist · Tankkeeper</b><span class="sub">Claude</span></div>
+          <div class="bubble me">How does the tank look right now?</div>
+          <div class="bubble ai"><span class="tool">get_photo · get_status</span>Water is clear with a light yellow tint, about the same as last week. The spots on the front glass have spread a little since Tuesday. The Hygrophila looks healthy. I'd wipe the glass at the next water change.</div>
+          <div class="bubble me">Could the light be causing it?</div>
+          <div class="bubble ai"><span class="tool">get_light · propose_change</span>Possibly. 8 hours is fine for these plants, so I've proposed 7.5 hours for two weeks to see if the spots slow down.</div>
+          <div class="assist-in">Ask about your tank…</div>
+        </div>
+      </div>
+      <p class="cap"><b>Photos in chat.</b> Claude takes a fresh photo when you ask. In Claude Code the same tool returns the photo.</p>
+    </div>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>Suggested camera: Tapo C110</h3>
+      <ul>
+        <li>About £18 on Amazon UK (<a href="https://www.amazon.co.uk/Tapo-Security-Required-Definition-C110/dp/B08ZNRFQBM">listing</a>, <a href="https://pricespy.co.uk/product.php?p=5859430">PriceSpy</a>). 2K (3 MP), fixed, small, mains powered.</li>
+        <li>Works locally: RTSP and ONVIF with a camera account set in the Tapo app (<a href="https://www.tp-link.com/th/support/faq/2748">TP-Link FAQ</a>). The cloud and the Tapo app still work for remote viewing.</li>
+        <li>Home Assistant: the built-in TP-Link integration has Tapo live view (<a href="https://home-assistant.io/integrations/tplink">docs</a>). The C110 is not named there; the community <a href="https://github.com/JurajNyiri/HomeAssistant-Tapo-Control">Tapo Control</a> integration lists it. ONVIF is the fallback.</li>
+        <li>Apple Home: through Home Assistant's HomeKit Bridge, which shares camera entities.</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>Mounting</h3>
+      <ul>
+        <li>Turn off night vision. The infrared light reflects off the glass.</li>
+        <li>Put it on a stand a short way from the front glass, at a slight angle to avoid reflections.</li>
+        <li>Turn off the camera's motion and sound alerts; the integration does the checking.</li>
+        <li>Point it only at the tank. Photos go to Anthropic for each check.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Status rules</h2>
+    <p>Rules run in Home Assistant whenever a record changes, and once an hour. They use the thresholds from the decisions, so a new decision changes the rule. Status is the worst result of any rule.</p>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Rule</th><th>From</th><th>Watch</th><th>Act</th></tr></thead>
+      <tbody>
+        <tr><td>Ammonia or nitrite</td><td>Decision 0002, Dr Tim's</td><td>above 2 ppm</td><td>above 4 ppm</td></tr>
+        <tr><td>pH while cycling</td><td>Decision 0007</td><td>under 7.0</td><td>under 6.5</td></tr>
+        <tr><td>Cycle stalled</td><td>Decision 0007</td><td>ammonia flat 5 days, no nitrite</td><td>flat 7 days</td></tr>
+        <tr><td>Test overdue</td><td>Plan</td><td>1 day late</td><td>3 days late</td></tr>
+        <tr><td>Dose skipped</td><td>Plan</td><td>skipped once</td><td>skipped twice running</td></tr>
+        <tr><td>Plan runs out</td><td>Calendar</td><td>14 days left</td><td>7 days left</td></tr>
+        <tr><td>Temperature (when a sensor is added)</td><td>tank.md</td><td>±1 °C from 25</td><td>±2 °C</td></tr>
+        <tr><td>Light didn't follow the schedule (with a light)</td><td>Light schedule</td><td>missed once</td><td>plug unavailable</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="cap">The Watch values for ammonia, nitrite and stalled cycles are my suggestions, not existing decisions. They're listed under open questions.</p>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Reviews</h2>
+    <p>A review runs when something happens, not at a fixed time. It tells you whether the tank is in a good state.</p>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>What starts a review</h3>
+      <ul>
+        <li>A test is recorded</li>
+        <li>A task is completed or skipped</li>
+        <li>The status changes</li>
+        <li>Later: a sensor event, such as temperature drift, water level, a pH probe, or a light or filter fault</li>
+        <li>Optional: a daily review at a set time</li>
+        <li>Optional: a camera photo check</li>
+      </ul>
+    </div>
+    <div class="box">
+      <h3>What you get back</h3>
+      <ul>
+        <li><b>Always:</b> the rules' result, for example "Watch: pH 6.8 is under 7.0". It runs in Home Assistant and costs nothing.</li>
+        <li><b>If turned on:</b> a short comment from Claude on trends and context, using the tank's contents and products. It uses the API.</li>
+        <li>Plan changes from a review go to Waiting for you as proposals.</li>
+        <li>Events close together, such as several readings in one sitting, give one review. A daily cap limits Claude's comments, so a busy sensor can't run up API usage.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>What it stores</h2>
+    <p>Every change keeps the old version, with who changed it (you, Assist, Claude Code or a rule), when, and which conversation it came from.</p>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Record</th><th>Holds</th><th>Owner's example repo</th></tr></thead>
+      <tbody>
+        <tr><td><b>Tank</b></td><td>Model, volume, temperature, substrate, equipment, tap water values</td><td><code>tank.md</code></td></tr>
+        <tr><td><b>Contents item</b></td><td>Type (plant, rock, wood, substrate, decoration, later fish), name, count, where, date added, date removed, your notes for Claude</td><td><code>tank.md</code> (substrate, hardscape, plants)</td></tr>
+        <tr><td><b>Product</b></td><td>Name, what it's for, label dose, your dose, your notes for Claude, links</td><td><code>products.md</code></td></tr>
+        <tr><td><b>Decision</b></td><td>Number, title, date, status (proposed, accepted, replaced), decision, why, open points, replaced by</td><td><code>decisions/*.md</code></td></tr>
+        <tr><td><b>Log entry</b></td><td>Date, doses, tests (ppm, pH, KH, GH), source (tank or tap), why, notes</td><td><code>log/YYYY-MM.yaml</code></td></tr>
+        <tr><td><b>Task</b></td><td>Date, slot (09:00 or 12:00), text, state (open, complete, skip), note</td><td>Calendar + to-do list</td></tr>
+        <tr><td><b>Note</b></td><td>Open question or assumption, topic, how to resolve it</td><td>Open questions in <code>tank.md</code></td></tr>
+        <tr><td><b>Light</b></td><td>Entity, model, control type, schedule, one-day changes, change history with reasons, on/off log</td><td><code>tank.md</code> + a YAML package</td></tr>
+        <tr><td><b>Proposal</b></td><td>What changes, why, evidence, who proposed it, conversation, state</td><td>New</td></tr>
+        <tr><td><b>Conversation</b></td><td>Where (Assist, Claude Code, Claude Desktop), start and end, title, summary, messages, tool calls, changes made</td><td>New</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="prose">
+    <h2>Tools Claude gets</h2>
+    <p>MCP first: every panel view and every panel action has a tool, added in the same change. Registered as a Home Assistant LLM API, which Assist and the MCP server both use (<a href="https://developers.home-assistant.io/docs/core/llm/">HA LLM API docs</a>, <a href="https://www.home-assistant.io/integrations/mcp_server/">MCP Server</a>).</p>
+  </div>
+  <div class="two">
+    <div class="box">
+      <h3>Read</h3>
+      <p class="mono">get_status · get_plan · get_log · get_tank · list_contents · get_light · get_photo · list_products · list_decisions · get_decision · list_notes · list_proposals · get_history · get_settings · list_conversations · get_conversation · search_conversations</p>
+    </div>
+    <div class="box">
+      <h3>Record, change and confirm</h3>
+      <p class="mono">record_dose · record_test · add_content · complete_task · skip_task · add_note · save_conversation</p>
+      <p class="mono">propose_change · apply_change · reject_change · undo_change</p>
+      <p class="cap">Changes: <code>set_tank · set_water · add_product · update_product · update_content · remove_content · set_light · set_reminders · set_claude · import_log · import_decisions</code>. Each one makes a proposal and returns a confirm code; nothing changes until <code>apply_change</code> runs with that code after you say yes. In setup mode they fill one draft. Codes are single use, expire after 15 minutes and belong to the conversation that made them. No tool switches the light.</p>
+    </div>
+  </div>
+</section>
+
+<section class="prose">
+  <h2>Security</h2>
+  <ul>
+    <li>Home Assistant stays reachable only through Tailscale. Nothing is exposed to the internet.</li>
+    <li>Every channel signs in with your Home Assistant account. The MCP server uses Home Assistant's own login.</li>
+    <li>The Anthropic API key lives in Home Assistant's config entry for the Anthropic integration. It is not in the repo or 1Password at run time.</li>
+    <li>With the camera on, each photo check sends one photo of the tank to Anthropic. Photos are stored in Home Assistant only.</li>
+    <li>Claude can't switch any device. The light schedule changes only after your yes.</li>
+    <li>Conversations are stored in Home Assistant only, and go into its backups. Treat a backup as private.</li>
+    <li>A confirm code keeps Claude from saving a change it never showed you. It can't stop an assistant that ignores its instructions, so every change can be undone and shows which conversation made it.</li>
+    <li>Only outbound HTTPS to the Anthropic API leaves your server. What goes out is the conversation plus the tank records Claude reads.</li>
+    
+    <li>Data is backed up with Home Assistant's backups. An export to the repo can be added later.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2>Cost</h2>
+  <ul>
+    <li><b>Claude Code and Claude Desktop:</b> your Pro plan. No extra cost.</li>
+    <li><b>Camera (optional):</b> about £18 once, plus API usage for each photo check.</li>
+    <li><b>Assist chat and Claude's review comments:</b> Anthropic API usage, paid per use. A comment after each test plus a few chats a week should be small, but I haven't worked out a figure. Check Anthropic's pricing before choosing a model.</li>
+    <li><b>Rules, reminders and the panel:</b> run in Home Assistant. No cost.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2>Quality</h2>
+  <ul>
+    <li><b>Target: Platinum</b>, the highest tier of Home Assistant's <a href="https://developers.home-assistant.io/docs/core/integration-quality-scale/">integration quality scale</a>. Platinum needs every Bronze, Silver and Gold rule, plus strict typing, a fully async library and an injected web session. Home Assistant grades only core integrations, so for a custom integration this is our own target. Every rule is tracked in <code>quality_scale.yaml</code>. <code>hassfest</code> doesn't grade custom integrations, so a test checks that each rule is done or exempt with a reason, and the review checks the rest.</li>
+    <li><b>Typed:</b> mypy in strict mode over all code and tests. No <code>Any</code> and no ignores without a written reason.</li>
+    <li><b>Tested:</b> 100% line and branch coverage with <code>pytest-homeassistant-custom-component</code>, against a real Home Assistant core in the tests, with no mocks of our own code.</li>
+    <li><b>Property-based tests</b> with <a href="https://hegel.dev">Hegel</a> (<a href="https://pypi.org/project/hegeltest/"><code>hegeltest</code></a>, from the Hypothesis authors) for the parts with rules: dose maths, status rules, history and undo, confirm codes, schedules and conversation recording. Hegel for Python is in beta and may change, so its version is pinned.</li>
+    <li><b>Reviewed twice:</b> every PR is reviewed by Claude and by Codex. Each finding is checked, fixed test first, and both reviews run again until they find nothing.</li>
+    <li><b>CI on every PR:</b> Ruff, mypy, pytest with coverage, <code>hassfest</code> and the HACS action.</li>
+  </ul>
+</section>
+
+<section class="prose">
+  <h2>Build order</h2>
+  <ol>
+    <li><b>Check the risky parts first:</b> Claude Code signing in to HA's MCP server over the Tailscale URL, a custom LLM API showing up as MCP tools, the MCP session id reaching the tools (for grouping conversations), and a custom conversation agent calling the Anthropic API.</li>
+    <li><b>Records, tools and conversations:</b> storage, history and undo, with each record's tools and conversation recording from the start.</li>
+    <li><b>Calendar and reminders:</b> <code>calendar.tankkeeper</code>, the to-do list and Complete/Skip.</li>
+    <li><b>Light (optional):</b> lights, schedule, one-day changes and the on/off log. Dose reminders follow the light-on time.</li>
+    <li><b>Rules and status:</b> the status sensor and status notifications.</li>
+    <li><b>Proposals and setup by conversation:</b> confirm codes, Accept/Reject/Discuss, and setup mode over MCP.</li>
+    <li><b>Panel (fallback):</b> the dashboard, the tabs and the step-by-step setup dialogs.</li>
+    <li><b>Assist agent and Claude's review comments:</b> Tankkeeper's conversation agent, setup in Assist, and review comments.</li>
+    <li><b>Camera (optional):</b> photo checks, photo alerts, the Camera and Seen by the camera cards, and <code>get_photo</code>. First check that Home Assistant's AI task can send a camera photo to the Anthropic integration.</li>
+  </ol>
+  <p>Each step comes with tests and goes through its own PR.</p>
+</section>
+
+<section class="prose">
+  <h2>Open questions</h2>
+  <ul>
+    <li>Do the suggested Watch thresholds suit you (ammonia or nitrite above 2 ppm, ammonia flat for 5 days)?</li>
+    <li>Should there be a read-only export of the records (for example to a Git repo), or is an HA backup enough?</li>
+    <li>Saying yes in the conversation replaces the earlier rule that only the panel can accept a proposal. Is that right, or should some changes (decisions, deleting) still need the panel?</li>
+    <li>Claude Code conversations: is a summary from <code>save_conversation</code> enough, or should the full transcript be sent with a Claude Code hook?</li>
+    <li>How long should conversations be kept by default?</li>
+    <li>After a test, should an On course result send a message, or only Watch and Act, with On course shown in the panel?</li>
+    <li>The models are picked in setup. Is Haiku for chat and Sonnet for reviews a good default? Check Anthropic's pricing first.</li>
+    <li>Without a light set up, should Claude still suggest a schedule for you to run yourself, or say nothing about light?</li>
+    
+    <li>Camera: how often should it check, and how long should photos be kept?</li>
+    <li>Should the plan extend itself automatically (as a proposal) when it has 14 days left?</li>
+    <li>Is one tank enough, or should the design allow more than one tank from the start?</li>
+  </ul>
+</section>
+
+<hr>
+<footer>Draft for review. The example records are from the owner's own tank. Claude can make mistakes, so check the important parts before building. Sources: <a href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp">Anthropic: custom connectors</a> · <a href="https://code.claude.com/docs/en/legal-and-compliance">Anthropic: legal and compliance</a> · <a href="https://developers.home-assistant.io/docs/core/llm/">Home Assistant: LLM API</a> · <a href="https://www.home-assistant.io/integrations/mcp_server/">Home Assistant: MCP Server</a>.</footer>
+</div>
