@@ -11,7 +11,7 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
 
 ## What it provides
 
-- **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [MCP Server](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them when its conversation agent can control Home Assistant.
+- **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them when its conversation agent can control Home Assistant.
 - **Two sensors** on a Tankkeeper service device:
   - **Proposals waiting:** how many proposals wait for a yes or a no.
   - **Last water test:** when the tank water was last tested. Tap water tests don't count.
@@ -66,7 +66,7 @@ Every tool name starts with `tankkeeper__`.
 
 1. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**.
 2. Fill in the form (see the parameters below). You can set up one tank.
-3. To use the tools from Claude Code or Claude Desktop, set up the **MCP Server** integration and, in its options, choose **Tankkeeper** (only the tank's tools) or **Assist** (Tankkeeper's tools are added to Assist's). Choose one of the two, not both.
+3. To use the tools from Claude Code or Claude Desktop, set up the **Model Context Protocol** integration and, in its options, choose **Tankkeeper** (only the tank's tools) or **Assist** (Tankkeeper's tools are added to Assist's). Choose one of the two, not both.
 
 ### Parameters
 
@@ -128,7 +128,7 @@ actions:
 
 ## Troubleshooting
 
-- **Claude can't see the tools.** Check that Tankkeeper is loaded, and that the MCP Server integration or Assist uses the Tankkeeper or Assist API. Reload the MCP Server integration after you change its options.
+- **Claude can't see the tools.** Check that Tankkeeper is loaded, and that the Model Context Protocol integration or Assist uses the Tankkeeper or Assist API. Reload the Model Context Protocol integration after you change its options, then start a new Claude session: Claude loads the tools only when a session starts.
 - **"The confirm code does not match" or "expired".** Ask Claude to make the proposal again.
 - **"The proposal belongs to another conversation".** Apply it from the conversation that made it, or reject it and make it again.
 - **Something else.** Download the diagnostics from the integration's menu and [open an issue](https://github.com/markwallsgrove/tankkeeper/issues). Diagnostics leave out your notes and messages.

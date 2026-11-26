@@ -46,7 +46,7 @@ This is the plan. Put the tank's records in Home Assistant, give Claude tools to
 |---|---|---|
 | 📱 Phone | Home Assistant app: Assist chat, the Tankkeeper panel, reminder notifications with Complete and Skip | Anthropic API key |
 | 🌐 Browser | Home Assistant in any browser: the same Assist chat and panel | Anthropic API key |
-| 💻 Claude Code | Home Assistant's MCP server | Your Claude plan |
+| 💻 Claude Code | Home Assistant's Model Context Protocol integration | Your Claude plan |
 | 🖥️ Claude Desktop | The same MCP server, as a local MCP server: a small proxy on your computer reaches Home Assistant over your network or Tailscale. Not a custom connector: those connect from Anthropic's cloud and can't reach a private Home Assistant | Your Claude plan |
 
 ## ✨ What you'll be able to do
@@ -90,7 +90,7 @@ Saved. Tankkeeper is live.
 
 ## 📋 Requirements
 
-- Home Assistant with the [MCP Server](https://www.home-assistant.io/integrations/mcp_server/) integration, for Claude Code and Claude Desktop.
+- Home Assistant with the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration, for Claude Code and Claude Desktop.
 - An [Anthropic API key](https://console.anthropic.com/), for Assist chat and review comments. Optional: the panel, reminders and rules work without it.
 - [Tailscale](https://tailscale.com/), or another private way to reach Home Assistant, if you want to talk to it away from home.
 
@@ -104,7 +104,28 @@ Tankkeeper installs through [HACS][hacs] as a custom repository:
 2. Download **Tankkeeper**, then restart Home Assistant.
 3. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**.
 
-See [the integration docs](docs/integration.md) for the MCP Server set-up and the tools.
+See [the integration docs](docs/integration.md) for the tools.
+
+## 🚀 Getting started
+
+After you add Tankkeeper, its device page shows a few sensors and nothing else. That is expected: you use Tankkeeper by talking to Claude, not on that page. Do these steps once.
+
+1. **Let Claude reach the tools.** Go to **Settings > Devices & services**, add the **Model Context Protocol** integration (not *Model Context Protocol Client*), and in its options choose **Tankkeeper** or **Assist**. Choose one, not both: with both, Claude gets each tool twice.
+2. **Connect Claude.** Add Home Assistant's MCP server to Claude Code or Claude Desktop. The [Model Context Protocol docs](https://www.home-assistant.io/integrations/mcp_server/) show how.
+3. **Start a new Claude session.** Claude loads the tools when a session starts, so a session that was open before you installed Tankkeeper can't see them.
+4. **Check it works.** Ask Claude *"show me my tank"*. It should answer with the name and volumes you gave.
+5. **Tell Claude about your tank.** Say *"set up my tank"* and tell Claude about your tap water, your products and doses, and your plants, wood and rocks. Already keep notes? Point Claude Code at them.
+
+Then use it as you go:
+
+- *"Tested the water: ammonia 0, nitrite 0, nitrate 10, pH 7.2."*
+- *"Dosed 5 ml of fertiliser."*
+- *"Some leaves fell off the plant at the back."*
+- *"What did we decide about water changes?"*
+
+Claude saves doses, tests, notes and new contents straight away. A change to the tank, the water values or the products, like a new product or a new dose, it reads back first and saves only when you say yes. Any change made through Claude can be undone.
+
+If Claude still can't see the tools, see [troubleshooting](docs/integration.md#troubleshooting).
 
 ## 🗺️ Roadmap
 
