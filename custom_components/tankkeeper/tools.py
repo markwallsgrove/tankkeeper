@@ -72,8 +72,10 @@ CONTENT_TYPES = ["plant", "rock", "wood", "substrate", "decoration", "fish", "ot
 TEST_VALUES = ["ammonia", "nitrite", "nitrate", "ph", "kh", "gh", "phosphate", "temperature_c"]
 TANK_FIELDS: dict[p.Marker, object] = {
     p.Optional("name"): NON_EMPTY,
-    p.Optional("volume_litres", description="The tank's full volume"): POSITIVE,
-    p.Optional("dosing_volume_litres", description="The water volume doses are worked out for"): POSITIVE,
+    p.Optional("volume_litres", description="The volume of the tank, in litres"): POSITIVE,
+    p.Optional(
+        "dosing_volume_litres", description="The volume of water in the tank, in litres. Doses are worked out for it"
+    ): POSITIVE,
     p.Optional("temperature_c", description="The target temperature"): NOT_NEGATIVE,
     p.Optional("notes", description="Notes for Claude, in the owner's words"): str,
 }
@@ -341,7 +343,7 @@ async def set_tank(service: TankkeeperService, data: Record, actor: Actor) -> Js
     current = service.records(Collection.TANK).get(TANK_ID, {})
     tank = merge_record(current, _fields(data, TANK_FIELDS))
     if not dosing_within_tank(tank):
-        raise InvalidInputError("The dosing volume can't be larger than the tank volume")
+        raise InvalidInputError("The volume of water can't be larger than the volume of the tank")
     return await _propose(
         service,
         data,
@@ -614,7 +616,7 @@ SPECS: tuple[Spec, ...] = (
         annotations=READ,
         handler=list_products,
         description="Every product with its label dose, the owner's dose, notes, and the label dose worked out for "
-        "the tank's dosing volume.",
+        "the volume of water in the tank.",
         schema={},
     ),
     Spec(

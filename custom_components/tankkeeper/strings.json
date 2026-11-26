@@ -3,16 +3,16 @@
     "step": {
       "user": {
         "title": "Your tank",
-        "description": "Name the tank and give its volumes. Claude can fill in the rest in a conversation.",
+        "description": "Name the tank and give its two volumes. Claude can fill in the rest in a conversation.",
         "data": {
           "tank_name": "Name",
-          "volume_litres": "Tank volume",
-          "dosing_volume_litres": "Volume for dosing"
+          "volume_litres": "What's the volume of your tank?",
+          "dosing_volume_litres": "What's the volume of water in your tank?"
         },
         "data_description": {
           "tank_name": "What you call the tank, for example Office tank.",
-          "volume_litres": "The tank's full volume, from the box or the maker.",
-          "dosing_volume_litres": "The water volume doses are worked out for. Usually a little less than the tank volume, once substrate and decor are in."
+          "volume_litres": "In litres, as given on the box or by the maker.",
+          "dosing_volume_litres": "In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank."
         }
       },
       "reconfigure": {
@@ -31,7 +31,7 @@
       }
     },
     "error": {
-      "dosing_above_volume": "The volume for dosing can't be larger than the tank volume."
+      "dosing_above_volume": "The volume of water can't be larger than the volume of the tank."
     },
     "abort": {
       "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",

@@ -26,7 +26,7 @@ Every tool name starts with `tankkeeper__`.
 | Tool | What it does |
 |---|---|
 | `get_tank` | The tank's details, the water values, how many records there are and how many proposals wait. |
-| `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the tank's dosing volume. |
+| `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the volume of water in the tank. |
 | `list_contents` | Plants, rocks, wood, substrate, decorations and fish in the tank. |
 | `get_log` | Doses and water tests, newest first, optionally between two dates. |
 | `list_notes` | Open questions and assumptions about the tank. |
@@ -73,8 +73,8 @@ Every tool name starts with `tankkeeper__`.
 | Parameter | Description |
 |---|---|
 | Name | What you call the tank, for example Office tank. |
-| Tank volume | The tank's full volume in litres, from the box or the maker. |
-| Volume for dosing | The water volume in litres that doses are worked out for. Usually a little less than the tank volume, once substrate and decor are in. It can't be larger than the tank volume. |
+| What's the volume of your tank? | In litres, as given on the box or by the maker. |
+| What's the volume of water in your tank? | In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank. |
 
 To change them later, open the integration and choose **Reconfigure**. The old values stay in the history.
 
@@ -97,9 +97,9 @@ Recorded the dose at 08:00 and nitrate at 10 mg/l.
 Change something, with a yes first:
 
 ```text
-› the dosing volume is 54 litres now, not 60
+› there are 54 litres of water in the tank now, not 60
   tankkeeper__set_tank
-I'll change the dosing volume from 60 to 54 litres. Shall I save it?
+I'll change the volume of water from 60 to 54 litres. Shall I save it?
 › yes
   tankkeeper__apply_change
 Saved.
