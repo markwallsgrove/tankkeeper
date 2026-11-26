@@ -17,7 +17,7 @@ Tankkeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> Tankkeeper is early. Records, tools, conversations, history and undo work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar and reminders work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
@@ -108,7 +108,7 @@ See [the integration docs](docs/integration.md) for the tools.
 
 ## 🚀 Getting started
 
-After you add Tankkeeper, its device page shows a few sensors and nothing else. That is expected: you use Tankkeeper by talking to Claude, not on that page. Do these steps once.
+After you add Tankkeeper, its device page shows a few sensors, a calendar and a to-do list. That is expected: you use Tankkeeper by talking to Claude, not on that page. Do these steps once.
 
 1. **Let Claude reach the tools.** Go to **Settings > Devices & services**, add the **Model Context Protocol** integration (not *Model Context Protocol Client*), and in its options choose **Tankkeeper** or **Assist**. Choose one, not both: with both, Claude gets each tool twice.
 2. **Connect Claude.** Add Home Assistant's MCP server to Claude Code or Claude Desktop. The [Model Context Protocol docs](https://www.home-assistant.io/integrations/mcp_server/) show how.
@@ -122,8 +122,11 @@ Then use it as you go:
 - *"Dosed 5 ml of fertiliser."*
 - *"Some leaves fell off the plant at the back."*
 - *"What did we decide about water changes?"*
+- *"Done the water change."* or *"Skip today's dose."*
 
 Claude saves doses, tests, notes and new contents straight away. A change to the tank, the water values or the products, like a new product or a new dose, it reads back first and saves only when you say yes. Any change made through Claude can be undone.
+
+To get reminders with Complete and Skip on your phone, open the integration, choose **Configure** and pick your devices.
 
 If Claude still can't see the tools, see [troubleshooting](docs/integration.md#troubleshooting).
 

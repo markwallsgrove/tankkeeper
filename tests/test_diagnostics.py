@@ -21,7 +21,16 @@ async def test_diagnostics_count_records_without_their_text(
 
     assert diagnostics == {
         "entry": {"version": 1, "volume_litres": 60},
-        "records": {"tank": 1, "water": 0, "products": 0, "contents": 0, "log": 0, "notes": 1},
+        "records": {
+            "tank": 1,
+            "water": 0,
+            "products": 0,
+            "contents": 0,
+            "log": 0,
+            "notes": 1,
+            "tasks": 0,
+            "settings": 0,
+        },
         "history_entries": 1,
         "proposals": {"pending": 1, "applied": 0, "rejected": 0},
         "conversations": 1,

@@ -1,6 +1,6 @@
 # Tankkeeper integration
 
-Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo.
+Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo, the plan calendar and reminders.
 
 ## Use cases
 
@@ -8,13 +8,17 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
 - Set up the tank, tap water, products and contents in a conversation, saying yes to each change.
 - Ask Claude a question and get an answer from your own records, doses and past conversations.
 - See what changed, who changed it and why, and undo a change.
+- Keep the plan in a calendar, tick off today's tasks, and get a reminder with Complete and Skip on your phone.
 
 ## What it provides
 
 - **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them when its conversation agent can control Home Assistant.
-- **Two sensors** on a Tankkeeper service device:
-  - **Proposals waiting:** how many proposals wait for a yes or a no.
-  - **Last water test:** when the tank water was last tested. Tap water tests don't count.
+- **Entities** on a Tankkeeper service device:
+  - **Proposals waiting** (sensor): how many proposals wait for a yes or a no.
+  - **Last water test** (sensor): when the tank water was last tested. Tap water tests don't count.
+  - **Plan** (`calendar.tankkeeper`): every task as a 30-minute event at its slot time. A done task's title starts with `Complete:` or `Skip:`, and its note is the description. You can add, change and delete tasks in the calendar. Tasks can't repeat.
+  - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
+- **Reminders** to the notify services you choose (see [options](#options)).
 - **Diagnostics:** record counts and settings, without notes, messages or reasons.
 
 ### Tools
@@ -49,6 +53,24 @@ Every tool name starts with `tankkeeper__`.
 | `undo_change` | Propose putting back what an earlier change did. |
 | `apply_change` | Apply a proposal with its confirm code. |
 | `reject_change` | Close a proposal you said no to. Only the person who made it can. |
+| `get_plan` | Tasks between two dates, 7 days from today by default, with their times and the reminder settings. |
+| `complete_task` | Record a task as complete, with an optional note. |
+| `skip_task` | Record a task as skipped, with an optional note. |
+| `add_task` | Propose a new task for a day, in the task or dose slot. |
+| `update_task` | Propose changes to a task: text, day, slot, state or note. |
+| `remove_task` | Propose taking a task out of the plan. |
+| `set_reminders` | Propose the notify services and the task, dose and resend times. |
+| `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
+
+### Tasks and slots
+
+A task is due in one of two slots: **task** (09:00 by default) or **dose** (12:00 by default). A task whose text is a product name and an amount in ml, such as `Bio-CO2 1.5 ml`, is a dose. In the calendar, a task you add at the dose or task time takes that slot.
+
+### Reminders
+
+At the task time, each open task for today in the task slot is sent, and open tasks from the last 7 days are sent as *not confirmed*. At the dose time, each open dose is sent. At the resend time (21:00 by default), each of today's tasks still open is sent again as *not complete yet*.
+
+A reminder has **Complete** and **Skip** actions (Home Assistant Companion app). Press one on any device and Tankkeeper records it and clears the reminder on every device. A task done another way (Claude, the calendar, the to-do list) clears its reminders too.
 
 ## Installation
 
@@ -78,11 +100,20 @@ Every tool name starts with `tankkeeper__`.
 
 To change them later, open the integration and choose **Reconfigure**. The old values stay in the history.
 
-There are no options.
+### Options
+
+Open the integration and choose **Configure** to set the reminders. Claude can propose the same with `set_reminders`.
+
+| Option | Description |
+|---|---|
+| Devices | The notify services that get reminders, such as `mobile_app_phone`. None means no reminders. |
+| Task time | When tasks are sent. |
+| Dose time | When doses are sent. |
+| Resend time | When tasks still open are sent again. |
 
 ## How data updates
 
-Nothing is polled. The records live in Home Assistant storage (`.storage/tankkeeper.<entry id>`) and are part of Home Assistant backups. Each change is saved straight away, and the sensors update when it is saved.
+Nothing is polled. The records live in Home Assistant storage (`.storage/tankkeeper.<entry id>`) and are part of Home Assistant backups. Each change is saved straight away, and the entities update when it is saved. The to-do list moves to the next day at midnight.
 
 ## Examples
 
@@ -123,7 +154,10 @@ actions:
 - One tank per Home Assistant.
 - Proposals can only be accepted in the conversation that made them. A proposal whose code has expired, or that had too many wrong codes, stays waiting until it is rejected. Make it again to get a new code.
 - Over MCP, a conversation is known only by the `conversation_id` Claude passes. Proposals made without one can be applied from any conversation by the same Home Assistant user.
-- No calendar, reminders, light schedule, rules, status, panel or camera yet. See the [design](design.html).
+- No light schedule, rules, status, panel or camera yet. See the [design](design.html). The dose slot is a fixed time until the light schedule comes.
+- Calendar and to-do edits are recorded as made in the panel, without the Home Assistant user.
+- Reminders sent before a restart are not cleared on other devices after it.
+- Tasks can't repeat. Add one for each day, or ask Claude to.
 - Conversations and the records Claude reads are sent to Anthropic when you talk to Claude.
 
 ## Troubleshooting
@@ -131,6 +165,9 @@ actions:
 - **Claude can't see the tools.** Check that Tankkeeper is loaded, and that the Model Context Protocol integration or Assist uses the Tankkeeper or Assist API. Reload the Model Context Protocol integration after you change its options, then start a new Claude session: Claude loads the tools only when a session starts.
 - **"The confirm code does not match" or "expired".** Ask Claude to make the proposal again.
 - **"The proposal belongs to another conversation".** Apply it from the conversation that made it, or reject it and make it again.
+- **No reminders.** Check that the device is chosen in the options, and that its `notify.mobile_app_…` action works from **Developer tools > Actions**.
+- **Complete or Skip did nothing.** The task may be done already, or removed; the reminder is cleared anyway. Check the task in `calendar.tankkeeper`.
+- **"Tankkeeper tasks can't repeat".** Add a single event for each day.
 - **Something else.** Download the diagnostics from the integration's menu and [open an issue](https://github.com/markwallsgrove/tankkeeper/issues). Diagnostics leave out your notes and messages.
 
 ## Removal

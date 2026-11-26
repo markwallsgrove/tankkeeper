@@ -40,3 +40,9 @@ async def loaded_entry(hass: HomeAssistant, config_entry: MockConfigEntry) -> Mo
 def call(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> Caller:
     """Call tools over MCP as user u1."""
     return Caller(hass)
+
+
+@pytest.fixture(autouse=True)
+async def london(hass: HomeAssistant) -> None:
+    """Run in the owner's time zone, which is UTC in November."""
+    await hass.config.async_set_time_zone("Europe/London")

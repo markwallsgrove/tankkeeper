@@ -20,6 +20,7 @@ from .domain import (
     HistoryEntry,
     Message,
     NotFoundError,
+    NothingToChangeError,
     Proposal,
     ProposalState,
     Record,
@@ -35,6 +36,7 @@ from .domain import (
     search_conversations,
     undo_changes,
 )
+from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
 
 type Target = tuple[Collection, str, Record | None]
 
@@ -65,6 +67,7 @@ class TankkeeperService:
         code_factory: Callable[[], str] = new_code,
     ) -> None:
         """Set up storage for the config entry."""
+        self.hass = hass
         self._store: Store[Record] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self._clock = clock
         self._code_factory = code_factory
@@ -99,6 +102,43 @@ class TankkeeperService:
     def records(self, collection: Collection) -> dict[str, Record]:
         """Every record in a collection, by id."""
         return dict(self.state.records[collection])
+
+    def now(self) -> datetime:
+        """The time now, from the service's clock."""
+        return self._clock()
+
+    def tank_name(self) -> str:
+        """The tank's name."""
+        return str(self.state.records[Collection.TANK].get(TANK_ID, {}).get("name") or DOMAIN.capitalize())
+
+    def tasks(self) -> list[Task]:
+        """Every task in the plan."""
+        return [Task.from_record(task_id, record) for task_id, record in self.state.records[Collection.TASKS].items()]
+
+    def task(self, task_id: str) -> Task:
+        """One task, or NotFoundError."""
+        return Task.from_record(task_id, self.state.require(Collection.TASKS, task_id))
+
+    def reminders(self) -> Reminders:
+        """The reminder settings."""
+        return Reminders.from_json(self.state.get(Collection.SETTINGS, REMINDERS_ID))
+
+    def product_names(self) -> list[str]:
+        """The name of every product, to tell doses from other tasks."""
+        return [
+            str(product["name"]) for product in self.state.records[Collection.PRODUCTS].values() if product.get("name")
+        ]
+
+    def reminder_targets(self, reminders: Reminders) -> list[Target]:
+        """The change that stores new reminder settings, or NothingToChangeError when they are the same."""
+        if reminders == self.reminders():
+            raise NothingToChangeError("The reminders already look like that")
+        return [(Collection.SETTINGS, REMINDERS_ID, reminders.to_json())]
+
+    async def async_finish_task(self, task_id: str, status: TaskStatus, note: str | None, actor: Actor) -> HistoryEntry:
+        """Complete or skip a task straight away."""
+        finished = self.task(task_id).finish(status, note, self._clock())
+        return await self.async_set([(Collection.TASKS, task_id, finished.to_record())], actor, summary_for(finished))
 
     def pending_proposals(self) -> list[Proposal]:
         """Proposals waiting for a yes, oldest first."""

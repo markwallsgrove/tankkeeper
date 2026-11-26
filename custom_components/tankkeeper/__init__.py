@@ -1,4 +1,4 @@
-"""Tankkeeper: the fish tank's records, reminders and status, MCP first."""
+"""Tankkeeper: the fish tank's records, plan, reminders and status, MCP first."""
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -7,9 +7,10 @@ from homeassistant.helpers.llm import async_register_api
 
 from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME
 from .llm import TankkeeperAPI
+from .reminders import ReminderSender
 from .service import TankkeeperService
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
 
 type TankkeeperConfigEntry = ConfigEntry[TankkeeperService]
 
@@ -29,6 +30,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.runtime_data = service
     entry.async_on_unload(async_register_api(hass, TankkeeperAPI(hass, service)))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(ReminderSender(hass, service).start())
     return True
 
 
