@@ -1,0 +1,53 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Your tank",
+        "description": "Name the tank and give its volumes. Claude can fill in the rest in a conversation.",
+        "data": {
+          "tank_name": "Name",
+          "volume_litres": "Tank volume",
+          "dosing_volume_litres": "Volume for dosing"
+        },
+        "data_description": {
+          "tank_name": "What you call the tank, for example Office tank.",
+          "volume_litres": "The tank's full volume, from the box or the maker.",
+          "dosing_volume_litres": "The water volume doses are worked out for. Usually a little less than the tank volume, once substrate and decor are in."
+        }
+      },
+      "reconfigure": {
+        "title": "Change your tank",
+        "description": "The old values stay in the history.",
+        "data": {
+          "tank_name": "[%key:component::tankkeeper::config::step::user::data::tank_name%]",
+          "volume_litres": "[%key:component::tankkeeper::config::step::user::data::volume_litres%]",
+          "dosing_volume_litres": "[%key:component::tankkeeper::config::step::user::data::dosing_volume_litres%]"
+        },
+        "data_description": {
+          "tank_name": "[%key:component::tankkeeper::config::step::user::data_description::tank_name%]",
+          "volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::volume_litres%]",
+          "dosing_volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::dosing_volume_litres%]"
+        }
+      }
+    },
+    "error": {
+      "dosing_above_volume": "The volume for dosing can't be larger than the tank volume."
+    },
+    "abort": {
+      "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",
+      "reconfigure_successful": "[%key:common::config_flow::abort::reconfigure_successful%]",
+      "not_loaded": "Tankkeeper isn't running. Fix the problem shown on the integration, then try again.",
+      "nothing_changed": "Nothing was changed."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "proposals_waiting": {
+        "name": "Proposals waiting"
+      },
+      "last_test": {
+        "name": "Last water test"
+      }
+    }
+  }
+}

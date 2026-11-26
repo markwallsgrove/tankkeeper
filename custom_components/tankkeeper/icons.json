@@ -1,0 +1,15 @@
+{
+  "entity": {
+    "sensor": {
+      "proposals_waiting": {
+        "default": "mdi:clipboard-check-outline",
+        "state": {
+          "0": "mdi:clipboard-outline"
+        }
+      },
+      "last_test": {
+        "default": "mdi:test-tube"
+      }
+    }
+  }
+}

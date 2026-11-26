@@ -1,0 +1,44 @@
+[project]
+name = "tankkeeper"
+version = "0.1.0"
+requires-python = ">=3.14"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = "--cov=custom_components.tankkeeper --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+source = ["custom_components/tankkeeper"]
+
+[tool.mypy]
+strict = true
+python_version = "3.14"
+mypy_path = "."
+explicit_package_bases = true
+
+# The test harness ships typed code without a py.typed marker; check it as it is.
+[[tool.mypy.overrides]]
+module = ["pytest_homeassistant_custom_component.*"]
+follow_untyped_imports = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "D", "RUF", "PL", "PT", "ASYNC", "C4", "PIE", "RET"]
+ignore = ["D203", "D213", "D401", "PLR0913", "PLR2004"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components.tankkeeper"]
+force-sort-within-sections = true
+combine-as-imports = true
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
