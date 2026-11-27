@@ -22,7 +22,7 @@ TankKeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
   - **Status** (sensor): On course, Watch or Act, the worst result of the [rules](#rules-and-status). The `rules` attribute lists each rule's result with its reason and what to do.
   - **Proposals waiting** (sensor): how many proposals wait for a yes or a no.
   - **Last water test** (sensor): when the tank water was last tested. Tap water tests don't count.
-  - **Plan** (`calendar.tankkeeper`): every task as a 30-minute event at its slot time. A done task's title starts with `Complete:` or `Skip:`, and its note is the description. You can add, change and delete tasks in the calendar. Tasks can't repeat.
+  - **Plan** (`calendar.tankkeeper`): every task as a 30-minute event at its slot time. A done task's title starts with `Complete:` or `Skip:`, and its note is the description. You can add, change and delete tasks in the calendar. A change or delete there applies to one occurrence of a [repeating task](#repeating-tasks); the calendar can't add a repeating task.
   - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
   - **Next light change** (sensor, only with a light): when a light next turns on or off, and which lights.
   - **Assist agent** (`conversation.<tank>_assist_agent`): chats about the tank through the agent you choose, and records the conversation. See [Assist agent](#assist-agent).
@@ -72,12 +72,12 @@ Every tool name starts with `tankkeeper__`.
 | `get_batch` | Read back the open batch in this conversation, with its changes, steps and code. A setup draft also lists what is still empty. |
 | `apply_change` | Apply a proposal with its confirm code. |
 | `reject_change` | Close a proposal you said no to. Only the person who made it can. |
-| `get_plan` | Tasks between two dates, 7 days from today by default, with their times and the reminder settings. |
+| `get_plan` | Tasks between two dates, 7 days from today by default, with their times, the repeating tasks and the reminder settings. Each occurrence of a repeating task in the range is a task. |
 | `complete_task` | Record a task as complete, with an optional note. |
 | `skip_task` | Record a task as skipped, with an optional note. |
-| `add_task` | Propose a new task for a day, in the task or dose slot. |
-| `update_task` | Propose changes to a task: text, day, slot, state or note. |
-| `remove_task` | Propose taking a task out of the plan. |
+| `add_task` | Propose a new task for a day, in the task or dose slot. With `every_days` or `weekdays` it repeats from that day, until an optional `until` day. |
+| `update_task` | Propose changes to a task: text, day, slot, state or note. For a repeating task, `scope` is `this` (one occurrence, the default) or `future` (it and every later one); only `future` changes the repeat. |
+| `remove_task` | Propose taking a task out of the plan. For a repeating task, `scope` is `this` or `future`. |
 | `set_reminders` | Propose the notify services for reminders and for status alerts, and the task, dose and resend times. |
 | `get_status` | The status, each rule's result, the stage and the rule limits. |
 | `set_rules` | Propose new rule limits. |
@@ -106,7 +106,7 @@ The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phon
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle chart, a chart for each water parameter, the next 7 days, the tank, the tap water, the lights, the rule limits and the changes waiting for you.
 - **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Your chats are listed beside the chat, newest first, or under **Chats** on a narrow screen; one click opens a chat with its messages, photos and charts. You can search what was said and the titles, rename a chat and delete one after a confirm in the panel. Opening a search result goes to the message that matched and marks it. Chats from Assist or Claude open read only. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Replies can show photos and charts; see [Photos and charts in chat](#photos-and-charts-in-chat). Without a conversation agent in the Claude settings, the tab says where to choose one.
-- **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
+- **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests. The Plan adds repeating tasks, marks their occurrences with a repeat icon, and changes or removes one occurrence or it and every later one.
 - **Contents** and **Products**: list them, with their history.
 - **Claude**: the Claude settings, with their history, and the latest reviews.
 - **Camera** (on the Overview): the latest photo and what Claude saw, **Check now** and **Photos**. **Seen by the camera** lists the issues waiting for you, with **Not a problem**, **Discuss**, **Reject** and **Accept**.
@@ -166,7 +166,7 @@ A batch is one proposal that holds many changes of any kind. After `start_batch`
 - The code lasts 15 minutes after the last change, and at most 2 hours after the batch started. After that a change returns `batch_expired`. Call `start_batch` again: the new batch keeps the changes and has a new code.
 - Entities, the calendar and the read tools show the stored records, not the batch, until it is applied.
 
-Setup is a batch for an empty tank: no products, contents, tasks, lights or decisions. Claude asks one thing at a time in Assist, or reads the notes you point to in Claude Code. Then it reads the whole draft back, and one yes applies it.
+Setup is a batch for an empty tank: no products, contents, tasks, repeating tasks, lights or decisions. Claude asks one thing at a time in Assist, or reads the notes you point to in Claude Code. Then it reads the whole draft back, and one yes applies it.
 
 ### Reviews
 
@@ -204,6 +204,18 @@ A proposal or batch still waiting 10 minutes after its last change is sent once 
 ### Tasks and slots
 
 A task is due in one of two slots: **task** (09:00 by default) or **dose** (12:00 by default). A task whose text is a product name and an amount in ml, such as `Bio-CO2 1.5 ml`, is a dose. In the calendar, a task you add at the dose or task time takes that slot.
+
+### Repeating tasks
+
+A repeating task repeats every N days (1 to 365) or weekly on chosen weekdays, from its first day, with an optional end day.
+
+- Its occurrences are made when they are read, over the range asked for: 7 days back to 14 days ahead by default. The calendar, the Today list, reminders and the rules see them as tasks.
+- An occurrence's id is the repeating task's id, `@` and its day, such as `01JD8…@2026-11-28`.
+- Complete, skip, move or change one occurrence (`scope` `this`), and only that day changes. Removing it leaves that day out.
+- Change it and every later one (`scope` `future`) to change the text, slot, note, first day or repeat. From the first occurrence this changes the repeating task; from a later one it ends the old one the day before and starts a new one. Done occurrences stay as they were.
+- Remove it and every later one to end the repeating task the day before, or to remove it from its first occurrence.
+- A plain task can't be made to repeat: remove it and add a repeating task.
+- The **Plan runs out** rule counts each repeating task up to its last occurrence. One with no end day never runs out.
 
 ### Light
 

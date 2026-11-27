@@ -17,17 +17,17 @@ from .domain import Collection, Source, TankkeeperError
 from .entity import change_failed, tank_device
 from .plan import (
     Reminders,
+    Scope,
     Slot,
     Task,
+    TaskEdit,
     add_summary,
-    change_summary,
     parse_summary,
-    remove_summary,
     slot_for,
     sort_tasks,
     summary_for,
 )
-from .service import Actor
+from .service import Actor, Target
 
 PARALLEL_UPDATES = 0
 TRANSLATION_KEY = "plan"
@@ -72,8 +72,9 @@ class TankkeeperCalendar(CalendarEntity):
     async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
-        """Events that overlap the range."""
-        return [event for event in self._events() if event.start < end_date and event.end > start_date]
+        """Events that overlap the range, with the repeating tasks' occurrences in it."""
+        events = self._events(_day(start_date) - timedelta(days=1), _day(end_date))
+        return [event for event in events if event.start < end_date and event.end > start_date]
 
     async def async_create_event(self, **kwargs: Any) -> None:
         """Add a task. A Complete: or Skip: title adds it done."""
@@ -87,7 +88,7 @@ class TankkeeperCalendar(CalendarEntity):
             text=text,
             note=str(kwargs.get("description") or ""),
         ).edit(status=status, now=self._service.now())
-        await self._async_set(task.id, task, add_summary(task))
+        await self._async_set([(Collection.TASKS, task.id, task.to_record())], add_summary(task))
 
     async def async_update_event(
         self,
@@ -96,45 +97,42 @@ class TankkeeperCalendar(CalendarEntity):
         recurrence_id: str | None = None,
         recurrence_range: str | None = None,
     ) -> None:
-        """Change a task. The title prefix sets its state."""
+        """Change a task, or one occurrence of a repeating task. The title prefix sets its state."""
         _refuse_repeats(event)
-        try:
-            current = self._service.task(uid)
-        except TankkeeperError as err:
-            raise change_failed(err) from err
         status, text = parse_summary(str(event["summary"]))
         start: date = event["dtstart"]
-        task = current.edit(
-            now=self._service.now(),
-            text=text,
-            day=_day(start),
-            slot=_slot(start, self._service.reminders_on(_day(start)), current.slot),
-            status=status,
-            note=str(event.get("description") or ""),
-        )
-        await self._async_set(uid, task, change_summary(task))
+        try:
+            current = self._service.task(uid)
+            edit = TaskEdit(
+                text=text,
+                day=_day(start),
+                slot=_slot(start, self._service.reminders_on(_day(start)), current.slot),
+                status=status,
+                note=str(event.get("description") or ""),
+            )
+            targets, summary = self._service.task_change(uid, edit, Scope.THIS)
+        except TankkeeperError as err:
+            raise change_failed(err) from err
+        await self._async_set(targets, summary)
 
     async def async_delete_event(
         self, uid: str, recurrence_id: str | None = None, recurrence_range: str | None = None
     ) -> None:
-        """Take a task out of the plan."""
+        """Take a task, or one occurrence of a repeating task, out of the plan."""
         try:
-            task = self._service.task(uid)
+            targets, summary = self._service.task_removal(uid, Scope.THIS)
         except TankkeeperError as err:
             raise change_failed(err) from err
-        await self._async_set(uid, None, remove_summary(task))
+        await self._async_set(targets, summary)
 
-    async def _async_set(self, task_id: str, task: Task | None, summary: str) -> None:
-        try:
-            await self._service.async_set(
-                [(Collection.TASKS, task_id, None if task is None else task.to_record())], PANEL, summary
-            )
-        except TankkeeperError as err:
-            raise change_failed(err) from err
+    async def _async_set(self, targets: list[Target], summary: str) -> None:
+        """Set the records. Each caller checks the change first, so it always changes something."""
+        await self._service.async_set(targets, PANEL, summary)
 
-    def _events(self) -> list[CalendarEvent]:
+    def _events(self, start: date | None = None, end: date | None = None) -> list[CalendarEvent]:
         reminders_on = self._service.reminders_on
-        return [_event(task, reminders_on(task.day)) for task in sort_tasks(self._service.tasks(), reminders_on)]
+        tasks = sort_tasks(self._service.tasks(start, end), reminders_on)
+        return [_event(task, reminders_on(task.day)) for task in tasks]
 
 
 def _event(task: Task, reminders: Reminders) -> CalendarEvent:

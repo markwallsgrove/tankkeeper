@@ -7,7 +7,7 @@ import pytest
 
 from custom_components.tankkeeper.domain import InvalidInputError, Record
 from custom_components.tankkeeper.lights import AutomationProblem, LightEvent, LightEventKind, LightStatus
-from custom_components.tankkeeper.plan import Slot, Task, TaskStatus
+from custom_components.tankkeeper.plan import Series, Slot, Task, TaskStatus
 from custom_components.tankkeeper.rules import (
     Facts,
     Level,
@@ -39,8 +39,9 @@ def _facts(
     stage: Stage | None = None,
     tasks: tuple[Task, ...] = (),
     lights: tuple[LightCheck, ...] = (),
+    series: tuple[Series, ...] = (),
 ) -> Facts:
-    return Facts(now=NOW, tz=LONDON, stage=stage, readings=readings, tasks=tasks, lights=lights)
+    return Facts(now=NOW, tz=LONDON, stage=stage, readings=readings, tasks=tasks, lights=lights, series=series)
 
 
 def _result(status: Status, rule: Rule) -> RuleResult | None:
@@ -345,6 +346,46 @@ def test_plan_runs_out_reason() -> None:
     assert result is not None
     assert result.reason == "The plan ends on 2 Dec, in 6 days."
     assert result.action == "Add tasks to the plan beyond 2 Dec."
+
+
+def _series(until: date | None) -> Series:
+    return Series(id="s1", start=TODAY - timedelta(days=3), slot=Slot.TASK, text="Clean", every_days=7, until=until)
+
+
+def test_a_repeating_task_with_no_end_never_lets_the_plan_run_out() -> None:
+    tasks = (_task(TODAY + timedelta(days=1), "Clean"),)
+
+    result = _result(evaluate(_facts(tasks=tasks, series=(_series(None),)), RuleSettings()), Rule.PLAN_ENDS)
+
+    assert result is not None
+    assert result.level is Level.ON_COURSE
+    assert result.reason == "A repeating task has no end day, so the plan never runs out."
+
+
+@pytest.mark.parametrize(
+    ("until", "tasks", "level", "reason"),
+    [
+        (TODAY + timedelta(days=30), (), Level.ON_COURSE, "The plan ends on 21 Dec, in 25 days."),
+        (TODAY + timedelta(days=6), (), Level.ACT, "The plan ends on 30 Nov, in 4 days."),
+        (TODAY + timedelta(days=6), (_task(TODAY + timedelta(days=20), "Trim"),), Level.ON_COURSE, None),
+        (TODAY - timedelta(days=2), (), Level.ACT, None),
+    ],
+)
+def test_a_repeating_task_with_an_end_counts_its_last_occurrence(
+    until: date, tasks: tuple[Task, ...], level: Level | None, reason: str | None
+) -> None:
+    result = _result(evaluate(_facts(tasks=tasks, series=(_series(until),)), RuleSettings()), Rule.PLAN_ENDS)
+
+    assert (None if result is None else result.level) is level
+    if reason is not None:
+        assert result is not None
+        assert result.reason == reason
+
+
+def test_a_repeating_task_with_no_occurrences_left_is_not_a_plan() -> None:
+    empty = Series(id="s1", start=TODAY, slot=Slot.TASK, text="Clean", every_days=7, until=TODAY, skipped=(TODAY,))
+
+    assert _result(evaluate(_facts(series=(empty,)), RuleSettings()), Rule.PLAN_ENDS) is None
 
 
 def _light(status: LightStatus) -> LightCheck:

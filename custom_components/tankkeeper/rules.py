@@ -8,7 +8,7 @@ import re
 
 from .domain import InvalidInputError, Record
 from .lights import LightStatus
-from .plan import Slot, Task, TaskStatus
+from .plan import Series, Slot, Task, TaskStatus
 
 RULES_ID = "rules"
 DOSE_DAYS = 7
@@ -137,6 +137,7 @@ class Facts:
     readings: tuple[Reading, ...]
     tasks: tuple[Task, ...]
     lights: tuple[LightCheck, ...]
+    series: tuple[Series, ...] = ()
 
     @property
     def today(self) -> date:
@@ -370,9 +371,14 @@ def _dose_skipped(facts: Facts, settings: RuleSettings) -> Iterable[RuleResult]:
 
 
 def _plan_ends(facts: Facts, settings: RuleSettings) -> Iterable[RuleResult]:
-    if not facts.tasks:
+    if any(series.endless for series in facts.series):
+        yield _on_course(Rule.PLAN_ENDS, "A repeating task has no end day, so the plan never runs out.")
         return
-    last = max(task.day for task in facts.tasks)
+    days_planned = [task.day for task in facts.tasks]
+    days_planned.extend(day for series in facts.series if (day := series.last_day()) is not None)
+    if not days_planned:
+        return
+    last = max(days_planned)
     days = (last - facts.today).days
     level = _level(days <= settings.plan_act_days, days <= settings.plan_watch_days)
     reason = f"The plan ends on {_day(last)}, in {_count(days, 'day')}."
