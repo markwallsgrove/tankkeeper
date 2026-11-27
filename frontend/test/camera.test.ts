@@ -20,7 +20,11 @@ const issue: PhotoCheck = {
   summary: "Green film on the front glass.",
   issue: true,
   suggestion: "Cut the photoperiod to 6 hours.",
-  seen: { water: "Clear", algae: "Green spot algae on the glass" },
+  seen: {
+    water: "Clear",
+    algae: "Green spot algae on the glass",
+    fish: "One tetra has white spots",
+  },
   note: null,
   state: "open",
   proposal_ids: ["p1"],
@@ -115,6 +119,7 @@ describe("tk-camera", () => {
     expect(text(latest)).toContain("Suggested: Cut the photoperiod to 6 hours.");
     expect(text(latest)).toContain("Water Clear");
     expect(text(latest)).toContain("Algae Green spot algae on the glass");
+    expect(text(latest)).toContain("Fish One tetra has white spots");
   });
 
   it("says when there is no photo yet", async () => {

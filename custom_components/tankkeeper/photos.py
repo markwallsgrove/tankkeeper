@@ -24,7 +24,7 @@ MAX_CHECKS = 200
 MAX_DISMISSED = 50
 MAX_TEXT = 500
 PHOTO_PATH = f"/api/{DOMAIN}/photos"
-AREAS = ("water", "algae", "plants", "level")
+AREAS = ("water", "algae", "plants", "fish", "level")
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 _PHOTO_ID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 

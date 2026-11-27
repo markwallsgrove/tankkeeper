@@ -38,6 +38,7 @@ const SEEN: [string, string][] = [
   ["water", "Water"],
   ["algae", "Algae"],
   ["plants", "Plants"],
+  ["fish", "Fish"],
   ["level", "Water level"],
 ];
 

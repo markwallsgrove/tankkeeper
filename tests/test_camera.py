@@ -3,6 +3,7 @@
 import asyncio
 from datetime import time
 import io
+import json
 from pathlib import Path
 
 from freezegun.api import FrozenDateTimeFactory
@@ -41,6 +42,7 @@ SEEN: JsonObjectType = {
     "water": "Clear with a light yellow tint",
     "algae": "Green spots on the front glass",
     "plants": "Healthy",
+    "fish": "Active, no spots",
     "level": "Full",
 }
 CLEAR: JsonObjectType = {"summary": "The tank looks clear.", "issue": False}
@@ -210,7 +212,13 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
         "summary": SEEN["summary"],
         "issue": True,
         "suggestion": SEEN["suggestion"],
-        "seen": {"water": SEEN["water"], "algae": SEEN["algae"], "plants": SEEN["plants"], "level": SEEN["level"]},
+        "seen": {
+            "water": SEEN["water"],
+            "algae": SEEN["algae"],
+            "plants": SEEN["plants"],
+            "fish": SEEN["fish"],
+            "level": SEEN["level"],
+        },
         "note": None,
         "state": "open",
         "proposal_ids": [],
@@ -222,7 +230,9 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
     assert camera_on.ai_task.images == [("image/jpeg", PHOTO)]
     [task] = camera_on.ai_task.tasks
     assert task.structure is PHOTO_SCHEMA
-    assert task.instructions.startswith("Look at this photo of the fish tank Nano, taken because the owner asked.")
+    assert task.instructions.startswith(
+        "Look at this photo of the fish tank Nano, taken on 2026-11-26 because the owner asked."
+    )
     assert CHECK_PROMPT in camera_on.ai_task.prompts[0]
     assert _photo_alerts(tablet) == []
     camera = await call.ok("get_camera")
@@ -231,17 +241,32 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
 
 
 async def test_claude_is_told_the_tank_and_what_it_cant_see(call: Caller, camera_on: FakeClaude) -> None:
-    await call.ok("add_content", type="plant", name="Hygrophila", count=3)
+    await call.ok("add_content", type="plant", name="Hygrophila", count=3, where="Back left")
     await call.ok("record_test", values={"ammonia": 3})
 
     await call.ok("check_now")
 
     instructions = camera_on.ai_task.tasks[0].instructions
-    assert "In the tank: Hygrophila." in instructions
+    assert "taken on 2026-11-26 because the owner asked" in instructions
+    contents = json.loads(instructions.partition("<contents>\n")[2].partition("\n</contents>")[0])
+    assert contents == [
+        {"type": "plant", "name": "Hygrophila", "count": 3, "where": "Back left", "added": "2026-11-26"}
+    ]
     assert "The rules say: Watch: Ammonia 3 ppm" in instructions
     assert "A camera can't see ammonia, nitrite, nitrate or pH" in instructions
     assert "Never invent a dose." in instructions
     assert "not a problem" not in instructions
+
+
+async def test_claude_looks_for_plant_and_fish_health(call: Caller, camera_on: FakeClaude) -> None:
+    await call.ok("check_now")
+
+    instructions = camera_on.ai_task.tasks[0].instructions
+    for sign in ("melting or slimy leaves", "white spots", "frayed or clamped fins", "gasping at the surface"):
+        assert sign in instructions
+    assert "Link a problem to a cause only when the records support it" in instructions
+    assert "<contents>\n[]\n</contents>" in instructions
+    assert "fish" in {str(key) for key in PHOTO_SCHEMA.schema}
 
 
 async def test_a_dismissed_finding_is_not_raised_again(call: Caller, camera_on: FakeClaude) -> None:
@@ -476,7 +501,7 @@ async def test_an_answer_is_trimmed_and_only_known_areas_are_kept(call: Caller, 
     long = "x" * (MAX_TEXT + 10)
     camera_on.ai_task.answers.append(
         Answer(
-            data={"summary": f" {long} ", "issue": "yes", "suggestion": " ", "water": long, "algae": 3, "fish": "ok"}
+            data={"summary": f" {long} ", "issue": "yes", "suggestion": " ", "water": long, "algae": 3, "snails": "ok"}
         )
     )
 
