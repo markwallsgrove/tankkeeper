@@ -331,9 +331,9 @@ describe("tk-overview", () => {
 
   it("shows why it cannot load", async () => {
     const element = await view(
-      connection().fail("get_status", "not_loaded", "Tankkeeper is not loaded"),
+      connection().fail("get_status", "not_loaded", "TankKeeper is not loaded"),
     );
-    expect(find(element, ".error").textContent).toBe("Tankkeeper is not loaded");
+    expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
   it("shows an error when an action fails", async () => {

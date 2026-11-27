@@ -1,4 +1,4 @@
-"""The Tankkeeper panel in the sidebar, against a real Home Assistant."""
+"""The TankKeeper panel in the sidebar, against a real Home Assistant."""
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util.json import JsonObjectType
@@ -24,7 +24,7 @@ async def test_the_panel_is_in_the_sidebar_for_admins(
     panel = dict_of((await _panels(hass, hass_ws_client))[PANEL_PATH])
 
     assert PANEL_PATH == "tankkeeper"
-    assert (panel["title"], panel["icon"], panel["require_admin"]) == ("Tankkeeper", "mdi:fishbowl", True)
+    assert (panel["title"], panel["icon"], panel["require_admin"]) == ("TankKeeper", "mdi:fishbowl", True)
     custom = dict_of(dict_of(panel["config"])["_panel_custom"])
     assert custom["name"] == "tankkeeper-panel"
     assert str(custom["module_url"]).startswith(f"/tankkeeper_static/{BUNDLE}?v=")

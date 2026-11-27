@@ -22,7 +22,7 @@ const TABS: [string, string][] = [
   ["claude", "Claude"],
 ];
 
-/** The Tankkeeper sidebar panel. Home Assistant sets hass and narrow. */
+/** The TankKeeper sidebar panel. Home Assistant sets hass and narrow. */
 export class TankkeeperPanel extends LitElement {
   static override properties = {
     hass: { attribute: false },
@@ -132,7 +132,7 @@ export class TankkeeperPanel extends LitElement {
     return html`
       <header>
         ${this.narrow ? html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>` : nothing}
-        <h1>Tankkeeper</h1>
+        <h1>TankKeeper</h1>
       </header>
       <nav role="tablist">
         ${TABS.map(

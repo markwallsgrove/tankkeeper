@@ -227,7 +227,7 @@ async def test_import_plan_keeps_complete_and_skip(hass: HomeAssistant, call: Ca
     await _fish_tank(hass, tmp_path)
 
     proposal = await call.ok(
-        "import_plan", calendar=FISH_TANK, dose_products=["Bio-CO2", "Plants Green"], reason="Move to Tankkeeper"
+        "import_plan", calendar=FISH_TANK, dose_products=["Bio-CO2", "Plants Green"], reason="Move to TankKeeper"
     )
 
     assert proposal["summary"] == "Import 5 tasks from calendar.fish_tank"

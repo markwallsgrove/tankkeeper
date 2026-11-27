@@ -24,7 +24,7 @@ export function badArgs(command: string, args: unknown): string | undefined {
 
 export type Handler = (message: Message) => unknown;
 
-/** Home Assistant's websocket connection, answering Tankkeeper commands from handlers. */
+/** Home Assistant's websocket connection, answering TankKeeper commands from handlers. */
 export class FakeConnection implements HassConnection {
   readonly sent: Message[] = [];
   private readonly handlers = new Map<string, Handler>();

@@ -1,4 +1,4 @@
-/** The shapes the panel reads from Home Assistant and from Tankkeeper's commands. */
+/** The shapes the panel reads from Home Assistant and from TankKeeper's commands. */
 
 export interface Message {
   type: string;

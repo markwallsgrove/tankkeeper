@@ -1,4 +1,4 @@
-"""The Tankkeeper panel in the sidebar, for admins only."""
+"""The TankKeeper panel in the sidebar, for admins only."""
 
 from collections.abc import Callable
 from hashlib import sha256
@@ -30,7 +30,7 @@ async def async_register(hass: HomeAssistant) -> Callable[[], None]:
         hass,
         frontend_url_path=PANEL_PATH,
         webcomponent_name="tankkeeper-panel",
-        sidebar_title="Tankkeeper",
+        sidebar_title="TankKeeper",
         sidebar_icon="mdi:fishbowl",
         module_url=f"{STATIC_URL}/{BUNDLE}?v={version}",
         require_admin=True,

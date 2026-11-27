@@ -382,7 +382,7 @@ async def test_a_photo_in_a_type_tankkeeper_cannot_keep_is_noted(
     check = await call.ok("check_now")
 
     assert (check["asked"], check["content_type"]) == (False, None)
-    assert check["note"] == "The camera gave an image/bmp photo, which Tankkeeper can't keep."
+    assert check["note"] == "The camera gave an image/bmp photo, which TankKeeper can't keep."
     assert _photo_files(hass) == []
 
 

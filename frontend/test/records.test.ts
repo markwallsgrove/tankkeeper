@@ -83,9 +83,9 @@ describe("tk-records for products", () => {
   it("shows when the records cannot be loaded", async () => {
     const element = await records(
       "products",
-      connection().fail("list_products", "not_loaded", "Tankkeeper is not loaded"),
+      connection().fail("list_products", "not_loaded", "TankKeeper is not loaded"),
     );
-    expect(find(element, ".error").textContent).toBe("Tankkeeper is not loaded");
+    expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
   it("adds, edits and removes a product with the panel's actions", async () => {

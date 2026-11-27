@@ -110,7 +110,7 @@
       },
       "light": {
         "title": "Light",
-        "description": "Step 5 of 7. Tankkeeper can switch the tank light on a schedule.",
+        "description": "Step 5 of 7. TankKeeper can switch the tank light on a schedule.",
         "menu_options": {
           "add_light": "Add the light",
           "reminders": "Skip: no light"
@@ -118,7 +118,7 @@
       },
       "add_light": {
         "title": "Add the light",
-        "description": "Tankkeeper switches the light on its schedule.",
+        "description": "TankKeeper switches the light on its schedule.",
         "data": {
           "entity_id": "Entity",
           "model": "Model",
@@ -142,7 +142,7 @@
       },
       "reminders": {
         "title": "Reminders",
-        "description": "Step 6 of 7. Tankkeeper can send reminders for tasks and doses, with Complete and Skip buttons.",
+        "description": "Step 6 of 7. TankKeeper can send reminders for tasks and doses, with Complete and Skip buttons.",
         "menu_options": {
           "set_reminders": "Set the reminders",
           "claude": "Skip"
@@ -176,7 +176,7 @@
       },
       "set_claude": {
         "title": "Claude",
-        "description": "The Anthropic API key stays in the Anthropic integration. Tankkeeper never asks for it.",
+        "description": "The Anthropic API key stays in the Anthropic integration. TankKeeper never asks for it.",
         "data": {
           "agent": "Conversation agent",
           "ai_task": "AI task entity",
@@ -186,7 +186,7 @@
           "daily_cap": "Comments a day"
         },
         "data_description": {
-          "agent": "The agent Tankkeeper's Assist agent passes chat to, for example Claude from the Anthropic integration. Its chat model is set in that integration.",
+          "agent": "The agent TankKeeper's Assist agent passes chat to, for example Claude from the Anthropic integration. Its chat model is set in that integration.",
           "ai_task": "Writes Claude's comments on reviews. Its model is set in the Anthropic integration; a cheaper one than the chat model is an option.",
           "review_on": "The events that start a review. Events close together give one review.",
           "comments": "Each comment is one call to the AI task entity, which uses Anthropic credits.",
@@ -205,7 +205,7 @@
     "abort": {
       "single_instance_allowed": "Already configured. Only a single configuration possible.",
       "reconfigure_successful": "Re-configuration was successful",
-      "not_loaded": "Tankkeeper isn't running. Fix the problem shown on the integration, then try again.",
+      "not_loaded": "TankKeeper isn't running. Fix the problem shown on the integration, then try again.",
       "nothing_changed": "Nothing was changed."
     }
   },
@@ -319,7 +319,7 @@
       },
       "claude": {
         "title": "Claude",
-        "description": "The agent Tankkeeper chats through, and when Claude reviews the tank. The old settings stay in the history.",
+        "description": "The agent TankKeeper chats through, and when Claude reviews the tank. The old settings stay in the history.",
         "data": {
           "agent": "Conversation agent",
           "ai_task": "AI task entity",
@@ -329,7 +329,7 @@
           "daily_cap": "Comments a day"
         },
         "data_description": {
-          "agent": "The agent Tankkeeper's Assist agent passes chat to, for example Claude from the Anthropic integration. Its chat model is set in that integration.",
+          "agent": "The agent TankKeeper's Assist agent passes chat to, for example Claude from the Anthropic integration. Its chat model is set in that integration.",
           "ai_task": "Writes Claude's comments on reviews. Its model is set in the Anthropic integration; a cheaper one than the chat model is an option.",
           "review_on": "The events that start a review. Events close together give one review.",
           "comments": "Each comment is one call to the AI task entity, which uses Anthropic credits.",
@@ -357,7 +357,7 @@
       },
       "add_light": {
         "title": "Add a light",
-        "description": "Tankkeeper switches the light on its schedule. The change applies straight away.",
+        "description": "TankKeeper switches the light on its schedule. The change applies straight away.",
         "data": {
           "entity_id": "Entity",
           "model": "Model",
@@ -423,14 +423,14 @@
       },
       "remove_light": {
         "title": "Remove a light",
-        "description": "Tankkeeper stops switching the light. Its history stays.",
+        "description": "TankKeeper stops switching the light. Its history stays.",
         "data": {
           "light_id": "Light"
         }
       }
     },
     "abort": {
-      "not_loaded": "Tankkeeper isn't running. Fix the problem shown on the integration, then try again.",
+      "not_loaded": "TankKeeper isn't running. Fix the problem shown on the integration, then try again.",
       "nothing_changed": "Nothing was changed."
     },
     "error": {
@@ -445,13 +445,13 @@
       "message": "{message}"
     },
     "repeat_not_supported": {
-      "message": "Tankkeeper tasks can't repeat. Add one task for each day"
+      "message": "TankKeeper tasks can't repeat. Add one task for each day"
     }
   },
   "issues": {
     "light_problem": {
       "title": "The light {model} is not following its schedule",
-      "description": "Tankkeeper could not switch {entity_id}, or the entity is unavailable. Check that the light or plug has power and is connected to Home Assistant. The problem clears by itself when the light is back in the state its schedule wants."
+      "description": "TankKeeper could not switch {entity_id}, or the entity is unavailable. Check that the light or plug has power and is connected to Home Assistant. The problem clears by itself when the light is back in the state its schedule wants."
     }
   },
   "selector": {

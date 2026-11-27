@@ -1,4 +1,4 @@
-"""What every Tankkeeper entity shares: the tank's device, translated errors and entities that need a light."""
+"""What every TankKeeper entity shares: the tank's device, translated errors and entities that need a light."""
 
 from collections.abc import Callable, Sequence
 

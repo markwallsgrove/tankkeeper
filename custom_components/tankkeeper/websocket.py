@@ -1,4 +1,4 @@
-"""Websocket commands for the Tankkeeper panel: every tool it can use, plus the actions only the owner takes.
+"""Websocket commands for the TankKeeper panel: every tool it can use, plus the actions only the owner takes.
 
 A tool command takes the tool's arguments under args, as some are called id or type.
 """
@@ -26,7 +26,7 @@ type Command = Callable[[TankkeeperService, Message, Actor], Awaitable[JsonObjec
 CONVERSATION_ONLY = frozenset(
     {"save_conversation", "start_batch", "start_setup", "get_batch", "apply_change", "reject_change"}
 )
-PANEL_REASON = "Changed in the Tankkeeper panel"
+PANEL_REASON = "Changed in the TankKeeper panel"
 PANEL_ONLY = ("accept_proposal", "reject_proposal", "delete_conversation", "accept_finding", "reject_finding")
 PANEL_COMMANDS = frozenset(
     f"{DOMAIN}/{name}" for name in (*(spec.name for spec in SPECS if spec.name not in CONVERSATION_ONLY), *PANEL_ONLY)
@@ -78,7 +78,7 @@ def _command(run: Command) -> WebSocketCommandHandler:
     async def handle(hass: HomeAssistant, connection: ActiveConnection, msg: Message) -> None:
         entries = hass.config_entries.async_loaded_entries(DOMAIN)
         if not entries:
-            connection.send_error(msg["id"], NOT_LOADED, "Tankkeeper is not loaded")
+            connection.send_error(msg["id"], NOT_LOADED, "TankKeeper is not loaded")
             return
         service: TankkeeperService = entries[0].runtime_data
         actor = Actor(source=Source.PANEL, user_id=connection.user.id, conversation_id=None)

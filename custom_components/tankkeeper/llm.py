@@ -1,4 +1,4 @@
-"""Tankkeeper's tools, as their own LLM API and as part of Assist."""
+"""TankKeeper's tools, as their own LLM API and as part of Assist."""
 
 from typing import override
 
@@ -13,7 +13,7 @@ from .tools import PROMPT, build_tools
 
 
 class TankkeeperAPI(API):
-    """Only Tankkeeper's tools, for an assistant that looks after the tank."""
+    """Only TankKeeper's tools, for an assistant that looks after the tank."""
 
     def __init__(self, hass: HomeAssistant, service: TankkeeperService) -> None:
         """Bind the API to one tank."""
@@ -28,7 +28,7 @@ class TankkeeperAPI(API):
 
 @callback
 def async_get_tools(hass: HomeAssistant, llm_context: LLMContext, api_id: str) -> LLMTools | None:
-    """Add Tankkeeper's tools to Assist while a tank is loaded."""
+    """Add TankKeeper's tools to Assist while a tank is loaded."""
     if api_id != LLM_API_ASSIST:
         return None
     for entry in hass.config_entries.async_entries(DOMAIN):

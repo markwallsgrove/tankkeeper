@@ -123,7 +123,7 @@ async def test_the_media_source_resolves_nothing_else(hass: HomeAssistant, check
 async def test_the_media_source_lists_the_photos(hass: HomeAssistant, check_id: str) -> None:
     browsed = await media_source.async_browse_media(hass, "media-source://tankkeeper")
 
-    assert browsed.title == "Tankkeeper photos"
+    assert browsed.title == "TankKeeper photos"
     assert [(child.media_content_id, child.title, child.media_content_type) for child in browsed.children or []] == [
         (f"media-source://tankkeeper/{check_id}", "26 Nov 2026 08:00", "image/jpeg")
     ]

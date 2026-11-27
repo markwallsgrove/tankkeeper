@@ -212,7 +212,7 @@ var X=globalThis,Q=X.ShadowRoot&&(X.ShadyCSS===void 0||X.ShadyCSS.nativeShadow)&
               </button>
             </li>`)}
       </ul>
-    `}};customElements.define("tk-history",Pe);var Qt=[{name:"agent",label:"Conversation agent Tankkeeper chats through",type:"text"},{name:"ai_task",label:"AI task entity for review comments",type:"text"},{name:"review_on",label:"Review after, one per line: test, task, status",type:"list"},{name:"comments",label:"Claude comments on reviews",type:"checkbox"},{name:"daily_time",label:"Daily review at",type:"time"},{name:"daily_cap",label:"Claude comments a day, at most",type:"number",step:"1",required:!0}],es=20,ts={test:"Test",task:"Task",status:"Status change",daily:"Daily"};function ss(s){let e=s.triggers.map(r=>ts[r]??r).join(", "),t=s.proposal_ids.length;return n`<li class="review">
+    `}};customElements.define("tk-history",Pe);var Qt=[{name:"agent",label:"Conversation agent TankKeeper chats through",type:"text"},{name:"ai_task",label:"AI task entity for review comments",type:"text"},{name:"review_on",label:"Review after, one per line: test, task, status",type:"list"},{name:"comments",label:"Claude comments on reviews",type:"checkbox"},{name:"daily_time",label:"Daily review at",type:"time"},{name:"daily_cap",label:"Claude comments a day, at most",type:"number",step:"1",required:!0}],es=20,ts={test:"Test",task:"Task",status:"Status change",daily:"Daily"};function ss(s){let e=s.triggers.map(r=>ts[r]??r).join(", "),t=s.proposal_ids.length;return n`<li class="review">
     <div class="muted">${b(s.time)} · ${e}</div>
     <div>${s.result}</div>
     ${s.comment===null?d:n`<div class="comment">Claude: ${s.comment}</div>`}
@@ -905,7 +905,7 @@ var X=globalThis,Q=X.ShadowRoot&&(X.ShadyCSS===void 0||X.ShadyCSS.nativeShadow)&
   `}willUpdate(t){t.has("hass")&&this.hass!==void 0&&this.connection!==this.hass.connection&&(this.connection=this.hass.connection,this.api=new ce(this.hass.connection,this.hass.config?.time_zone))}view(){switch(this.tab){case"plan":return n`<tk-plan .api=${this.api}></tk-plan>`;case"log":return n`<tk-log .api=${this.api}></tk-log>`;case"decisions":return n`<tk-decisions .api=${this.api}></tk-decisions>`;case"claude":return n`<tk-claude .api=${this.api}></tk-claude>`;case"conversations":return n`<tk-conversations .api=${this.api}></tk-conversations>`;case"contents":case"products":case"notes":return n`${mt(this.tab,n`<tk-records .api=${this.api} .kind=${this.tab}></tk-records>`)}`;default:return n`<tk-overview .api=${this.api}></tk-overview>`}}render(){return n`
       <header>
         ${this.narrow?n`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>`:d}
-        <h1>Tankkeeper</h1>
+        <h1>TankKeeper</h1>
       </header>
       <nav role="tablist">
         ${Ts.map(([t,r])=>n`<button

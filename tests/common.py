@@ -1,4 +1,4 @@
-"""Helpers to call Tankkeeper's tools the way Assist and the MCP server do."""
+"""Helpers to call TankKeeper's tools the way Assist and the MCP server do."""
 
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import Context, HomeAssistant, ServiceCall

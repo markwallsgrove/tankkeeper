@@ -1,6 +1,6 @@
 {
   "domain": "tankkeeper",
-  "name": "Tankkeeper",
+  "name": "TankKeeper",
   "after_dependencies": [
     "ai_task",
     "camera"

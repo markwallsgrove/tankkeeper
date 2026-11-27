@@ -1,4 +1,4 @@
-"""Tankkeeper's tools as their own LLM API, inside Assist, and as the MCP server lists them."""
+"""TankKeeper's tools as their own LLM API, inside Assist, and as the MCP server lists them."""
 
 from homeassistant.components.mcp_server.server import _format_tool
 from homeassistant.core import HomeAssistant
