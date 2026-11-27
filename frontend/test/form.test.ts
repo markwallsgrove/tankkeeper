@@ -12,6 +12,7 @@ const fields: Field[] = [
   { name: "links", label: "Links", type: "list" },
   { name: "added", label: "Added", type: "date" },
   { name: "off", label: "Off", type: "time" },
+  { name: "on", label: "On", type: "checkbox" },
 ];
 
 async function form(values: Values = {}): Promise<{ element: TkForm; saved: Values[] }> {
@@ -122,5 +123,17 @@ describe("tk-form", () => {
 
     expect(find(element, ".error").textContent).toBe("No such note");
     expect((find(element, "button[type=submit]") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("sends a checkbox only when it changed", async () => {
+    const { element, saved } = await form({ name: "Fern", on: true });
+    const box = find(element, "[name=on]") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+    box.checked = false;
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved).toEqual([{}, { on: false }]);
   });
 });

@@ -16,7 +16,16 @@ function connection(): FakeConnection {
     .on("list_contents", { contents: [] })
     .on("list_notes", { notes: [] })
     .on("list_decisions", { decisions: [] })
-    .on("list_conversations", { conversations: [] });
+    .on("list_conversations", { conversations: [] })
+    .on("get_claude", {
+      agent: null,
+      ai_task: null,
+      review_on: [],
+      comments: false,
+      daily_time: null,
+      daily_cap: 5,
+      model_note: "",
+    });
 }
 
 const TABS: [string, string][] = [
@@ -28,6 +37,7 @@ const TABS: [string, string][] = [
   ["decisions", "tk-decisions"],
   ["notes", "tk-records"],
   ["conversations", "tk-conversations"],
+  ["claude", "tk-claude"],
 ];
 
 describe("tankkeeper-panel", () => {

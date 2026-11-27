@@ -13,6 +13,7 @@ from homeassistant.util.ulid import ulid_now
 import probatio as p
 
 from . import decisions as dec
+from .claude import ASSIST_CONVERSATION, EVENT_TRIGGERS, MAX_DAILY_CAP, MODEL_NOTE, ClaudeSettings, triggers
 from .const import DOMAIN
 from .decisions import Decision, DecisionStatus
 from .domain import (
@@ -81,7 +82,8 @@ owner, and call tankkeeper__apply_change with the confirm code only after the ow
 apply a change the owner has not seen.
 - At the start of a conversation call tankkeeper__save_conversation with a title, and pass the \
 conversation_id it returns to every other Tankkeeper tool. Before you finish, call it again with a \
-summary and the key messages.
+summary and the key messages. When you are given a conversation_id, use that one instead: every \
+message is recorded already, so only set the title and summary.
 - Before you answer, search past conversations for what the owner already said.
 - The plan is a list of tasks, each on a day in the task slot or the dose slot. When the owner says \
 a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_task straight away. Adding, \
@@ -249,7 +251,7 @@ class TankkeeperTool(Tool):
         actor = Actor(
             source=Source.MCP if llm_context.platform == MCP_PLATFORM else Source.ASSIST,
             user_id=None if llm_context.context is None else llm_context.context.user_id,
-            conversation_id=_optional_str(data, "conversation_id"),
+            conversation_id=_optional_str(data, "conversation_id") or _assist_conversation(llm_context),
         )
         try:
             if not self._drafts:
@@ -258,6 +260,14 @@ class TankkeeperTool(Tool):
                 return ToolResult(data=await self._handler(self._service, data, actor))
         except TankkeeperError as err:
             return ToolResult(data={"error": err.key, "message": err.message}, error=True)
+
+
+def _assist_conversation(llm_context: LLMContext) -> str | None:
+    """The conversation Tankkeeper's Assist agent records, when the call is part of the request it passed on."""
+    assist = ASSIST_CONVERSATION.get()
+    if assist is None or llm_context.context is None or llm_context.context.id != assist[1]:
+        return None
+    return assist[0]
 
 
 def build_tools(service: TankkeeperService) -> list[Tool]:
@@ -438,8 +448,14 @@ async def add_note(service: TankkeeperService, data: Record, actor: Actor) -> Js
 
 
 async def save_conversation(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Start a conversation, or add a summary and messages to it."""
-    messages = [Message.from_json(cast(Record, item)) for item in cast(list[JsonValue], data["messages"])]
+    """Start a conversation, or add a summary and messages to it.
+
+    Tankkeeper's Assist agent records its conversation itself, so messages for that one are left out.
+    """
+    assist = ASSIST_CONVERSATION.get()
+    recorded = assist is not None and assist[0] == actor.conversation_id
+    items = [] if recorded else cast(list[JsonValue], data["messages"])
+    messages = [Message.from_json(cast(Record, item)) for item in items]
     conversation = await service.async_save_conversation(
         actor.conversation_id,
         actor,
@@ -754,6 +770,33 @@ async def set_rules(service: TankkeeperService, data: Record, actor: Actor) -> J
         tool="set_rules",
         summary="Change the rule limits",
         targets=service.rule_targets(settings),
+    )
+
+
+async def get_claude(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The Claude settings, and where the models are set."""
+    return {**service.claude().to_json(), "model_note": MODEL_NOTE}
+
+
+async def set_claude(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose new Claude settings. An empty agent, AI task entity or daily time clears it."""
+    current = service.claude()
+    daily_time = current.daily_time if "daily_time" not in data else _time_or_none(_cleared(data, "daily_time"))
+    settings = ClaudeSettings(
+        agent=_cleared(data, "agent") if "agent" in data else current.agent,
+        ai_task=_cleared(data, "ai_task") if "ai_task" in data else current.ai_task,
+        review_on=triggers(cast(list[JsonValue], data["review_on"])) if "review_on" in data else current.review_on,
+        comments=bool(data.get("comments", current.comments)),
+        daily_time=daily_time,
+        daily_cap=int(cast(int, data.get("daily_cap", current.daily_cap))),
+    )
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="set_claude",
+        summary="Change the Claude settings",
+        targets=service.claude_targets(settings),
     )
 
 
@@ -1162,6 +1205,15 @@ def _time(data: Record, key: str, default: time) -> time:
         raise InvalidInputError(str(err)) from None
 
 
+def _time_or_none(value: str | None) -> time | None:
+    if value is None:
+        return None
+    try:
+        return parse_time(value)
+    except ValueError as err:
+        raise InvalidInputError(str(err)) from None
+
+
 def _notify_services(service: TankkeeperService, data: Record, key: str, default: tuple[str, ...]) -> tuple[str, ...]:
     if key not in data:
         return default
@@ -1311,6 +1363,11 @@ def _str(data: Record, key: str) -> str:
 
 def _optional_str(data: Record, key: str) -> str | None:
     return cast(str | None, data.get(key))
+
+
+def _cleared(data: Record, key: str) -> str | None:
+    """The string, or None when it is empty or null."""
+    return _optional_str(data, key) or None
 
 
 def _int(data: Record, key: str) -> int:
@@ -1791,6 +1848,41 @@ SPECS: tuple[Spec, ...] = (
         description="Propose new limits for the rules. Each Act limit must be at least as strict as its Watch "
         "limit. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
         schema={**RULE_FIELDS, **REASON, **CONVERSATION},
+    ),
+    Spec(
+        name="get_claude",
+        title="Get the Claude settings",
+        annotations=READ,
+        handler=get_claude,
+        description="The conversation agent Tankkeeper's Assist agent passes chat to, the AI task entity that writes "
+        "review comments, what starts a review, whether reviews get a comment, the daily review time and the daily "
+        "cap on comments.",
+        schema={},
+    ),
+    Spec(
+        name="set_claude",
+        title="Propose Claude settings",
+        annotations=PROPOSE,
+        handler=set_claude,
+        description="Propose new Claude settings. An empty agent, ai_task or daily_time clears it. Review comments "
+        "use paid Anthropic API usage, limited by daily_cap. Returns a confirm code; nothing changes until "
+        "tankkeeper__apply_change.",
+        schema={
+            p.Optional("agent", description="The conversation agent to chat with, such as conversation.claude"): p.Any(
+                None, str
+            ),
+            p.Optional("ai_task", description="The AI task entity that writes review comments"): p.Any(None, str),
+            p.Optional("review_on", description="What starts a review: test, task and status"): [
+                p.In([trigger.value for trigger in EVENT_TRIGGERS])
+            ],
+            p.Optional("comments", description="Whether reviews get a comment from Claude"): p.Boolean(),
+            p.Optional("daily_time", description="A daily review at HH:MM, or empty for none"): p.Any(None, str),
+            p.Optional("daily_cap", description="Most review comments in one day"): p.All(
+                p.Coerce(int), p.Range(min=0, max=MAX_DAILY_CAP)
+            ),
+            **REASON,
+            **CONVERSATION,
+        },
     ),
     Spec(
         name="list_decisions",

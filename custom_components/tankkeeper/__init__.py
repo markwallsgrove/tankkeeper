@@ -20,7 +20,13 @@ from .reminders import ReminderSender
 from .service import Actor, TankkeeperService, Target
 from .status import StatusRunner
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.CALENDAR,
+    Platform.CONVERSATION,
+    Platform.SENSOR,
+    Platform.TODO,
+]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 

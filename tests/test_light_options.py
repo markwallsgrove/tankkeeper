@@ -55,13 +55,21 @@ async def test_the_menu_offers_light_steps_only_with_a_light(
     plugs.add(PLUG)
     menu = await hass.config_entries.options.async_init(loaded_entry.entry_id)
     assert menu["type"] is FlowResultType.MENU
-    assert menu["menu_options"] == ["reminders", "rules", "add_light"]
+    assert menu["menu_options"] == ["reminders", "rules", "claude", "add_light"]
 
     await _add(hass, loaded_entry, PLUG_LIGHT)
     menu = await hass.config_entries.options.async_init(loaded_entry.entry_id)
 
     assert menu["type"] is FlowResultType.MENU
-    assert menu["menu_options"] == ["reminders", "rules", "add_light", "change_light", "one_day", "remove_light"]
+    assert menu["menu_options"] == [
+        "reminders",
+        "rules",
+        "claude",
+        "add_light",
+        "change_light",
+        "one_day",
+        "remove_light",
+    ]
 
 
 async def test_add_light_stores_it_from_the_panel(

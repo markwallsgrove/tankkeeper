@@ -24,7 +24,12 @@ function parsed(field: Field, raw: string): unknown {
 }
 
 function empty(value: unknown): boolean {
-  return value === "" || value === null || (Array.isArray(value) && value.length === 0);
+  return (
+    value === "" ||
+    value === null ||
+    value === false ||
+    (Array.isArray(value) && value.length === 0)
+  );
 }
 
 /**
@@ -35,7 +40,8 @@ export function readForm(fields: Field[], form: HTMLFormElement, values: Values)
   const changed: Values = {};
   for (const field of fields) {
     const input = form.elements.namedItem(field.name) as Input;
-    const value = parsed(field, input.value);
+    const value =
+      field.type === "checkbox" ? (input as HTMLInputElement).checked : parsed(field, input.value);
     const before = values[field.name];
     if (empty(value) && (before === undefined || before === null)) continue;
     if (JSON.stringify(value) !== JSON.stringify(before)) changed[field.name] = value;
@@ -79,7 +85,7 @@ export class TkForm extends LitElement {
       font-size: 0.9em;
       color: var(--secondary-text-color);
     }
-    input,
+    input:not([type="checkbox"]),
     select,
     textarea {
       font: inherit;
@@ -119,6 +125,13 @@ export class TkForm extends LitElement {
             html`<option value=${option} ?selected=${option === value}>${option}</option>`,
         )}
       </select>`;
+    }
+    if (field.type === "checkbox") {
+      return html`<input
+        name=${field.name}
+        type="checkbox"
+        .checked=${this.values[field.name] === true}
+      />`;
     }
     if (field.type === "textarea" || field.type === "list") {
       return html`<textarea

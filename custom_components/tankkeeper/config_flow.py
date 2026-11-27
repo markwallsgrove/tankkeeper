@@ -1,4 +1,7 @@
-"""Set up a tank step by step, change its name and volumes later, and set the reminders and lights in the options."""
+"""Set up a tank step by step and change its name and volumes later.
+
+The options set the reminders, the rules, Claude and the lights.
+"""
 
 from typing import Any, cast
 
@@ -11,7 +14,9 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     ColorRGBSelector,
+    ConversationAgentSelector,
     DateSelector,
     EntitySelector,
     EntitySelectorConfig,
@@ -29,11 +34,13 @@ from homeassistant.helpers.selector import (
 from homeassistant.util.ulid import ulid_now
 import probatio as p
 
+from .claude import AI_TASK_DOMAIN, CLAUDE_ID, EVENT_TRIGGERS, MAX_DAILY_CAP, ClaudeSettings, check_settings, triggers
 from .const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .domain import (
     TANK_ID,
     WATER_ID,
     Collection,
+    InvalidInputError,
     NothingToChangeError,
     Record,
     Source,
@@ -58,6 +65,12 @@ CONF_STAGE = "stage"
 CONF_LIGHT_ID = "light_id"
 CONF_ENTITY_ID = "entity_id"
 CONF_MODEL = "model"
+CONF_AGENT = "agent"
+CONF_AI_TASK = "ai_task"
+CONF_REVIEW_ON = "review_on"
+CONF_COMMENTS = "comments"
+CONF_DAILY_TIME = "daily_time"
+CONF_DAILY_CAP = "daily_cap"
 CONF_CONTROL = "control"
 CONF_ON = "on"
 CONF_OFF = "off"
@@ -297,13 +310,13 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Offer to set the reminders."""
-        return self.async_show_menu(step_id="reminders", menu_options=["set_reminders", "finish"])
+        return self.async_show_menu(step_id="reminders", menu_options=["set_reminders", "claude"])
 
     async def async_step_set_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Which devices get reminders, and when."""
         if user_input is not None:
             self._add(Collection.SETTINGS, REMINDERS_ID, _reminders_from(user_input).to_json())
-            return await self.async_step_finish()
+            return await self.async_step_claude()
         current = Reminders()
         return self.async_show_form(
             step_id="set_reminders",
@@ -311,6 +324,22 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
                 _reminders_schema(_notify_devices(self.hass, current)), _reminder_values(current)
             ),
         )
+
+    async def async_step_claude(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer to choose the agent Tankkeeper chats through, and when Claude reviews the tank."""
+        return self.async_show_menu(step_id="claude", menu_options=["set_claude", "finish"])
+
+    async def async_step_set_claude(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The agent, the AI task entity and the reviews."""
+        if user_input is not None:
+            try:
+                settings = _claude_from(user_input)
+                check_settings(self.hass, settings)
+            except TankkeeperError as err:
+                return _claude_form(self, "set_claude", user_input, err)
+            self._add(Collection.SETTINGS, CLAUDE_ID, settings.to_json())
+            return await self.async_step_finish()
+        return _claude_form(self, "set_claude", _claude_values(ClaudeSettings()))
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Create the tank. Setup stores the steps as one change."""
@@ -383,7 +412,7 @@ class TankkeeperOptionsFlow(OptionsFlow):
         if self.config_entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
         service: TankkeeperService = self.config_entry.runtime_data
-        steps = ["reminders", "rules", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
+        steps = ["reminders", "rules", "claude", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -497,6 +526,21 @@ class TankkeeperOptionsFlow(OptionsFlow):
             return await self._async_apply("remove_light", self._pick_light(), data, user_input)
         return self.async_show_form(step_id="remove_light", data_schema=self._pick_light())
 
+    async def async_step_claude(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the Claude settings, and store them through the service layer."""
+        service = self._service()
+        if user_input is None:
+            return _claude_form(self, "claude", _claude_values(service.claude()))
+        try:
+            await service.async_set(
+                service.claude_targets(_claude_from(user_input)), _panel(), "Change the Claude settings"
+            )
+        except NothingToChangeError:
+            return self.async_abort(reason="nothing_changed")
+        except TankkeeperError as err:
+            return _claude_form(self, "claude", user_input, err)
+        return self.async_create_entry(data={})
+
     def _service(self) -> TankkeeperService:
         service: TankkeeperService = self.config_entry.runtime_data
         return service
@@ -566,6 +610,61 @@ def _reminders_from(user_input: dict[str, Any]) -> Reminders:
         dose_time=parse_time(user_input[CONF_DOSE_TIME]),
         resend_time=parse_time(user_input[CONF_RESEND_TIME]),
         status_notify=tuple(user_input.get(CONF_STATUS_NOTIFY, [])),
+    )
+
+
+CLAUDE_SCHEMA = p.Schema(
+    {
+        p.Optional(CONF_AGENT): ConversationAgentSelector(),
+        p.Optional(CONF_AI_TASK): EntitySelector(EntitySelectorConfig(domain=AI_TASK_DOMAIN)),
+        p.Required(CONF_REVIEW_ON): SelectSelector(
+            SelectSelectorConfig(
+                options=[trigger.value for trigger in EVENT_TRIGGERS],
+                multiple=True,
+                mode=SelectSelectorMode.LIST,
+                translation_key=CONF_REVIEW_ON,
+            )
+        ),
+        p.Required(CONF_COMMENTS): BooleanSelector(),
+        p.Optional(CONF_DAILY_TIME): TimeSelector(),
+        p.Required(CONF_DAILY_CAP): NumberSelector(
+            NumberSelectorConfig(min=0, max=MAX_DAILY_CAP, step=1, mode=NumberSelectorMode.BOX)
+        ),
+    }
+)
+
+
+def _claude_form(
+    flow: ConfigFlow | OptionsFlow, step_id: str, values: dict[str, Any], error: TankkeeperError | None = None
+) -> ConfigFlowResult:
+    """The Claude settings form, with the reason they can't be stored when there is one."""
+    return flow.async_show_form(
+        step_id=step_id,
+        data_schema=flow.add_suggested_values_to_schema(CLAUDE_SCHEMA, values),
+        errors=None if error is None else {"base": "invalid_claude"},
+        description_placeholders=None if error is None else {"error": error.message},
+    )
+
+
+def _claude_values(settings: ClaudeSettings) -> dict[str, Any]:
+    """The settings as form values. Settings not set are left out, so their fields show empty."""
+    return {key: value for key, value in settings.to_json().items() if value is not None}
+
+
+def _claude_from(user_input: dict[str, Any]) -> ClaudeSettings:
+    """The settings in the form. Raises InvalidInputError for a time that is not in HH:MM."""
+    daily_time = user_input.get(CONF_DAILY_TIME)
+    try:
+        when = parse_time(daily_time) if daily_time else None
+    except ValueError as err:
+        raise InvalidInputError(str(err)) from None
+    return ClaudeSettings(
+        agent=user_input.get(CONF_AGENT) or None,
+        ai_task=user_input.get(CONF_AI_TASK) or None,
+        review_on=triggers(user_input[CONF_REVIEW_ON]),
+        comments=bool(user_input[CONF_COMMENTS]),
+        daily_time=when,
+        daily_cap=int(user_input[CONF_DAILY_CAP]),
     )
 
 

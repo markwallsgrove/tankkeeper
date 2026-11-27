@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { keyed } from "lit/directives/keyed.js";
 import { TankkeeperApi } from "./api";
 import type { HomeAssistant } from "./types";
+import "./views/claude";
 import "./views/conversations";
 import "./views/decisions";
 import "./views/log";
@@ -18,6 +19,7 @@ const TABS: [string, string][] = [
   ["decisions", "Decisions"],
   ["notes", "Notes"],
   ["conversations", "Conversations"],
+  ["claude", "Claude"],
 ];
 
 /** The Tankkeeper sidebar panel. Home Assistant sets hass and narrow. */
@@ -113,6 +115,8 @@ export class TankkeeperPanel extends LitElement {
         return html`<tk-log .api=${this.api}></tk-log>`;
       case "decisions":
         return html`<tk-decisions .api=${this.api}></tk-decisions>`;
+      case "claude":
+        return html`<tk-claude .api=${this.api}></tk-claude>`;
       case "conversations":
         return html`<tk-conversations .api=${this.api}></tk-conversations>`;
       case "contents":

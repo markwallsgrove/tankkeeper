@@ -9,7 +9,7 @@ from pathlib import Path
 from homeassistant.util.yaml import load_yaml_dict
 from PIL import Image
 
-from custom_components.tankkeeper import binary_sensor, calendar, light_control, sensor, todo
+from custom_components.tankkeeper import binary_sensor, calendar, conversation, light_control, sensor, todo
 from custom_components.tankkeeper.config_flow import TankkeeperConfigFlow
 
 EXCEPTION_KEYS = {"change_failed", "repeat_not_supported"}
@@ -120,6 +120,7 @@ def test_code_backs_the_done_rules() -> None:
     assert binary_sensor.PARALLEL_UPDATES == 0
     assert calendar.PARALLEL_UPDATES == 0
     assert todo.PARALLEL_UPDATES == 0
+    assert conversation.PARALLEL_UPDATES == 0
     assert hasattr(TankkeeperConfigFlow, "async_step_reconfigure")
     assert all(description.translation_key for description in sensor.SENSORS)
     icons = json.loads((INTEGRATION / "icons.json").read_text())
@@ -130,6 +131,7 @@ def test_code_backs_the_done_rules() -> None:
     assert set(icons["entity"]["binary_sensor"]) == {"light_problem"}
     assert set(icons["entity"]["calendar"]) == {calendar.TRANSLATION_KEY}
     assert set(icons["entity"]["todo"]) == {todo.TRANSLATION_KEY}
+    assert set(icons["entity"]["conversation"]) == {"agent"}
     strings = json.loads((INTEGRATION / "strings.json").read_text())
     assert set(strings["exceptions"]) == EXCEPTION_KEYS
     assert set(strings["issues"]) == {light_control.ISSUE_KEY}
