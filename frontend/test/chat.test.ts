@@ -3,8 +3,10 @@ import { TankkeeperApi } from "../src/api";
 import { NO_AGENT, NO_TANK_AGENT } from "../src/views/chat";
 import type { TkChat } from "../src/views/chat";
 import type { TkEmbed } from "../src/tk-embed";
+import type { TkChatList } from "../src/views/chat-list";
+import { DELETED } from "../src/tk-delete-conversation";
 import type { ChatStart } from "../src/base";
-import type { Message, Proposal } from "../src/types";
+import type { Conversation, ConversationDetail, Message, Proposal } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const AGENT = "conversation.nano_agent";
@@ -44,7 +46,35 @@ function connection(ready = true): FakeConnection {
     .on("chat_agent", { agent_id: AGENT, ready })
     .on("list_proposals", { proposals: [] })
     .on("get_conversation", { id: "panel_x", messages: [], changes: [] })
+    .on("list_conversations", { conversations: [] })
     .on("conversation/process", reply("Hello **owner**"));
+}
+
+function saved(id: string, source = "assist"): Conversation {
+  return {
+    id,
+    source,
+    started: "2026-11-26T11:00:00+00:00",
+    updated: "2026-11-26T11:30:00+00:00",
+    title: id,
+    name: id,
+    summary: "",
+  };
+}
+
+function detail(id: string, messages: { role: string; text: string }[]): ConversationDetail {
+  return { ...saved(id), messages, changes: [] };
+}
+
+function chatList(element: TkChat): TkChatList {
+  return find(element, "tk-chat-list") as TkChatList;
+}
+
+async function openFromList(element: TkChat, id: string): Promise<void> {
+  const list = chatList(element);
+  await settle(list);
+  find(list, `li[data-id="${id}"] button.open`).click();
+  await settle(element);
 }
 
 function processed(conn: FakeConnection): Message[] {
@@ -481,6 +511,241 @@ describe("tk-chat", () => {
     await settle(element);
 
     expect(draft(element)).toBe("My own words");
+  });
+
+  it("lists the chats beside it, with a Chats button that opens the list on a narrow screen", async () => {
+    const conn = connection().on("list_conversations", { conversations: [saved("panel_a")] });
+    const element = await chat(conn);
+    const list = chatList(element);
+    const toggle = find(element, "button.chats");
+
+    expect(list.api).toBe(element.api);
+    expect(find(element, ".list").classList.contains("open")).toBe(false);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe("chat-list");
+    toggle.click();
+    await settle(element);
+    expect(find(element, ".list").classList.contains("open")).toBe(true);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    await openFromList(element, "panel_a");
+    expect(find(element, ".list").classList.contains("open")).toBe(false);
+  });
+
+  it("marks the chat on screen in the list and has it load again after each reply", async () => {
+    const conn = connection();
+    const element = await chat(conn);
+    const list = chatList(element);
+    const stamp = list.stamp;
+
+    await say(element, "Hello");
+
+    const id = String(processed(conn)[0]?.conversation_id);
+    expect(list.active).toBe(id);
+    expect(list.stamp).toBeGreaterThan(stamp);
+  });
+
+  it("opens a chat from the panel with one click, showing what was said and going on with it", async () => {
+    const conn = connection()
+      .on("list_conversations", { conversations: [saved("panel_a")] })
+      .on(
+        "get_conversation",
+        detail("panel_a", [
+          { role: "user", text: "Hello" },
+          { role: "tool", text: "get_tank {}" },
+          { role: "assistant", text: "![Nitrate](tankkeeper:chart/nitrate?days=7)" },
+        ]),
+      );
+    const element = await chat(conn);
+    await say(element, "Earlier words");
+
+    await openFromList(element, "panel_a");
+
+    expect(conn.last("get_conversation").args).toEqual({ id: "panel_a" });
+    expect(findAll(element, ".message").map((item) => item.className)).toEqual([
+      "message user",
+      "message assistant",
+    ]);
+    expect(findAll(element, "tk-embed").length).toBe(1);
+    expect(chatList(element).active).toBe("panel_a");
+    await say(element, "More");
+    expect(processed(conn).at(-1)?.conversation_id).toBe("panel_a");
+  });
+
+  it("shows a chat from Assist or Claude read only, saying only panel chats go on", async () => {
+    const conn = connection()
+      .on("list_conversations", { conversations: [saved("c9", "mcp")] })
+      .on("get_conversation", detail("c9", [{ role: "user", text: "From Claude" }]));
+    const element = await chat(conn);
+
+    await openFromList(element, "c9");
+
+    expect(text(element)).toContain("From Claude");
+    expect(findAll(element, "form.send")).toEqual([]);
+    expect(text(find(element, ".read-only"))).toBe(
+      "Read only. Only chats started here in the panel can go on. Start a New chat to ask more.",
+    );
+
+    find(element, "button.new").click();
+    await settle(element);
+    expect(findAll(element, "form.send").length).toBe(1);
+    expect(findAll(element, ".read-only")).toEqual([]);
+  });
+
+  it("opens a search match at the message that matched, and marks it", async () => {
+    const scrolled: Element[] = [];
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    const conn = connection()
+      .on("search_conversations", {
+        conversations: [
+          {
+            ...saved("panel_a"),
+            match: {
+              field: "message",
+              index: 2,
+              role: "assistant",
+              snippet: "B",
+              start: 0,
+              end: 1,
+            },
+          },
+        ],
+      })
+      .on(
+        "get_conversation",
+        detail("panel_a", [
+          { role: "user", text: "A" },
+          { role: "tool", text: "get_tank {}" },
+          { role: "assistant", text: "B" },
+        ]),
+      );
+    const element = await chat(conn);
+    const list = chatList(element);
+    await settle(list);
+    (find(list, "input.search") as HTMLInputElement).value = "b";
+    find(list, "form.search").dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(list);
+
+    await openFromList(element, "panel_a");
+
+    const found = find(element, ".message.found");
+    expect(text(found)).toBe("B");
+    expect(found.getAttribute("data-index")).toBe("2");
+    expect(scrolled).toEqual([found]);
+
+    await say(element, "More");
+    expect(scrolled.length).toBe(1);
+  });
+
+  it("starts a new chat when the chat on screen is deleted, and keeps it when another one is", async () => {
+    const conn = connection().on("list_conversations", { conversations: [saved("panel_a")] });
+    const element = await chat(conn);
+    await say(element, "Hello");
+    const list = chatList(element);
+
+    list.dispatchEvent(new CustomEvent(DELETED, { detail: "panel_other", bubbles: true }));
+    await settle(element);
+    expect(findAll(element, ".message").length).toBe(2);
+
+    list.dispatchEvent(new CustomEvent(DELETED, { detail: list.active, bubbles: true }));
+    await settle(element);
+    expect(findAll(element, ".message")).toEqual([]);
+    await say(element, "Fresh");
+    const [first, second] = processed(conn);
+    expect(second?.conversation_id).not.toBe(first?.conversation_id);
+  });
+
+  it("opens a match in a tool call at the top, without looking for it again", async () => {
+    const scrolled: Element[] = [];
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    const conn = connection()
+      .on("search_conversations", {
+        conversations: [
+          {
+            ...saved("panel_a"),
+            match: { field: "message", index: 1, role: "tool", snippet: "x", start: 0, end: 1 },
+          },
+        ],
+      })
+      .on(
+        "get_conversation",
+        detail("panel_a", [
+          { role: "user", text: "A" },
+          { role: "tool", text: "x" },
+        ]),
+      );
+    const element = await chat(conn);
+    const list = chatList(element);
+    await settle(list);
+    (find(list, "input.search") as HTMLInputElement).value = "x";
+    find(list, "form.search").dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(list);
+    await openFromList(element, "panel_a");
+
+    expect(findAll(element, ".message.found")).toEqual([]);
+    expect(element.found).toBeNull();
+    expect(scrolled).toEqual([]);
+  });
+
+  it("keeps Delete off for the chat on screen while it waits for a reply", async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    const conn = connection().on(
+      "conversation/process",
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const element = await chat(conn);
+    void say(element, "Hello");
+    await settle(element);
+
+    const list = chatList(element);
+    expect(list.locked).toBe(String(processed(conn)[0]?.conversation_id));
+    answer({ conversation_id: null, response: { response_type: "action_done" } });
+    await settle(element);
+    expect(list.locked).toBe("");
+  });
+
+  it("loads the list again when shown again, and starts a new chat when the one on screen was deleted elsewhere", async () => {
+    const conn = connection();
+    const element = await chat(conn);
+    await say(element, "Hello");
+    const loads = conn.types().filter((type) => type === "tankkeeper/list_conversations").length;
+
+    conn.fail("get_conversation", "not_found", "No conversation");
+    element.remove();
+    document.body.append(element);
+    await settle(element);
+
+    expect(conn.types().filter((type) => type === "tankkeeper/list_conversations").length).toBe(
+      loads + 1,
+    );
+    expect(findAll(element, ".message")).toEqual([]);
+    expect(findAll(element, "p.error")).toEqual([]);
+    conn.on("get_conversation", { id: "x", messages: [], changes: [] });
+    await say(element, "Fresh");
+    const [first, second] = processed(conn);
+    expect(second?.conversation_id).not.toBe(first?.conversation_id);
+  });
+
+  it("lets the owner read saved chats while no agent is ready", async () => {
+    const conn = new FakeConnection()
+      .on("chat_agent", { agent_id: null, ready: false })
+      .on("list_proposals", { proposals: [] })
+      .on("list_conversations", { conversations: [saved("panel_a")] })
+      .on("get_conversation", detail("panel_a", [{ role: "user", text: "Old words" }]));
+    const element = await chat(conn);
+
+    await openFromList(element, "panel_a");
+
+    expect(text(element)).toContain("Old words");
+    expect(findAll(element, "form.send")).toEqual([]);
+    expect(text(element)).toContain(NO_AGENT);
   });
 
   it("waits for the API before it loads", async () => {

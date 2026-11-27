@@ -155,6 +155,14 @@ export const shared = css`
     margin: 0;
     min-width: 0;
   }
+  .snippet {
+    display: block;
+    font-size: 0.9em;
+  }
+  mark {
+    background: var(--warning-color, #f4b400);
+    color: inherit;
+  }
   .dash {
     display: inline-block;
     width: 14px;

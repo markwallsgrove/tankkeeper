@@ -4,12 +4,13 @@ import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
 import { changeText, shortTime, sourceText } from "../format";
 import { markdown } from "../markdown";
+import { snippet } from "../search";
+import { DELETED } from "../tk-delete-conversation";
+import "../tk-delete-conversation";
 import type { Conversation, ConversationDetail, HistoryEntry } from "../types";
+import { PANEL_CHAT } from "./chat-list";
 
 export const CONVERSATION_LIMIT = 50;
-
-/** Chats from the panel's chat start with this, so only they can be gone on with there. */
-export const PANEL_CHAT = "panel_";
 
 /** Conversations: list, search, read one with the changes made in it and undo them, and delete one. */
 export class TkConversations extends TkView {
@@ -34,6 +35,9 @@ export class TkConversations extends TkView {
     this.query = "";
     this.selected = undefined;
     this.detail = undefined;
+    this.addEventListener(DELETED, () => {
+      this.selected = undefined;
+    });
   }
 
   protected override reloadOn(): string[] {
@@ -73,20 +77,11 @@ export class TkConversations extends TkView {
     if (await this.run((api) => api.call("undo_change", { history_id: entry.id }))) this.changed();
   }
 
-  private async deleteConversation(id: string): Promise<void> {
-    if (!window.confirm("Delete this conversation? The changes made in it stay in the history."))
-      return;
-    await this.run(async (api) => {
-      await api.deleteConversation(id);
-      this.selected = undefined;
-    });
-  }
-
   private renderDetail(detail: ConversationDetail): TemplateResult {
     return html`<section>
       <div class="row">
         <button class="back" @click=${() => (this.selected = undefined)}>Back</button>
-        <h2 class="grow">${detail.title}</h2>
+        <h2 class="grow">${detail.name}</h2>
         ${
           detail.id.startsWith(PANEL_CHAT)
             ? html`<button
@@ -99,13 +94,10 @@ export class TkConversations extends TkView {
               </button>`
             : nothing
         }
-        <button
-          class="delete"
-          ?disabled=${this.busy}
-          @click=${() => this.deleteConversation(detail.id)}
-        >
-          Delete
-        </button>
+        <tk-delete-conversation
+          .api=${this.api}
+          .conversationId=${detail.id}
+        ></tk-delete-conversation>
       </div>
       <div class="muted">${sourceText(detail.source)} · ${shortTime(detail.started)}</div>
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
@@ -171,12 +163,13 @@ export class TkConversations extends TkView {
           (conversation) =>
             html`<li data-id=${conversation.id}>
               <div class="row">
-                <strong class="grow">${conversation.title}</strong>
+                <strong class="grow">${conversation.name}</strong>
                 <button class="open" @click=${() => (this.selected = conversation.id)}>Open</button>
               </div>
               <div class="muted">
                 ${sourceText(conversation.source)} · ${shortTime(conversation.updated)}
               </div>
+              ${conversation.match === undefined ? nothing : snippet(conversation.match)}
               <div class="pre">${conversation.summary}</div>
             </li>`,
         )}

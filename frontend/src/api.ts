@@ -32,10 +32,6 @@ export class TankkeeperApi {
     return this.send({ type: "tankkeeper/reject_finding", check_id: checkId });
   }
 
-  deleteConversation(conversationId: string): Promise<unknown> {
-    return this.send({ type: "tankkeeper/delete_conversation", conversation_id: conversationId });
-  }
-
   chatAgent(): Promise<ChatAgent> {
     return this.send<ChatAgent>({ type: "tankkeeper/chat_agent" });
   }
@@ -53,6 +49,11 @@ export class TankkeeperApi {
   private send<T>(message: Message): Promise<T> {
     return this.connection.sendMessagePromise<T>(message);
   }
+}
+
+/** Whether a command failed because its record is gone, such as a photo check past the ones kept. */
+export function isNotFound(error: unknown): boolean {
+  return (Object(error) as { code?: unknown }).code === "not_found";
 }
 
 /** The text of a failed command, an error or anything else that was thrown. */

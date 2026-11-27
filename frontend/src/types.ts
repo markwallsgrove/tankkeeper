@@ -52,6 +52,8 @@ export interface HistoryEntry {
   proposal_id: string | null;
   user_id: string | null;
   changes: Change[];
+  /** The conversation's name, or "deleted conversation" once it is gone. get_history alone gives it. */
+  conversation_name?: string | null;
 }
 
 export interface Changed {
@@ -202,13 +204,36 @@ export interface LightInfo {
   next_change: { time: string } | null;
 }
 
+/** Where a search found its words: snippet[start:end] is the match. index is the message's, for a message. */
+export interface SearchMatch {
+  field: "message" | "title" | "summary";
+  index: number | null;
+  role: string | null;
+  snippet: string;
+  start: number;
+  end: number;
+}
+
 export interface Conversation {
   id: string;
   source: string;
   started: string;
   updated: string;
   title: string;
+  /** The title, or the first thing the owner said when there is none. */
+  name: string;
   summary: string;
+  /** Only in search results. */
+  match?: SearchMatch;
+}
+
+/** What the first delete_conversation call answers: what goes, and the code that confirms it. */
+export interface DeleteAsked {
+  conversation_id: string;
+  name: string;
+  messages: number;
+  changes: number;
+  code: string;
 }
 
 export interface ConversationDetail extends Conversation {

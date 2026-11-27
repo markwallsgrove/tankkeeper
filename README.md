@@ -75,7 +75,7 @@ Saved. TankKeeper is live.
 
 **Ask anything.** "Should I do a water change?" "Why is my pH dropping?" "Is it safe to add fish yet?" Claude answers from your records and your decisions, not a generic guide.
 
-**Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo. Chats started in the panel can be continued.
+**Look back.** Your chats are listed beside the chat: search what was said, open one with a click, rename it or delete it. The Conversations tab shows every conversation, where it happened and what it changed, with undo. Chats started in the panel can be continued.
 
 **Use the panel.** The TankKeeper panel in the sidebar has a Chat tab to talk to Claude, whose replies can show tank photos and charts, and shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: the cog in the panel's header opens **Configure**, where they change.
 
