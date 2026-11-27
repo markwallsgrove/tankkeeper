@@ -151,6 +151,12 @@ var pe=globalThis,ue=pe.ShadowRoot&&(pe.ShadyCSS===void 0||pe.ShadyCSS.nativeSha
     margin: 0;
     min-width: 0;
   }
+  dl.facts .wide {
+    grid-column: 1 / -1;
+  }
+  dl.facts dt.wide {
+    margin-top: 4px;
+  }
   .snippet {
     display: block;
     font-size: 0.9em;
@@ -190,8 +196,8 @@ var pe=globalThis,ue=pe.ShadowRoot&&(pe.ShadyCSS===void 0||pe.ShadyCSS.nativeSha
     label="TankKeeper settings"
     @click=${()=>{Ms(r?.entryId)}}
   ></ha-icon-button>`}function Vs(r,e){return r.type==="checkbox"&&typeof e=="boolean"?e?"Yes":"No":Array.isArray(e)?e.length===0?"Not set":e.map(String).join(", "):e==null||e===""?"Not set":typeof e=="string"||typeof e=="number"?String(e):JSON.stringify(e)}function U(r,e){let t=new Map(Object.entries(e));return n`<dl class="facts">
-    ${r.map(s=>n`<dt>${s.label}</dt>
-          <dd class="pre">${Vs(s,t.get(s.name))}</dd>`)}
+    ${r.map(s=>{let i=s.type==="textarea"?"wide":"";return n`<dt class=${i}>${s.label}</dt>
+        <dd class="pre ${i}">${Vs(s,t.get(s.name))}</dd>`})}
   </dl>`}function A(r,e,t,s){return n`<details>
     <summary>History</summary>
     <tk-history

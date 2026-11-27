@@ -155,6 +155,12 @@ export const shared = css`
     margin: 0;
     min-width: 0;
   }
+  dl.facts .wide {
+    grid-column: 1 / -1;
+  }
+  dl.facts dt.wide {
+    margin-top: 4px;
+  }
   .snippet {
     display: block;
     font-size: 0.9em;

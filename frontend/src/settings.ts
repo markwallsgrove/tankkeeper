@@ -42,15 +42,15 @@ function factText(field: Field, value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** The values of the fields, read-only. */
+/** The values of the fields, read-only. Long text goes under its label, across the whole width. */
 export function facts(fields: Field[], values: object): TemplateResult {
   const known = new Map<string, unknown>(Object.entries(values));
   return html`<dl class="facts">
-    ${fields.map(
-      (field) =>
-        html`<dt>${field.label}</dt>
-          <dd class="pre">${factText(field, known.get(field.name))}</dd>`,
-    )}
+    ${fields.map((field) => {
+      const wide = field.type === "textarea" ? "wide" : "";
+      return html`<dt class=${wide}>${field.label}</dt>
+        <dd class="pre ${wide}">${factText(field, known.get(field.name))}</dd>`;
+    })}
   </dl>`;
 }
 
