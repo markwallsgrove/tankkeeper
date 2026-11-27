@@ -64,6 +64,7 @@ from .plan import (
     slot_for,
     sort_tasks,
 )
+from .rules import RuleSettings, Stage
 from .service import Actor, TankkeeperService, Target
 
 MCP_PLATFORM = "mcp_server"
@@ -83,6 +84,10 @@ a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_ta
 changing and removing tasks, reminder settings and importing a plan are proposals.
 - The integration switches the tank lights on their schedule. Adding, changing and removing a light, \
 and a one-day change, are proposals made with tankkeeper__set_light. No tool switches a light directly.
+- The status is the worst rule result: on course, watch or act. Each rule gives its reason and what to \
+do. Read it with tankkeeper__get_status; tankkeeper__record_test returns it too. Change the limits with \
+tankkeeper__set_rules and whether the tank is cycling with tankkeeper__set_tank.
+- Decisions are numbered and keep their history. Adding, accepting and replacing a decision are proposals.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
 
 READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_world=False)
@@ -114,6 +119,28 @@ REASON: dict[p.Marker, object] = {
 }
 LIMIT: dict[p.Marker, object] = {p.Optional("limit", default=20): p.All(int, p.Range(min=1, max=200))}
 CONTENT_TYPES = ["plant", "rock", "wood", "substrate", "decoration", "fish", "other"]
+DAYS = p.All(int, p.Range(min=0, max=365))
+PPM = p.All(p.Coerce(float), p.Range(min=0, min_included=False))
+RULE_FIELDS: dict[p.Marker, object] = {
+    p.Optional("nitrogen_watch", description="Ammonia or nitrite above this, in ppm, is Watch"): PPM,
+    p.Optional("nitrogen_act", description="Ammonia or nitrite above this, in ppm, is Act"): PPM,
+    p.Optional("ph_watch", description="pH under this while cycling is Watch"): PH,
+    p.Optional("ph_act", description="pH under this while cycling is Act"): PH,
+    p.Optional("stall_watch_days", description="Days of the same ammonia and no nitrite that are Watch"): DAYS,
+    p.Optional("stall_act_days", description="Days of the same ammonia and no nitrite that are Act"): DAYS,
+    p.Optional("test_watch_days", description="Days a planned test is late for Watch"): p.All(
+        int, p.Range(min=1, max=365)
+    ),
+    p.Optional("test_act_days", description="Days a planned test is late for Act"): p.All(int, p.Range(min=1, max=365)),
+    p.Optional("skip_watch", description="Doses of one product skipped in a row for Watch"): p.All(
+        int, p.Range(min=1, max=30)
+    ),
+    p.Optional("skip_act", description="Doses of one product skipped in a row for Act"): p.All(
+        int, p.Range(min=1, max=30)
+    ),
+    p.Optional("plan_watch_days", description="Days left in the plan for Watch"): DAYS,
+    p.Optional("plan_act_days", description="Days left in the plan for Act"): DAYS,
+}
 TEST_VALUES = ["ammonia", "nitrite", "nitrate", "ph", "kh", "gh", "phosphate", "temperature_c"]
 TANK_FIELDS: dict[p.Marker, object] = {
     p.Optional("name"): NON_EMPTY,
@@ -123,6 +150,7 @@ TANK_FIELDS: dict[p.Marker, object] = {
     ): POSITIVE,
     p.Optional("temperature_c", description="The target temperature"): NOT_NEGATIVE,
     p.Optional("notes", description="Notes for Claude, in the owner's words"): str,
+    p.Optional("stage", description="cycling while the tank cycles, cycled after"): p.In(list(Stage)),
 }
 WATER_FIELDS: dict[p.Marker, object] = {
     p.Optional("source", description="Where the values come from"): p.In(["supplier", "tap_test"]),
@@ -336,7 +364,8 @@ async def record_test(service: TankkeeperService, data: Record, actor: Actor) ->
         "values": values,
         "notes": data.get("notes"),
     }
-    return _recorded(await service.async_record(Collection.LOG, entry, actor, f"Test ({data['source']})"))
+    recorded = _recorded(await service.async_record(Collection.LOG, entry, actor, f"Test ({data['source']})"))
+    return {**recorded, "status": service.status().to_json()}
 
 
 async def add_content(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -574,11 +603,9 @@ async def skip_task(service: TankkeeperService, data: Record, actor: Actor) -> J
 async def set_reminders(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose new reminder devices or times."""
     current = service.reminders()
-    notify = current.notify
-    if "notify" in data:
-        notify = tuple(_notify_service(service, str(name)) for name in cast(list[JsonValue], data["notify"]))
     reminders = Reminders(
-        notify=notify,
+        notify=_notify_services(service, data, "notify", current.notify),
+        status_notify=_notify_services(service, data, "status_notify", current.status_notify),
         task_time=_time(data, "task_time", current.task_time),
         dose_time=_time(data, "dose_time", current.dose_time),
         resend_time=_time(data, "resend_time", current.resend_time),
@@ -590,6 +617,30 @@ async def set_reminders(service: TankkeeperService, data: Record, actor: Actor) 
         tool="set_reminders",
         summary="Change the reminders",
         targets=service.reminder_targets(reminders),
+    )
+
+
+async def get_status(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The status, each rule's result, the rule limits and whether the tank is cycling."""
+    stage = service.stage()
+    return {
+        **service.status().to_json(),
+        "stage": None if stage is None else stage.value,
+        "settings": service.rule_settings().to_json(),
+    }
+
+
+async def set_rules(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose new rule limits."""
+    current = service.rule_settings().to_json()
+    settings = RuleSettings.from_json(merge_record(current, _fields(data, RULE_FIELDS)))
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="set_rules",
+        summary="Change the rule limits",
+        targets=service.rule_targets(settings),
     )
 
 
@@ -821,6 +872,12 @@ def _time(data: Record, key: str, default: time) -> time:
         return parse_time(value)
     except ValueError as err:
         raise InvalidInputError(str(err)) from None
+
+
+def _notify_services(service: TankkeeperService, data: Record, key: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    if key not in data:
+        return default
+    return tuple(_notify_service(service, str(name)) for name in cast(list[JsonValue], data[key]))
 
 
 def _notify_service(service: TankkeeperService, name: str) -> str:
@@ -1310,17 +1367,39 @@ SPECS: tuple[Spec, ...] = (
         title="Propose reminder settings",
         annotations=PROPOSE,
         handler=set_reminders,
-        description="Propose which notify services get reminders and the times, in HH:MM: task_time for tasks, "
-        "dose_time for doses and resend_time to send open tasks again. Returns a confirm code; nothing changes "
-        "until tankkeeper__apply_change.",
+        description="Propose which notify services get reminders and status alerts, and the reminder times, in "
+        "HH:MM: task_time for tasks, dose_time for doses and resend_time to send open tasks again. Returns a confirm "
+        "code; nothing changes until tankkeeper__apply_change.",
         schema={
-            p.Optional("notify", description="Notify services, such as mobile_app_phone"): [NON_EMPTY],
+            p.Optional("notify", description="Notify services for reminders, such as mobile_app_phone"): [NON_EMPTY],
+            p.Optional("status_notify", description="Notify services that get an alert when the status changes"): [
+                NON_EMPTY
+            ],
             p.Optional("task_time"): NON_EMPTY,
             p.Optional("dose_time"): NON_EMPTY,
             p.Optional("resend_time"): NON_EMPTY,
             **REASON,
             **CONVERSATION,
         },
+    ),
+    Spec(
+        name="get_status",
+        title="Get the status",
+        annotations=READ,
+        handler=get_status,
+        description="The status, the worst rule result: on_course, watch or act. Each rule that has the data it "
+        "needs gives its level, its reason and what to do. Also the rule limits and whether the tank is cycling. "
+        "Tap tests never count.",
+        schema={},
+    ),
+    Spec(
+        name="set_rules",
+        title="Propose rule limits",
+        annotations=PROPOSE,
+        handler=set_rules,
+        description="Propose new limits for the rules. Each Act limit must be at least as strict as its Watch "
+        "limit. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={**RULE_FIELDS, **REASON, **CONVERSATION},
     ),
     Spec(
         name="import_plan",

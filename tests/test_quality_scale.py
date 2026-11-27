@@ -123,7 +123,10 @@ def test_code_backs_the_done_rules() -> None:
     assert hasattr(TankkeeperConfigFlow, "async_step_reconfigure")
     assert all(description.translation_key for description in sensor.SENSORS)
     icons = json.loads((INTEGRATION / "icons.json").read_text())
-    assert set(icons["entity"]["sensor"]) == {description.key for description in sensor.SENSORS} | {"next_light_change"}
+    assert set(icons["entity"]["sensor"]) == {description.key for description in sensor.SENSORS} | {
+        "next_light_change",
+        "status",
+    }
     assert set(icons["entity"]["binary_sensor"]) == {"light_problem"}
     assert set(icons["entity"]["calendar"]) == {calendar.TRANSLATION_KEY}
     assert set(icons["entity"]["todo"]) == {todo.TRANSLATION_KEY}

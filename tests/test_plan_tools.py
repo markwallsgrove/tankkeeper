@@ -83,7 +83,13 @@ async def test_get_plan_shows_the_next_week_with_slot_times(call: Caller) -> Non
             "done_at": None,
         },
     ]
-    assert plan["reminders"] == {"notify": [], "task_time": "09:00", "dose_time": "12:00", "resend_time": "21:00"}
+    assert plan["reminders"] == {
+        "notify": [],
+        "task_time": "09:00",
+        "dose_time": "12:00",
+        "resend_time": "21:00",
+        "status_notify": [],
+    }
 
 
 async def test_get_plan_takes_a_range(call: Caller) -> None:
@@ -207,6 +213,7 @@ async def test_set_reminders_is_a_proposal(hass: HomeAssistant, call: Caller) ->
         "task_time": "09:00",
         "dose_time": "13:30",
         "resend_time": "21:00",
+        "status_notify": [],
     }
 
 

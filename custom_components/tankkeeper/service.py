@@ -39,6 +39,7 @@ from .domain import (
 )
 from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
 from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
+from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
 type Target = tuple[Collection, str, Record | None]
 
@@ -198,6 +199,62 @@ class TankkeeperService:
         """Tell the listeners that something changed."""
         for listener in list(self._listeners):
             listener()
+
+    def stage(self) -> Stage | None:
+        """Whether the tank is cycling, from the tank details. None when it is not set."""
+        stage = self.state.records[Collection.TANK].get(TANK_ID, {}).get("stage")
+        return Stage(stage) if stage in list(Stage) else None
+
+    def rule_settings(self) -> RuleSettings:
+        """The limits of the rules."""
+        return RuleSettings.from_json(self.state.get(Collection.SETTINGS, RULES_ID))
+
+    def stage_targets(self, stage: Stage | None) -> list[Target]:
+        """The change that stores whether the tank is cycling. None takes the stage away."""
+        tank = {
+            key: value for key, value in self.state.records[Collection.TANK].get(TANK_ID, {}).items() if key != "stage"
+        }
+        if stage is not None:
+            tank["stage"] = stage.value
+        return [(Collection.TANK, TANK_ID, tank)]
+
+    def rule_targets(self, settings: RuleSettings) -> list[Target]:
+        """The change that stores new rule limits, after checking them."""
+        settings.check()
+        if settings == self.rule_settings():
+            raise NothingToChangeError("The rule limits already look like that")
+        return [(Collection.SETTINGS, RULES_ID, settings.to_json())]
+
+    def readings(self) -> list[Reading]:
+        """Every water test in the log."""
+        readings = []
+        for entry in self.state.records[Collection.LOG].values():
+            values = entry.get("values")
+            moment = dt_util.parse_datetime(str(entry.get("time")))
+            if entry.get("kind") != "test" or not isinstance(values, dict) or moment is None:
+                continue
+            numbers = {
+                name: float(value)
+                for name, value in values.items()
+                if isinstance(value, int | float) and not isinstance(value, bool)
+            }
+            readings.append(Reading(time=moment, source=str(entry.get("source")), values=numbers))
+        return readings
+
+    def status(self) -> Status:
+        """The rules' result for the records now."""
+        facts = Facts(
+            now=self._clock(),
+            tz=dt_util.get_default_time_zone(),
+            stage=self.stage(),
+            readings=tuple(self.readings()),
+            tasks=tuple(self.tasks()),
+            lights=tuple(
+                LightCheck(name=light.model, entity_id=light.entity_id, status=self.light_status(light.id))
+                for light in self.active_lights()
+            ),
+        )
+        return evaluate(facts, self.rule_settings())
 
     def product_names(self) -> list[str]:
         """The name of every product, to tell doses from other tasks."""

@@ -40,6 +40,7 @@ from .domain import (
 )
 from .lights import SWITCH_DOMAINS, Control, Light
 from .plan import Reminders, format_time, parse_time
+from .rules import RuleSettings, Stage
 from .service import Actor, TankkeeperService
 from .tools import planned_light
 
@@ -49,6 +50,8 @@ CONF_NOTIFY = "notify"
 CONF_TASK_TIME = "task_time"
 CONF_DOSE_TIME = "dose_time"
 CONF_RESEND_TIME = "resend_time"
+CONF_STATUS_NOTIFY = "status_notify"
+CONF_STAGE = "stage"
 CONF_LIGHT_ID = "light_id"
 CONF_ENTITY_ID = "entity_id"
 CONF_MODEL = "model"
@@ -66,6 +69,34 @@ VOLUME = NumberSelector(
 )
 BRIGHTNESS = NumberSelector(
     NumberSelectorConfig(min=1, max=100, step=1, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+)
+PPM = NumberSelector(
+    NumberSelectorConfig(min=0.05, max=100, step=0.05, unit_of_measurement="ppm", mode=NumberSelectorMode.BOX)
+)
+PH = NumberSelector(NumberSelectorConfig(min=0, max=14, step=0.1, mode=NumberSelectorMode.BOX))
+DAYS = NumberSelector(
+    NumberSelectorConfig(min=0, max=365, step=1, unit_of_measurement="d", mode=NumberSelectorMode.BOX)
+)
+LATE_DAYS = NumberSelector(
+    NumberSelectorConfig(min=1, max=365, step=1, unit_of_measurement="d", mode=NumberSelectorMode.BOX)
+)
+TIMES = NumberSelector(NumberSelectorConfig(min=1, max=30, step=1, mode=NumberSelectorMode.BOX))
+RULES_SCHEMA = p.Schema(
+    {
+        p.Optional(CONF_STAGE): SelectSelector(SelectSelectorConfig(options=list(Stage), translation_key=CONF_STAGE)),
+        p.Required("nitrogen_watch"): PPM,
+        p.Required("nitrogen_act"): PPM,
+        p.Required("ph_watch"): PH,
+        p.Required("ph_act"): PH,
+        p.Required("stall_watch_days"): DAYS,
+        p.Required("stall_act_days"): DAYS,
+        p.Required("test_watch_days"): LATE_DAYS,
+        p.Required("test_act_days"): LATE_DAYS,
+        p.Required("skip_watch"): TIMES,
+        p.Required("skip_act"): TIMES,
+        p.Required("plan_watch_days"): DAYS,
+        p.Required("plan_act_days"): DAYS,
+    }
 )
 LIGHT_SCHEMA = p.Schema(
     {
@@ -159,7 +190,7 @@ class TankkeeperOptionsFlow(OptionsFlow):
         if self.config_entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
         service: TankkeeperService = self.config_entry.runtime_data
-        steps = ["reminders", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
+        steps = ["reminders", "rules", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -172,6 +203,7 @@ class TankkeeperOptionsFlow(OptionsFlow):
                 task_time=parse_time(user_input[CONF_TASK_TIME]),
                 dose_time=parse_time(user_input[CONF_DOSE_TIME]),
                 resend_time=parse_time(user_input[CONF_RESEND_TIME]),
+                status_notify=tuple(user_input.get(CONF_STATUS_NOTIFY, [])),
             )
             try:
                 await service.async_set(service.reminder_targets(reminders), _panel(), "Change the reminders")
@@ -179,16 +211,20 @@ class TankkeeperOptionsFlow(OptionsFlow):
                 return self.async_abort(reason="nothing_changed")
             return self.async_create_entry(data={})
         devices = sorted(
-            set(self.hass.services.async_services_for_domain(NOTIFY_DOMAIN)) - NOT_DEVICES | set(current.notify)
+            set(self.hass.services.async_services_for_domain(NOTIFY_DOMAIN)) - NOT_DEVICES
+            | set(current.notify)
+            | set(current.status_notify)
+        )
+        pick_devices = SelectSelector(
+            SelectSelectorConfig(options=devices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
         )
         schema = p.Schema(
             {
-                p.Required(CONF_NOTIFY): SelectSelector(
-                    SelectSelectorConfig(options=devices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
-                ),
+                p.Required(CONF_NOTIFY): pick_devices,
                 p.Required(CONF_TASK_TIME): TimeSelector(),
                 p.Required(CONF_DOSE_TIME): TimeSelector(),
                 p.Required(CONF_RESEND_TIME): TimeSelector(),
+                p.Optional(CONF_STATUS_NOTIFY): pick_devices,
             }
         )
         suggested = {
@@ -196,9 +232,38 @@ class TankkeeperOptionsFlow(OptionsFlow):
             CONF_TASK_TIME: format_time(current.task_time),
             CONF_DOSE_TIME: format_time(current.dose_time),
             CONF_RESEND_TIME: format_time(current.resend_time),
+            CONF_STATUS_NOTIFY: list(current.status_notify),
         }
         return self.async_show_form(
             step_id="reminders", data_schema=self.add_suggested_values_to_schema(schema, suggested)
+        )
+
+    async def async_step_rules(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the rule limits and whether the tank is cycling, and store them through the service layer."""
+        service = self._service()
+        if user_input is not None:
+            settings = RuleSettings.from_json(user_input)
+            stage = user_input.get(CONF_STAGE)
+            try:
+                targets = service.stage_targets(None if stage is None else Stage(stage))
+                if settings != service.rule_settings():
+                    targets += service.rule_targets(settings)
+                await service.async_set(targets, _panel(), "Change the rule limits")
+            except NothingToChangeError:
+                return self.async_abort(reason="nothing_changed")
+            except TankkeeperError as err:
+                return self.async_show_form(
+                    step_id="rules",
+                    data_schema=self.add_suggested_values_to_schema(RULES_SCHEMA, user_input),
+                    errors={"base": "invalid_rules"},
+                    description_placeholders={"error": err.message},
+                )
+            return self.async_create_entry(data={})
+        suggested: dict[str, Any] = dict(service.rule_settings().to_json())
+        if (stage := service.stage()) is not None:
+            suggested[CONF_STAGE] = stage.value
+        return self.async_show_form(
+            step_id="rules", data_schema=self.add_suggested_values_to_schema(RULES_SCHEMA, suggested)
         )
 
     async def async_step_add_light(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

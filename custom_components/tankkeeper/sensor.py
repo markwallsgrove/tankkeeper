@@ -1,4 +1,4 @@
-"""Sensors for proposals waiting and the last water test."""
+"""Sensors for the status, proposals waiting, the last water test and the next light change."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -18,6 +18,7 @@ from . import TankkeeperConfigEntry
 from .domain import Collection
 from .entity import async_add_light_entities, tank_device
 from .lights import LightChange, next_change
+from .rules import LEVEL_ORDER
 from .service import TankkeeperService
 
 PARALLEL_UPDATES = 0
@@ -61,7 +62,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: TankkeeperConfigEntry, async_add_entities: AddConfigEntryEntitiesCallback
 ) -> None:
     """Add the tank's sensors."""
-    async_add_entities(TankkeeperSensor(entry, description) for description in SENSORS)
+    async_add_entities([StatusSensor(entry), *(TankkeeperSensor(entry, description) for description in SENSORS)])
     async_add_light_entities(hass, entry, async_add_entities, "sensor", lambda: [NextLightChange(entry)])
 
 
@@ -87,6 +88,36 @@ class TankkeeperSensor(SensorEntity):
     def native_value(self) -> int | datetime | None:
         """The value from the records."""
         return self.entity_description.value(self._service)
+
+
+class StatusSensor(SensorEntity):
+    """The worst rule result: on course, watch or act, with every rule's reason."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "status"
+    _attr_device_class = SensorDeviceClass.ENUM
+
+    def __init__(self, entry: TankkeeperConfigEntry) -> None:
+        """Attach the sensor to the tank's device."""
+        self._attr_options = [level.value for level in LEVEL_ORDER]
+        self._service = entry.runtime_data
+        self._attr_unique_id = f"{entry.entry_id}_status"
+        self._attr_device_info = tank_device(entry.entry_id, entry.title)
+
+    async def async_added_to_hass(self) -> None:
+        """Update when the records change, and when the hourly check finds a change."""
+        self.async_on_remove(self._service.async_add_listener(self.async_write_ha_state))
+
+    @property
+    def native_value(self) -> str:
+        """The status."""
+        return self._service.status().level.value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        """Each rule's result, with its reason and what to do."""
+        return {"rules": [result.to_json() for result in self._service.status().results]}
 
 
 class NextLightChange(SensorEntity):

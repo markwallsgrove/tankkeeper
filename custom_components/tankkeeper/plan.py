@@ -54,9 +54,10 @@ def format_time(value: time) -> str:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Reminders:
-    """Which notify services get reminders, and when."""
+    """Which notify services get reminders and status alerts, and when reminders go out."""
 
     notify: tuple[str, ...] = ()
+    status_notify: tuple[str, ...] = ()
     task_time: time = time(9)
     dose_time: time = time(12)
     resend_time: time = time(21)
@@ -69,6 +70,7 @@ class Reminders:
         """Serialise for storage."""
         return {
             "notify": list(self.notify),
+            "status_notify": list(self.status_notify),
             "task_time": format_time(self.task_time),
             "dose_time": format_time(self.dose_time),
             "resend_time": format_time(self.resend_time),
@@ -79,9 +81,9 @@ class Reminders:
         """Read from storage. Missing settings take their defaults."""
         stored = data or {}
         default = cls()
-        notify = stored.get("notify")
         return cls(
-            notify=tuple(str(item) for item in notify) if isinstance(notify, list) else default.notify,
+            notify=_names_or(stored.get("notify"), default.notify),
+            status_notify=_names_or(stored.get("status_notify"), default.status_notify),
             task_time=_time_or(stored.get("task_time"), default.task_time),
             dose_time=_time_or(stored.get("dose_time"), default.dose_time),
             resend_time=_time_or(stored.get("resend_time"), default.resend_time),
@@ -306,6 +308,10 @@ def import_tasks(
                 )
             )
     return imported
+
+
+def _names_or(value: JsonValue, default: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(str(item) for item in value) if isinstance(value, list) else default
 
 
 def _time_or(value: JsonValue, default: time) -> time:

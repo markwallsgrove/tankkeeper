@@ -8,15 +8,26 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, async_
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from custom_components.tankkeeper.domain import TANK_ID, Collection, Source
 from custom_components.tankkeeper.plan import REMINDERS_ID
+from custom_components.tankkeeper.rules import RULES_ID, RuleSettings, Stage
 from custom_components.tankkeeper.service import TankkeeperService
 
 NEW_DETAILS = {CONF_TANK_NAME: "Office", CONF_VOLUME: 80, CONF_DOSING_VOLUME: 72}
 
 
-async def _reminders_form(hass: HomeAssistant, entry: MockConfigEntry) -> ConfigFlowResult:
+async def _options_form(hass: HomeAssistant, entry: MockConfigEntry, step: str) -> ConfigFlowResult:
     menu = await hass.config_entries.options.async_init(entry.entry_id)
     assert menu["type"] is FlowResultType.MENU
-    return await hass.config_entries.options.async_configure(menu["flow_id"], {"next_step_id": "reminders"})
+    return await hass.config_entries.options.async_configure(menu["flow_id"], {"next_step_id": step})
+
+
+async def _reminders_form(hass: HomeAssistant, entry: MockConfigEntry) -> ConfigFlowResult:
+    return await _options_form(hass, entry, "reminders")
+
+
+def _suggested(form: ConfigFlowResult) -> dict[str, object]:
+    schema = form["data_schema"]
+    assert schema is not None
+    return {str(key): key.description["suggested_value"] for key in schema.schema if key.description}
 
 
 async def test_user_step_creates_the_tank(hass: HomeAssistant) -> None:
@@ -131,18 +142,32 @@ async def test_options_suggest_the_reminder_settings(hass: HomeAssistant, loaded
     schema = form["data_schema"]
     assert schema is not None
     suggested = {str(key): key.description["suggested_value"] for key in schema.schema}
-    assert suggested == {"notify": [], "task_time": "09:00", "dose_time": "12:00", "resend_time": "21:00"}
-    notify = schema.schema[next(key for key in schema.schema if str(key) == "notify")]
-    assert notify.config["options"] == ["mobile_app_phone", "mobile_app_tablet"]
+    assert suggested == {
+        "notify": [],
+        "task_time": "09:00",
+        "dose_time": "12:00",
+        "resend_time": "21:00",
+        "status_notify": [],
+    }
+    for name in ("notify", "status_notify"):
+        devices = schema.schema[next(key for key in schema.schema if str(key) == name)]
+        assert devices.config["options"] == ["mobile_app_phone", "mobile_app_tablet"]
 
 
 async def test_options_save_the_reminder_settings(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
     async_mock_service(hass, "notify", "mobile_app_phone")
+    async_mock_service(hass, "notify", "mobile_app_tablet")
     form = await _reminders_form(hass, loaded_entry)
 
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
-        {"notify": ["mobile_app_phone"], "task_time": "08:30:00", "dose_time": "13:00:00", "resend_time": "21:00:00"},
+        {
+            "notify": ["mobile_app_phone"],
+            "task_time": "08:30:00",
+            "dose_time": "13:00:00",
+            "resend_time": "21:00:00",
+            "status_notify": ["mobile_app_tablet"],
+        },
     )
     await hass.async_block_till_done()
 
@@ -153,6 +178,7 @@ async def test_options_save_the_reminder_settings(hass: HomeAssistant, loaded_en
         "task_time": "08:30",
         "dose_time": "13:00",
         "resend_time": "21:00",
+        "status_notify": ["mobile_app_tablet"],
     }
     [latest] = service.history(Collection.SETTINGS, REMINDERS_ID, 1)
     assert latest.source is Source.PANEL
@@ -169,6 +195,68 @@ async def test_options_with_the_same_settings_change_nothing(
 
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "nothing_changed"
+
+
+async def test_options_suggest_the_rule_limits_and_stage(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    form = await _options_form(hass, loaded_entry, "rules")
+
+    assert form["type"] is FlowResultType.FORM
+    assert form["step_id"] == "rules"
+    assert _suggested(form) == {**RuleSettings().to_json()}
+
+
+async def test_options_save_the_rule_limits_and_stage(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    form = await _options_form(hass, loaded_entry, "rules")
+
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {**RuleSettings().to_json(), "nitrogen_watch": 0.5, "nitrogen_act": 1, "stage": "cycling"}
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    service: TankkeeperService = loaded_entry.runtime_data
+    assert service.rule_settings() == RuleSettings(nitrogen_watch=0.5, nitrogen_act=1.0)
+    assert service.stage() is Stage.CYCLING
+    [latest] = service.history(Collection.SETTINGS, RULES_ID, 1)
+    assert latest.source is Source.PANEL
+
+    form = await _options_form(hass, loaded_entry, "rules")
+    assert _suggested(form)["stage"] == "cycling"
+
+
+async def test_options_change_only_the_stage(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    form = await _options_form(hass, loaded_entry, "rules")
+
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {**RuleSettings().to_json(), "stage": "cycled"}
+    )
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    service: TankkeeperService = loaded_entry.runtime_data
+    assert service.stage() is Stage.CYCLED
+    assert RULES_ID not in service.records(Collection.SETTINGS)
+
+
+async def test_options_with_the_same_rules_change_nothing(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    form = await _options_form(hass, loaded_entry, "rules")
+
+    result = await hass.config_entries.options.async_configure(form["flow_id"], RuleSettings().to_json())
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "nothing_changed"
+
+
+async def test_options_keep_act_stricter_than_watch(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
+    form = await _options_form(hass, loaded_entry, "rules")
+
+    result = await hass.config_entries.options.async_configure(
+        form["flow_id"], {**RuleSettings().to_json(), "ph_act": 7.5}
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_rules"}
+    service: TankkeeperService = loaded_entry.runtime_data
+    assert service.rule_settings() == RuleSettings()
 
 
 async def test_options_need_the_tank_loaded(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
