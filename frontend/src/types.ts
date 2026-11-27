@@ -215,3 +215,29 @@ export interface Review {
   note: string | null;
   proposal_ids: string[];
 }
+
+export interface PhotoCheck {
+  id: string;
+  time: string;
+  reason: "daily" | "test" | "manual" | "chat";
+  content_type: string | null;
+  asked: boolean;
+  summary: string | null;
+  issue: boolean;
+  suggestion: string | null;
+  seen: Record<string, string>;
+  note: string | null;
+  state: "open" | "dismissed" | "accepted" | "rejected" | null;
+  proposal_ids: string[];
+  photo_url: string | null;
+}
+
+export interface CameraInfo {
+  camera: string | null;
+  check_time: string | null;
+  after_test: boolean;
+  alerts: boolean;
+  keep_days: number;
+  latest: PhotoCheck | null;
+  open: PhotoCheck[];
+}

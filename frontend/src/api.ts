@@ -20,6 +20,14 @@ export class TankkeeperApi {
     return this.send({ type: "tankkeeper/reject_proposal", proposal_id: proposalId });
   }
 
+  acceptFinding(checkId: string): Promise<unknown> {
+    return this.send({ type: "tankkeeper/accept_finding", check_id: checkId });
+  }
+
+  rejectFinding(checkId: string): Promise<unknown> {
+    return this.send({ type: "tankkeeper/reject_finding", check_id: checkId });
+  }
+
   deleteConversation(conversationId: string): Promise<unknown> {
     return this.send({ type: "tankkeeper/delete_conversation", conversation_id: conversationId });
   }

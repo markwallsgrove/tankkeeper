@@ -108,6 +108,15 @@ function connection(lights: unknown[] = [light]): FakeConnection {
       next_change: { time: "2026-11-26T20:00:00+00:00" },
     })
     .on("list_proposals", { proposals: [proposal] })
+    .on("get_camera", {
+      camera: null,
+      check_time: "14:00",
+      after_test: false,
+      alerts: true,
+      keep_days: 30,
+      latest: null,
+      open: [],
+    })
     .on("get_history", { history: [] })
     .on("skip_task", { applied: true })
     .on("complete_task", { applied: true })
@@ -161,7 +170,7 @@ describe("tk-overview", () => {
     expect(findAll(element, "#chemistry line.target").length).toBe(2);
     expect(text(find(element, "#week"))).toContain("Trim plants");
     expect(text(find(element, "#week"))).not.toContain("Test water");
-    expect(findAll(element, "#cameras").length).toBe(1);
+    expect(findAll(element, "tk-camera").length).toBe(1);
   });
 
   it("skips and completes today's tasks", async () => {

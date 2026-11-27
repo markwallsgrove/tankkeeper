@@ -1,11 +1,12 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
-import { TkView, shared } from "../base";
+import { TkView, openAssist, shared } from "../base";
 import { chemistryChart, cycleChart, lightRows, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
 import "../tk-form";
 import "../tk-history";
+import "./camera";
 import type {
   Field,
   Level,
@@ -80,12 +81,6 @@ const LIGHT_FIELDS: Field[] = [
   { name: "ramp_minutes", label: "Fade (minutes)", type: "number", step: "1" },
 ];
 
-/** Opens Assist in Home Assistant's frontend, which handles the action event. */
-const ASSIST = {
-  config: { tap_action: { action: "assist", start_listening: false } },
-  action: "tap",
-};
-
 /** The tank at a glance: status, tasks, charts, lights and what is waiting for the Member. */
 export class TkOverview extends TkView {
   static override properties = {
@@ -148,12 +143,6 @@ export class TkOverview extends TkView {
   private async save(tool: string, values: Values, extra: Values = {}): Promise<void> {
     if (Object.keys(values).length === 0) return;
     await this.act((api) => api.call(tool, { ...extra, ...values }));
-  }
-
-  private discuss(): void {
-    this.dispatchEvent(
-      new CustomEvent("hass-action", { detail: ASSIST, bubbles: true, composed: true }),
-    );
   }
 
   private editor(
@@ -287,7 +276,7 @@ export class TkOverview extends TkView {
         <button
           class="discuss"
           @click=${() => {
-            this.discuss();
+            openAssist(this);
           }}
         >
           Discuss
@@ -385,7 +374,7 @@ export class TkOverview extends TkView {
               </ul>
             </section>`
       }
-      <div id="cameras"></div>
+      <tk-camera .api=${this.api} .stamp=${this.version}></tk-camera>
     `;
   }
 }

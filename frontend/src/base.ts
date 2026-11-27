@@ -138,6 +138,19 @@ export const shared = css`
   }
 `;
 
+/** Opens Assist in Home Assistant's frontend, which handles the action event. */
+const ASSIST = {
+  config: { tap_action: { action: "assist", start_listening: false } },
+  action: "tap",
+};
+
+/** Ask Home Assistant's frontend to open Assist, from an element inside the panel. */
+export function openAssist(from: HTMLElement): void {
+  from.dispatchEvent(
+    new CustomEvent("hass-action", { detail: ASSIST, bubbles: true, composed: true }),
+  );
+}
+
 /** A view that loads from the API, and loads again when a record it shows changed. */
 export abstract class TkView extends LitElement {
   static override properties = {
