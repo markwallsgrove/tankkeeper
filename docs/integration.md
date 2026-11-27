@@ -175,7 +175,7 @@ A reminder has **Complete** and **Skip** actions (Home Assistant Companion app).
 ### Set up
 
 1. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**.
-2. Fill in the form (see the parameters below). You can set up one tank.
+2. Go through the steps (see the parameters below). You can set up one tank.
 3. To use the tools from Claude Code or Claude Desktop, set up the **Model Context Protocol** integration and, in its options, choose **Tankkeeper** (only the tank's tools) or **Assist** (Tankkeeper's tools are added to Assist's). Choose one of the two, not both.
 
 ### Parameters
@@ -185,6 +185,20 @@ A reminder has **Complete** and **Skip** actions (Home Assistant Companion app).
 | Name | What you call the tank, for example Office tank. |
 | What's the volume of your tank? | In litres, as given on the box or by the maker. |
 | What's the volume of water in your tank? | In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank. |
+| Temperature | Optional. The target temperature, in °C. |
+| Notes | Optional. Anything Claude should know about the tank. |
+
+After the tank, choose **Go on step by step** or **Finish now**. The later steps can each be skipped:
+
+1. Tank (above).
+2. Tap water: the values from your supplier or a test.
+3. Products: add each product, with its label dose if you want doses worked out.
+4. Contents: plants, fish, rocks, wood and the rest.
+5. Light: the entity and its schedule, as in the options below.
+6. Reminders: the devices and times, as in the options below.
+7. Claude: not in the dialog yet (stage 8). Set up Claude with step 3 above, and tell it about anything you skipped.
+
+What you enter is saved as one change, with source PANEL, when the tank is created. Undo it in the panel's history like any other change. Home Assistant does not tell a setup dialog who runs it, so the change has no user.
 
 To change them later, open the integration and choose **Reconfigure**. The old values stay in the history.
 

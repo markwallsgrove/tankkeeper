@@ -1,5 +1,8 @@
 """Tankkeeper: the fish tank's records, plan, reminders, lights and status, MCP first."""
 
+from contextlib import suppress
+from typing import cast
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -8,12 +11,13 @@ from homeassistant.helpers.llm import async_register_api
 from homeassistant.helpers.typing import ConfigType
 
 from . import panel, websocket
-from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
+from .const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
+from .domain import Collection, NothingToChangeError, Record, Source
 from .light_control import LightRunner
 from .llm import TankkeeperAPI
 from .proposal_notify import ProposalNotifier
 from .reminders import ReminderSender
-from .service import TankkeeperService
+from .service import Actor, TankkeeperService, Target
 from .status import StatusRunner
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
@@ -41,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
             "notes": "",
         }
     )
+    await _async_finish_setup(hass, entry, service)
     entry.runtime_data = service
     entry.async_on_unload(async_register_api(hass, TankkeeperAPI(hass, service)))
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -50,6 +55,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(ProposalNotifier(hass, service).start())
     entry.async_on_unload(await panel.async_register(hass))
     return True
+
+
+async def _async_finish_setup(hass: HomeAssistant, entry: TankkeeperConfigEntry, service: TankkeeperService) -> None:
+    """Store what the setup steps entered as one panel change, then drop the draft from the entry.
+
+    Home Assistant does not tell a config flow who runs it, so the change has no user.
+    """
+    setup = entry.data.get(CONF_SETUP)
+    if not isinstance(setup, list):
+        return
+    targets: list[Target] = [
+        (Collection(collection), str(record_id), cast(Record | None, record)) for collection, record_id, record in setup
+    ]
+    actor = Actor(source=Source.PANEL, user_id=None, conversation_id=None)
+    with suppress(NothingToChangeError):
+        await service.async_set(targets, actor, f"Set up {entry.data[CONF_TANK_NAME]}")
+    hass.config_entries.async_update_entry(
+        entry, data={key: value for key, value in entry.data.items() if key != CONF_SETUP}
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -> bool:

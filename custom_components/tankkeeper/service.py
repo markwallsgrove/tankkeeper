@@ -185,13 +185,7 @@ class TankkeeperService:
 
     def light_targets(self, light: Light) -> list[Target]:
         """The change that stores a light, after checking the integration can run it."""
-        light.check()
-        if light.active:
-            if self.hass.states.get(light.entity_id) is None:
-                raise InvalidInputError(f"No entity {light.entity_id}")
-            if any(other.id != light.id and other.entity_id == light.entity_id for other in self.active_lights()):
-                raise InvalidInputError(f"Another light already uses {light.entity_id}")
-        return [(Collection.LIGHTS, light.id, light.to_record())]
+        return [light_target(self.hass, light, self.active_lights())]
 
     def reason_for(self, entry: HistoryEntry) -> str | None:
         """The reason the proposal behind a history entry gave."""
@@ -536,3 +530,14 @@ class TankkeeperService:
     async def _async_save(self) -> None:
         await self._store.async_save(self._state.to_json())
         self.notify()
+
+
+def light_target(hass: HomeAssistant, light: Light, others: Iterable[Light]) -> Target:
+    """The change that stores a light, after checking it and that its entity exists and is free. Setup uses it too."""
+    light.check()
+    if light.active:
+        if hass.states.get(light.entity_id) is None:
+            raise InvalidInputError(f"No entity {light.entity_id}")
+        if any(other.id != light.id and other.entity_id == light.entity_id for other in others):
+            raise InvalidInputError(f"Another light already uses {light.entity_id}")
+    return (Collection.LIGHTS, light.id, light.to_record())
