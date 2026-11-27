@@ -95,12 +95,25 @@ function series(log: LogEntry[], key: TestValue, name: string, source: "tank" | 
   return { name, colour: COLOURS[key], joined: source === "tank", points };
 }
 
+/** Room above and below the readings and lines, as a share of their spread. */
+const MARGIN = 0.1;
+
+/** The scale fits the readings and the lines, with a margin, and never goes under zero. */
 function chart(all: Series[], lines: Line[]): Chart {
   const values = [
     ...all.flatMap((item) => item.points.map((point) => point.value)),
     ...lines.map((line) => line.value),
   ];
-  return { series: all, lines, min: Math.min(0, ...values), max: Math.max(...values, 0) };
+  if (values.length === 0) return { series: all, lines, min: 0, max: 1 };
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const room = high > low ? (high - low) * MARGIN : Math.abs(high) * MARGIN || MARGIN;
+  return { series: all, lines, min: Math.max(0, low - room), max: high + room };
+}
+
+/** A scale value, with at most two decimals. */
+function tick(value: number): string {
+  return String(Number(value.toFixed(2)));
 }
 
 /** A line for each of the named values that is set. */
@@ -202,12 +215,14 @@ export function renderChart(data: Chart, label: string): TemplateResult {
   return html`
     <svg viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img" aria-label=${label} class="chart">
       <line class="axis" x1=${PAD} y1=${HEIGHT - PAD} x2=${WIDTH - PAD} y2=${HEIGHT - PAD}></line>
-      <text class="tick" x="2" y=${y(data.max) + 4}>${data.max}</text>
-      <text class="tick" x="2" y=${y(data.min) + 4}>${data.min}</text>
+      <text class="tick" x="2" y=${y(data.max) + 4}>${tick(data.max)}</text>
+      <text class="tick" x="2" y=${y(data.min) + 4}>${tick(data.min)}</text>
       ${data.lines.map(
         (line) =>
           svg`<line class="target" x1=${PAD} x2=${WIDTH - PAD} y1=${y(line.value)} y2=${y(line.value)}
-            stroke=${line.colour}><title>${line.label} ${line.value}</title></line>`,
+            stroke=${line.colour}><title>${line.label} ${line.value}</title></line>
+            <text class="line-label" x=${WIDTH - PAD} y=${y(line.value) - 2} text-anchor="end"
+              fill=${line.colour}>${line.label} ${line.value}</text>`,
       )}
       ${data.series
         .filter((item) => item.points.length > 0)
