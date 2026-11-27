@@ -1,7 +1,7 @@
 """The tools Claude uses, through Assist and the MCP server."""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import cast, override
 
@@ -20,8 +20,10 @@ from .domain import (
     Collection,
     Conversation,
     HistoryEntry,
+    InvalidInputError,
     JsonValue,
     Message,
+    NothingToChangeError,
     Proposal,
     ProposalState,
     Record,
@@ -31,6 +33,22 @@ from .domain import (
     dosing_within_tank,
     merge_record,
 )
+from .lights import (
+    Control,
+    Light,
+    LightEvent,
+    LightEventKind,
+    OneDayChange,
+    Schedule,
+    add_summary as light_add_summary,
+    cancel_one_day_summary,
+    change_summary as light_change_summary,
+    next_change,
+    on_periods,
+    one_day_summary,
+    remove_summary as light_remove_summary,
+    with_control,
+)
 from .plan import (
     PlanEvent,
     Reminders,
@@ -39,6 +57,7 @@ from .plan import (
     TaskStatus,
     add_summary,
     change_summary,
+    format_time,
     import_tasks,
     parse_time,
     remove_summary,
@@ -62,6 +81,8 @@ summary and the key messages.
 - The plan is a list of tasks, each on a day in the task slot or the dose slot. When the owner says \
 a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_task straight away. Adding, \
 changing and removing tasks, reminder settings and importing a plan are proposals.
+- The integration switches the tank lights on their schedule. Adding, changing and removing a light, \
+and a one-day change, are proposals made with tankkeeper__set_light. No tool switches a light directly.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
 
 READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_world=False)
@@ -72,6 +93,9 @@ APPLY = ToolAnnotations(open_world=False)
 type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObjectType]]
 
 NON_EMPTY = p.All(str, p.Length(min=1))
+LIGHT_ONLY = frozenset({"get_light"})
+LIGHT_HISTORY = 20
+LIGHT_ACTIONS = ["add", "update", "remove", "one_day", "cancel_one_day"]
 PLAN_DAYS = 7
 IMPORT_DAYS_BEFORE = 7
 IMPORT_DAYS_AFTER = 30
@@ -128,12 +152,6 @@ CONTENT_FIELDS: dict[p.Marker, object] = {
 }
 
 
-class InvalidInputError(TankkeeperError):
-    """An argument the schema accepts but the records can't use."""
-
-    key = "invalid_input"
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Spec:
     """What a tool is called, what it takes and what it does."""
@@ -180,8 +198,8 @@ class TankkeeperTool(Tool):
 
 
 def build_tools(service: TankkeeperService) -> list[Tool]:
-    """Every Tankkeeper tool, bound to one tank."""
-    return [TankkeeperTool(spec, service) for spec in SPECS]
+    """Every Tankkeeper tool, bound to one tank. get_light is only there when a light is set."""
+    return [TankkeeperTool(spec, service) for spec in SPECS if spec.name not in LIGHT_ONLY or service.has_lights()]
 
 
 async def get_tank(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -481,13 +499,13 @@ async def get_plan(service: TankkeeperService, data: Record, actor: Actor) -> Js
     start = _day(data, "start", dt_util.now().date())
     end = _day(data, "end", start + timedelta(days=PLAN_DAYS - 1))
     _check_range(start, end)
-    reminders = service.reminders()
-    tasks = sort_tasks((task for task in service.tasks() if start <= task.day <= end), reminders)
+    reminders_on = service.reminders_on
+    tasks = sort_tasks((task for task in service.tasks() if start <= task.day <= end), reminders_on)
     return {
         "start": start.isoformat(),
         "end": end.isoformat(),
-        "tasks": [_task_json(task, reminders) for task in tasks],
-        "reminders": reminders.to_json(),
+        "tasks": [_task_json(task, reminders_on(task.day)) for task in tasks],
+        "reminders": service.reminders().to_json(),
     }
 
 
@@ -611,6 +629,138 @@ async def import_plan(service: TankkeeperService, data: Record, actor: Actor) ->
         summary=f"Import {len(tasks)} tasks from {calendar}",
         targets=[_task_target(task) for task in tasks],
     )
+
+
+async def get_light(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The lights, today's schedule, the on/off log and the changes missed or made late."""
+    light_id = _optional_str(data, "light_id")
+    lights = service.active_lights() if light_id is None else [service.light(light_id)]
+    now = dt_util.now()
+    since = service.now() - timedelta(days=_int(data, "days"))
+    log = service.light_log()
+    change = next_change(service.active_lights(), now)
+    return {
+        "today": now.date().isoformat(),
+        "dose_time": format_time(service.reminders_on(now.date()).dose_time),
+        "lights": [_light_json(service, light, log, since) for light in lights],
+        "next_change": None
+        if change is None
+        else {
+            "time": change.time.isoformat(),
+            "on": [light.id for light in change.on],
+            "off": [light.id for light in change.off],
+        },
+    }
+
+
+async def set_light(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose adding, changing or removing a light, or a change for one day."""
+    action = _str(data, "action")
+    if action == "add":
+        light = _new_light(data)
+        summary = light_add_summary(light)
+    else:
+        light_id = _optional_str(data, "light_id")
+        if light_id is None:
+            raise InvalidInputError(f"{action} needs the light_id")
+        current = service.light(light_id)
+        light, summary = _changed_light(current, action, data)
+    return await _propose(service, data, actor, tool="set_light", summary=summary, targets=service.light_targets(light))
+
+
+def _new_light(data: Record) -> Light:
+    missing = [key for key in ("entity_id", "model", "on", "off") if key not in data]
+    if missing:
+        raise InvalidInputError(f"A new light needs {', '.join(missing)}")
+    control = Control(_optional_str(data, "control") or Control.ON_OFF)
+    schedule = Schedule(on=_time(data, "on", time()), off=_time(data, "off", time()))
+    return Light(
+        id=ulid_now(),
+        entity_id=_str(data, "entity_id"),
+        model=_str(data, "model"),
+        control=control,
+        schedule=_schedule_with(schedule, data),
+        added=dt_util.now().date(),
+    )
+
+
+def _changed_light(current: Light, action: str, data: Record) -> tuple[Light, str]:
+    today = dt_util.now().date()
+    if action == "remove":
+        return replace(current, removed=today), light_remove_summary(current)
+    if action == "cancel_one_day":
+        if current.one_day is None:
+            raise NothingToChangeError(f"{current.model} has no one-day change")
+        return replace(current, one_day=None), cancel_one_day_summary(current)
+    if action == "one_day":
+        day = _day(data, "date", today)
+        if day < today:
+            raise InvalidInputError("A one-day change is for today or a later day")
+        brightness = data.get("brightness_pct")
+        change = OneDayChange(
+            day=day,
+            on=_time(data, "on", current.schedule.on),
+            off=_time(data, "off", current.schedule.off),
+            brightness_pct=brightness if isinstance(brightness, int) else None,
+        )
+        return replace(current, one_day=change), one_day_summary(current, change)
+    control = Control(_optional_str(data, "control") or current.control)
+    light = replace(
+        current,
+        entity_id=_optional_str(data, "entity_id") or current.entity_id,
+        model=_optional_str(data, "model") or current.model,
+        control=control,
+        schedule=_schedule_with(with_control(current.schedule, control), data),
+    )
+    return light, light_change_summary(light)
+
+
+def _schedule_with(schedule: Schedule, data: Record) -> Schedule:
+    brightness = data.get("brightness_pct", schedule.brightness_pct)
+    return replace(
+        schedule,
+        on=_time(data, "on", schedule.on),
+        off=_time(data, "off", schedule.off),
+        brightness_pct=brightness if isinstance(brightness, int) else None,
+        ramp_minutes=_int(data, "ramp_minutes") if "ramp_minutes" in data else schedule.ramp_minutes,
+        rgb_color=_rgb(data["rgb_color"]) if "rgb_color" in data else schedule.rgb_color,
+    )
+
+
+def _rgb(value: JsonValue) -> tuple[int, int, int] | None:
+    if not isinstance(value, list):
+        return None
+    red, green, blue = (cast(int, part) for part in value)
+    return red, green, blue
+
+
+def _light_json(service: TankkeeperService, light: Light, log: list[LightEvent], since: datetime) -> JsonObjectType:
+    today = dt_util.now().date()
+    schedule = light.schedule_on(today)
+    state = service.hass.states.get(light.entity_id)
+    status = service.light_status(light.id)
+    events = [event for event in log if event.light_id == light.id and event.time >= since]
+    return {
+        "id": light.id,
+        **light.to_record(),
+        "today": OneDayChange(
+            day=today, on=schedule.on, off=schedule.off, brightness_pct=schedule.brightness_pct
+        ).to_json(),
+        "state": None if state is None else state.state,
+        "problem": status.problem,
+        "status": status.to_json(),
+        "history": [
+            {**_history_json(entry), "reason": service.reason_for(entry)}
+            for entry in service.history(Collection.LIGHTS, light.id, LIGHT_HISTORY)
+        ],
+        "log": [event.to_json() for event in events],
+        "missed_or_late": [
+            event.to_json() for event in events if event.kind in (LightEventKind.MISSED, LightEventKind.LATE)
+        ],
+        "on_periods": [
+            [start.isoformat(), end.isoformat()] for start, end in on_periods(log, light.id, since, service.now())
+        ],
+    }
 
 
 async def _propose(
@@ -1185,6 +1335,50 @@ SPECS: tuple[Spec, ...] = (
             p.Optional(
                 "dose_products", description="Product names that make a task a dose. Defaults to the products"
             ): [NON_EMPTY],
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="get_light",
+        title="Get the lights",
+        annotations=READ,
+        handler=get_light,
+        description="Each light with its schedule, today's schedule after any one-day change, its state, whether it "
+        "follows the schedule, the changes to it with their reasons, the on/off log, the changes missed or made "
+        "late, and when it was on, for the last days (default 7). Also the next change and today's dose time.",
+        schema={
+            p.Optional("light_id"): NON_EMPTY,
+            p.Optional("days", default=7): p.All(int, p.Range(min=1, max=30)),
+        },
+    ),
+    Spec(
+        name="set_light",
+        title="Propose a light change",
+        annotations=PROPOSE,
+        handler=set_light,
+        description="Propose a light the integration switches on a schedule: add one, update or remove it, or make "
+        "a one_day change that reverts by itself the next day, or cancel_one_day. add needs entity_id (a light or "
+        "switch entity), model, on and off. A dimmable or colour light needs a light entity and can have "
+        "brightness_pct and ramp_minutes; only a colour light has rgb_color. Times are HH:MM, and the light turns "
+        "off after it turns on on the same day. Doses are due when the first light turns on. No tool switches the "
+        "light directly. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("action"): p.In(LIGHT_ACTIONS),
+            p.Optional("light_id", description="The light to change. Not for add"): NON_EMPTY,
+            p.Optional("entity_id"): NON_EMPTY,
+            p.Optional("model", description="The light's make and model"): NON_EMPTY,
+            p.Optional("control"): p.In(list(Control)),
+            p.Optional("on", description="HH:MM"): NON_EMPTY,
+            p.Optional("off", description="HH:MM"): NON_EMPTY,
+            p.Optional("brightness_pct", description="1 to 100, or null for none"): p.Maybe(int),
+            p.Optional("ramp_minutes", description="Minutes to fade in at on and out at off"): p.All(
+                int, p.Range(min=0)
+            ),
+            p.Optional("rgb_color", description="Red, green and blue, each 0 to 255, or null for none"): p.Maybe(
+                p.All([int], p.Length(min=3, max=3))
+            ),
+            p.Optional("date", description="ISO date of a one_day change. Defaults to today"): NON_EMPTY,
             **REASON,
             **CONVERSATION,
         },

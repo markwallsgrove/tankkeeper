@@ -96,7 +96,7 @@ def test_due_and_overdue_tasks_are_open_and_in_range(tc: hegel.TestCase) -> None
     slot = tc.draw(gs.sampled_from(list(Slot)))
 
     due = tasks_due(plan, DAY, slot)
-    overdue = tasks_overdue(plan, DAY, Reminders())
+    overdue = tasks_overdue(plan, DAY, lambda _: Reminders())
 
     assert all(task.status is TaskStatus.OPEN and task.day == DAY and task.slot is slot for task in due)
     assert all(

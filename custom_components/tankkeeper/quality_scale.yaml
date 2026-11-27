@@ -42,11 +42,9 @@ rules:
   docs-installation-parameters: done
   entity-unavailable:
     status: exempt
-    comment: The records are local, so the entities are available while the entry is loaded.
+    comment: The records are local, so the entities are available while the entry is loaded. A light's unavailable entity shows on the light problem sensor.
   integration-owner: done
-  log-when-unavailable:
-    status: exempt
-    comment: The records are local, so nothing becomes unavailable.
+  log-when-unavailable: done
   parallel-updates: done
   reauthentication-flow:
     status: exempt
@@ -73,7 +71,7 @@ rules:
   docs-use-cases: done
   dynamic-devices:
     status: exempt
-    comment: One service device per tank, created with the entry.
+    comment: One service device per tank, created with the entry. The light entities come and go with the lights.
   entity-category: done
   entity-device-class: done
   entity-disabled-by-default:
@@ -83,9 +81,7 @@ rules:
   exception-translations: done
   icon-translations: done
   reconfiguration-flow: done
-  repair-issues:
-    status: exempt
-    comment: Nothing the owner needs to repair.
+  repair-issues: done
   stale-devices:
     status: exempt
     comment: The one device is removed with the entry.

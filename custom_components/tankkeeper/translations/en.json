@@ -47,6 +47,9 @@
       },
       "last_test": {
         "name": "Last water test"
+      },
+      "next_light_change": {
+        "name": "Next light change"
       }
     },
     "calendar": {
@@ -57,6 +60,11 @@
     "todo": {
       "today": {
         "name": "Today"
+      }
+    },
+    "binary_sensor": {
+      "light_problem": {
+        "name": "Light problem"
       }
     }
   },
@@ -90,6 +98,12 @@
     },
     "repeat_not_supported": {
       "message": "Tankkeeper tasks can't repeat. Add one task for each day"
+    }
+  },
+  "issues": {
+    "light_problem": {
+      "title": "The light {model} is not following its schedule",
+      "description": "Tankkeeper could not switch {entity_id}, or the entity is unavailable. Check that the light or plug has power and is connected to Home Assistant. The problem clears by itself when the light is back in the state its schedule wants."
     }
   }
 }
