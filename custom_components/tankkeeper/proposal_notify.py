@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 NOTIFY_DOMAIN = "notify"
 NOTIFY_AFTER = timedelta(minutes=10)
 CHECK_EVERY = timedelta(minutes=1)
-DISCUSS_URI = f"/config/integrations/integration/{DOMAIN}"
+DISCUSS_URI = "/tankkeeper"
 ACCEPT = "TANKKEEPER_ACCEPT"
 REJECT = "TANKKEEPER_REJECT"
 

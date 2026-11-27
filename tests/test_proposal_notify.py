@@ -73,6 +73,10 @@ def _message(proposal: JsonObjectType, text: str) -> dict[str, object]:
     }
 
 
+def test_discuss_opens_the_panel() -> None:
+    assert DISCUSS_URI == "/tankkeeper"
+
+
 async def test_a_proposal_still_waiting_is_sent_once(
     hass: HomeAssistant, call: Caller, tablet: list[ServiceCall], freezer: FrozenDateTimeFactory
 ) -> None:

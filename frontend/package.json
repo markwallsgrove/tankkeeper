@@ -1,0 +1,28 @@
+{
+  "name": "tankkeeper-panel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/tankkeeper-panel.ts --bundle --format=esm --target=es2022 --minify --legal-comments=none --outfile=../custom_components/tankkeeper/frontend/tankkeeper-panel.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "lit": "3.3.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@vitest/coverage-v8": "5.1.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "happy-dom": "21.0.4",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}

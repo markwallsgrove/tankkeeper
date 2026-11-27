@@ -1,0 +1,175 @@
+import { LitElement, css, html, nothing, type TemplateResult } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
+import type { Field, Values } from "./types";
+
+type Input = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+
+function shown(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.map(String).join("\n");
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean")
+    return String(value);
+  return JSON.stringify(value);
+}
+
+function parsed(field: Field, raw: string): unknown {
+  if (field.type === "number") return raw.trim() === "" ? null : Number(raw);
+  if (field.type === "list") {
+    return raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+  }
+  return raw;
+}
+
+function empty(value: unknown): boolean {
+  return value === "" || value === null || (Array.isArray(value) && value.length === 0);
+}
+
+/**
+ * The fields whose value differs from the record's. A new record sends the ones filled in.
+ * An emptied number becomes null.
+ */
+export function readForm(fields: Field[], form: HTMLFormElement, values: Values): Values {
+  const changed: Values = {};
+  for (const field of fields) {
+    const input = form.elements.namedItem(field.name) as Input;
+    const value = parsed(field, input.value);
+    const before = values[field.name];
+    if (empty(value) && (before === undefined || before === null)) continue;
+    if (JSON.stringify(value) !== JSON.stringify(before)) changed[field.name] = value;
+  }
+  return changed;
+}
+
+/** A form for one record. It fires tk-save with the changed fields. */
+export class TkForm extends LitElement {
+  static override properties = {
+    fields: { attribute: false },
+    values: { attribute: false },
+    submitLabel: { attribute: false },
+    busy: { type: Boolean },
+    error: { attribute: false },
+  };
+
+  declare fields: Field[];
+  declare values: Values;
+  declare submitLabel: string;
+  declare busy: boolean;
+  declare error: string;
+
+  constructor() {
+    super();
+    this.fields = [];
+    this.values = {};
+    this.submitLabel = "Save";
+    this.busy = false;
+    this.error = "";
+  }
+
+  static override styles = css`
+    form {
+      display: grid;
+      gap: 8px;
+    }
+    label {
+      display: grid;
+      gap: 2px;
+      font-size: 0.9em;
+      color: var(--secondary-text-color);
+    }
+    input,
+    select,
+    textarea {
+      font: inherit;
+      padding: 6px;
+      color: var(--primary-text-color);
+      background: var(--input-fill-color, var(--secondary-background-color));
+      border: 1px solid var(--divider-color);
+      border-radius: 4px;
+      box-sizing: border-box;
+      width: 100%;
+    }
+    button {
+      justify-self: start;
+      font: inherit;
+      padding: 6px 14px;
+      border: none;
+      border-radius: 4px;
+      color: var(--text-primary-color, #fff);
+      background: var(--primary-color);
+      cursor: pointer;
+    }
+    button:disabled {
+      opacity: 0.5;
+    }
+    .error {
+      color: var(--error-color);
+    }
+  `;
+
+  private input(field: Field): TemplateResult {
+    const value = shown(this.values[field.name]);
+    if (field.type === "select") {
+      return html`<select name=${field.name} ?required=${field.required === true} .value=${value}>
+        <option value="" ?selected=${value === ""}></option>
+        ${(field.options ?? []).map(
+          (option) =>
+            html`<option value=${option} ?selected=${option === value}>${option}</option>`,
+        )}
+      </select>`;
+    }
+    if (field.type === "textarea" || field.type === "list") {
+      return html`<textarea
+        name=${field.name}
+        rows="3"
+        ?required=${field.required === true}
+        .value=${value}
+      ></textarea>`;
+    }
+    return html`<input
+      name=${field.name}
+      type=${field.type}
+      step=${ifDefined(field.step ?? (field.type === "number" ? "any" : undefined))}
+      ?required=${field.required === true}
+      .value=${value}
+    />`;
+  }
+
+  /** Clear what was typed, after a new record was saved. */
+  reset(): void {
+    this.renderRoot.querySelector("form")?.reset();
+  }
+
+  private submit(event: Event): void {
+    event.preventDefault();
+    const detail = readForm(this.fields, event.target as HTMLFormElement, this.values);
+    this.dispatchEvent(
+      new CustomEvent<Values>("tk-save", { detail, bubbles: true, composed: true }),
+    );
+  }
+
+  override render(): TemplateResult {
+    return html`<form
+      @submit=${(event: SubmitEvent) => {
+        this.submit(event);
+      }}
+    >
+      ${this.fields.map((field) => html`<label>${field.label} ${this.input(field)}</label>`)}
+      ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
+      <button type="submit" ?disabled=${this.busy}>${this.submitLabel}</button>
+    </form>`;
+  }
+}
+
+customElements.define("tk-form", TkForm);
+
+/** Save what a tk-form sent, and clear that form when the save succeeds. */
+export async function saveAndClear(
+  event: CustomEvent<Values>,
+  save: (values: Values) => Promise<boolean>,
+): Promise<void> {
+  const form = event.target as TkForm;
+  if (await save(event.detail)) form.reset();
+}

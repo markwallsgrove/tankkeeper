@@ -77,6 +77,8 @@ Saved. Tankkeeper is live.
 
 **Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo.
 
+**Use the panel.** The Tankkeeper panel in the sidebar shows the status, today's tasks, the cycle and water charts, the light and the changes waiting for you. Every record can be edited there too, with history and undo.
+
 **Optional extras:**
 
 - 💡 **Light:** tell it which lights the tank has. It runs the schedule, keeps a 30-day on/off history, and opens a repair issue when a light does not follow. Doses are due when the light turns on. Claude can suggest a better schedule; you decide.
@@ -154,6 +156,7 @@ Tankkeeper aims for Platinum, the highest tier of Home Assistant's [integration 
 - Fully typed, checked with mypy in strict mode.
 - Fully asynchronous.
 - Every line covered by tests, including property-based tests with [Hegel](https://hegel.readthedocs.io), through its Python package [`hegeltest`](https://pypi.org/project/hegeltest/).
+- The panel is Lit and strict TypeScript, in `frontend/`. ESLint, Prettier and vitest run in CI, with at least 95% of lines, statements and functions and 90% of branches covered. The built bundle is committed, and CI checks it is up to date: run `npm run build` in `frontend/` after a change.
 - Every change reviewed twice, by Claude and by Codex, before it merges.
 
 ## 🤝 Contributing
