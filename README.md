@@ -17,7 +17,7 @@ Tankkeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar and reminders work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders and the light work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
@@ -77,7 +77,7 @@ Saved. Tankkeeper is live.
 
 **Optional extras:**
 
-- 💡 **Light:** tell it which lights the tank has. It runs the schedule and keeps a 30-day on/off history. Claude can suggest a better schedule; you decide.
+- 💡 **Light:** tell it which lights the tank has. It runs the schedule, keeps a 30-day on/off history, and opens a repair issue when a light does not follow. Doses are due when the light turns on. Claude can suggest a better schedule; you decide.
 - 📷 **Camera:** a cheap IP camera on the side glass. Claude looks at a photo and flags things like algae, cloudy water or a plant melting, with a suggested fix.
 
 ## 🎁 Why it's worth it
@@ -126,7 +126,7 @@ Then use it as you go:
 
 Claude saves doses, tests, notes and new contents straight away. A change to the tank, the water values or the products, like a new product or a new dose, it reads back first and saves only when you say yes. Any change made through Claude can be undone.
 
-To get reminders with Complete and Skip on your phone, open the integration, choose **Configure** and pick your devices.
+To get reminders with Complete and Skip on your phone, open the integration, choose **Configure > Reminders** and pick your devices. To let Tankkeeper run the tank light, tell Claude about it, or choose **Configure > Add a light**.
 
 If Claude still can't see the tools, see [troubleshooting](docs/integration.md#troubleshooting).
 
