@@ -36,5 +36,6 @@ async def test_diagnostics_count_records_without_their_text(
         "history_entries": 1,
         "proposals": {"pending": 1, "applied": 0, "rejected": 0},
         "conversations": 1,
+        "photo_checks": 0,
     }
     assert SECRET_TEXT not in str(diagnostics)

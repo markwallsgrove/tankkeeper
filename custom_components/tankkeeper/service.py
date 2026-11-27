@@ -1,11 +1,13 @@
 """The one service layer that tools, flows and entities use to read and change records."""
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from pathlib import Path
 import secrets
+import shutil
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.storage import Store
@@ -21,6 +23,7 @@ from .domain import (
     TANK_ID,
     Collection,
     Conversation,
+    FindingClosedError,
     HistoryEntry,
     InvalidInputError,
     Message,
@@ -30,6 +33,7 @@ from .domain import (
     ProposalState,
     Record,
     Source,
+    TankkeeperError,
     TankState,
     accept_proposal,
     add_to_batch,
@@ -49,11 +53,25 @@ from .domain import (
     undo_changes,
 )
 from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
+from .photos import (
+    CAMERA_ID,
+    CameraSettings,
+    CheckReason,
+    IssueState,
+    PhotoCheck,
+    asked_on,
+    check_camera,
+    kept_checks,
+    photo_file,
+    remove_unused,
+    without_old_photos,
+)
 from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
 from .reviews import Review, comments_on, kept
 from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
 type Target = tuple[Collection, str, Record | None]
+type PhotoChecker = Callable[[CheckReason], Awaitable[PhotoCheck]]
 
 _DRAFT: ContextVar[tuple[TankkeeperService, TankState] | None] = ContextVar("tankkeeper_draft", default=None)
 
@@ -91,6 +109,9 @@ class TankkeeperService:
         self._listeners: list[CALLBACK_TYPE] = []
         self._light_status: dict[str, LightStatus] = {}
         self._state = TankState()
+        self._photo_checker: PhotoChecker | None = None
+        self._asking = 0
+        self.photo_dir = Path(hass.config.path(DOMAIN, "photos"))
 
     @property
     def state(self) -> TankState:
@@ -122,8 +143,9 @@ class TankkeeperService:
             self._state = TankState.from_json(stored)
 
     async def async_remove(self) -> None:
-        """Delete the stored records."""
+        """Delete the stored records and photos."""
         await self._store.async_remove()
+        await self.hass.async_add_executor_job(shutil.rmtree, self.photo_dir, True)
 
     @callback
     def async_add_listener(self, listener: CALLBACK_TYPE) -> CALLBACK_TYPE:
@@ -552,11 +574,29 @@ class TankkeeperService:
         """The latest reviews, newest first."""
         return [Review.from_json(item) for item in reversed(self._state.reviews)][:limit]
 
-    def comments_today(self) -> int:
-        """How many times Claude was asked for a review comment today."""
+    def asked_today(self) -> int:
+        """How many times Claude was asked today, for a review comment or a photo check. The daily cap counts both."""
         tz = dt_util.get_default_time_zone()
+        today = self._clock().astimezone(tz).date()
         reviews = (Review.from_json(item) for item in self._state.reviews)
-        return comments_on(reviews, self._clock().astimezone(tz).date(), tz)
+        return comments_on(reviews, today, tz) + asked_on(self.photo_checks(), today, tz) + self._asking
+
+    @contextmanager
+    def reserve_ask(self, cap: int) -> Iterator[bool]:
+        """Count one question to Claude toward today's cap until its record is stored.
+
+        Yields False when the cap is reached.
+
+        The check and the count happen in one step, so two questions at the same time can't both pass the cap.
+        """
+        if self.asked_today() >= cap:
+            yield False
+            return
+        self._asking += 1
+        try:
+            yield True
+        finally:
+            self._asking -= 1
 
     async def async_add_review(self, review: Review) -> None:
         """Store a review. Old ones are dropped, but never one from today."""
@@ -564,6 +604,125 @@ class TankkeeperService:
         reviews = [*(Review.from_json(item) for item in self._state.reviews), review]
         today = self._clock().astimezone(tz).date()
         self._state.reviews = [item.to_json() for item in kept(reviews, today, tz)]
+        await self._async_save()
+
+    def camera(self) -> CameraSettings:
+        """The camera settings."""
+        return CameraSettings.from_json(self.state.get(Collection.SETTINGS, CAMERA_ID))
+
+    def camera_targets(self, settings: CameraSettings) -> list[Target]:
+        """The change that stores new camera settings. Raises InvalidInputError or NothingToChangeError."""
+        check_camera(self.hass, settings)
+        if settings == self.camera():
+            raise NothingToChangeError("The camera settings already look like that")
+        return [(Collection.SETTINGS, CAMERA_ID, settings.to_json())]
+
+    def photo_checks(self) -> list[PhotoCheck]:
+        """Every photo check kept, oldest first."""
+        return [PhotoCheck.from_json(item) for item in self._state.photo_checks]
+
+    def photo_check(self, check_id: str) -> PhotoCheck:
+        """One photo check, or NotFoundError."""
+        for check in self.photo_checks():
+            if check.id == check_id:
+                return check
+        raise NotFoundError(f"No photo check with id {check_id}")
+
+    def open_issues(self) -> list[PhotoCheck]:
+        """The issues the camera found that wait for the owner, newest first."""
+        return [check for check in reversed(self.photo_checks()) if check.state is IssueState.OPEN]
+
+    def photo_path(self, check: PhotoCheck) -> Path | None:
+        """Where the check's photo is stored, or None when it has none."""
+        return photo_file(self.photo_dir, check)
+
+    @callback
+    def set_photo_checker(self, checker: PhotoChecker) -> CALLBACK_TYPE:
+        """Let the tools run photo checks with the camera runner. Returns a function that stops it."""
+        self._photo_checker = checker
+
+        @callback
+        def remove() -> None:
+            self._photo_checker = None
+
+        return remove
+
+    async def async_check_photo(self, reason: CheckReason) -> PhotoCheck:
+        """Take a photo now and ask Claude to look at it."""
+        if self._photo_checker is None:
+            raise NotFoundError("Photo checks are not running")
+        return await self._photo_checker(reason)
+
+    async def async_save_photo_check(self, check: PhotoCheck) -> None:
+        """Store a photo check, or update it by id, then let go of old checks and photos."""
+        checks = [item for item in self.photo_checks() if item.id != check.id]
+        checks.append(check)
+        await self._async_keep_photos(checks)
+
+    async def async_prune_photos(self) -> None:
+        """Let go of old checks and the photos older than the camera keeps them."""
+        await self._async_keep_photos(self.photo_checks())
+
+    async def async_dismiss(self, check_id: str, user_id: str | None) -> PhotoCheck:
+        """Close an issue as not a problem, so Claude ignores that finding next time. Its plan changes are rejected."""
+        return await self._async_decline_issue(check_id, user_id, IssueState.DISMISSED)
+
+    async def async_accept_finding(self, check_id: str, user_id: str | None, source: Source) -> PhotoCheck:
+        """Close an issue as accepted, applying the plan changes proposed for it."""
+        check = self._open_issue(check_id)
+        before = self._state.to_json()
+        try:
+            for proposal in self._pending_for(check):
+                accept_proposal(
+                    self._state, proposal.id, history_id=ulid_now(), now=self._clock(), source=source, user_id=user_id
+                )
+        except TankkeeperError:
+            self._state = TankState.from_json(before)
+            raise
+        closed = self._close(check, IssueState.ACCEPTED)
+        await self._async_save()
+        return closed
+
+    async def async_reject_finding(self, check_id: str, user_id: str | None) -> PhotoCheck:
+        """Close an issue as rejected, rejecting the plan changes proposed for it."""
+        return await self._async_decline_issue(check_id, user_id, IssueState.REJECTED)
+
+    async def _async_decline_issue(self, check_id: str, user_id: str | None, state: IssueState) -> PhotoCheck:
+        check = self._open_issue(check_id)
+        for proposal in self._pending_for(check):
+            reject_proposal(self._state, proposal.id, now=self._clock(), user_id=user_id, any_user=True)
+        closed = self._close(check, state)
+        await self._async_save()
+        return closed
+
+    def _open_issue(self, check_id: str) -> PhotoCheck:
+        check = self.photo_check(check_id)
+        if check.state is not IssueState.OPEN:
+            raise FindingClosedError(f"The photo check {check_id} has no open issue")
+        return check
+
+    def _pending_for(self, check: PhotoCheck) -> list[Proposal]:
+        return [
+            proposal
+            for proposal_id in check.proposal_ids
+            if (proposal := self._state.proposals.get(proposal_id)) is not None
+            and proposal.state is ProposalState.PENDING
+        ]
+
+    def _close(self, check: PhotoCheck, state: IssueState) -> PhotoCheck:
+        closed = replace(check, state=state)
+        self._state.photo_checks = [
+            closed.to_json() if item.id == check.id else item.to_json() for item in self.photo_checks()
+        ]
+        return closed
+
+    async def _async_keep_photos(self, checks: list[PhotoCheck]) -> None:
+        tz = dt_util.get_default_time_zone()
+        now = self._clock()
+        kept = without_old_photos(kept_checks(checks, now.astimezone(tz).date(), tz), now, self.camera().keep_days)
+        self._state.photo_checks = [check.to_json() for check in kept]
+        used = {path.name for check in kept if (path := self.photo_path(check)) is not None}
+        await self.hass.async_add_executor_job(remove_unused, self.photo_dir, used)
         await self._async_save()
 
     async def async_delete_conversation(self, conversation_id: str) -> None:

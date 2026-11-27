@@ -82,7 +82,7 @@ Saved. Tankkeeper is live.
 **Optional extras:**
 
 - 💡 **Light:** tell it which lights the tank has. It runs the schedule, keeps a 30-day on/off history, and opens a repair issue when a light does not follow. Doses are due when the light turns on. Claude can suggest a better schedule; you decide.
-- 📷 **Camera:** a cheap IP camera on the side glass. Claude looks at a photo and flags things like algae, cloudy water or a plant melting, with a suggested fix.
+- 📷 **Camera:** a cheap IP camera, such as a Tapo C100, on the side glass. Claude looks at a photo each day and flags things like algae, cloudy water or a plant melting, with a suggested fix. Photos stay in Home Assistant and go to Anthropic only when Claude looks at them. Each look uses paid Anthropic API calls and counts toward the same daily cap as review comments.
 
 ## 🎁 Why it's worth it
 
@@ -95,7 +95,7 @@ Saved. Tankkeeper is live.
 ## 📋 Requirements
 
 - Home Assistant with the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration, for Claude Code and Claude Desktop.
-- An [Anthropic API key](https://console.anthropic.com/), for Assist chat and review comments. Optional: the panel, reminders and rules work without it.
+- An [Anthropic API key](https://console.anthropic.com/), for Assist chat, review comments and photo checks. Optional: the panel, reminders and rules work without it.
 - [Tailscale](https://tailscale.com/), or another private way to reach Home Assistant, if you want to talk to it away from home.
 
 ## 📦 Installation

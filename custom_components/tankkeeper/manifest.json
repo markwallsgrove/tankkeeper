@@ -2,7 +2,8 @@
   "domain": "tankkeeper",
   "name": "Tankkeeper",
   "after_dependencies": [
-    "ai_task"
+    "ai_task",
+    "camera"
   ],
   "codeowners": [
     "@markwallsgrove"
@@ -13,6 +14,7 @@
     "frontend",
     "http",
     "llm",
+    "media_source",
     "panel_custom",
     "websocket_api"
   ],

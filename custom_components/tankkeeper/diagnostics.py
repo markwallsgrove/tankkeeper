@@ -21,4 +21,5 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: Tankkee
             for proposal_state in ProposalState
         },
         "conversations": len(state.conversations),
+        "photo_checks": len(state.photo_checks),
     }

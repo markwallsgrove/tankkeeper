@@ -6,6 +6,7 @@ when that is on and under the daily cap, and goes to the status-alert devices.
 
 import asyncio
 from collections.abc import Iterable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime, time
 import logging
@@ -22,7 +23,7 @@ import probatio as p
 
 from .claude import Trigger
 from .const import DOMAIN
-from .domain import Record, Source, without_codes
+from .domain import CODE_KEYS, Record, Source, without_keys
 from .reviews import MAX_COMMENT, Review, event_triggers, message, ordered, result_text
 from .rules import LEVEL_TITLES, Status
 from .service import Actor, TankkeeperService
@@ -63,6 +64,8 @@ FAILED_NOTE = "Claude could not comment: {error}"
 EMPTY_NOTE = "Claude's answer had no comment."
 TIMEOUT_NOTE = "Claude took too long to comment."
 TOO_MANY_CALLS = "A review may call at most {limit} tools. Write the comment now."
+# Confirm codes, and signed photo links, which would open a photo for anyone who has them.
+HIDDEN_KEYS = CODE_KEYS | {"photo_url"}
 
 
 @dataclass
@@ -73,19 +76,20 @@ class _Calls:
 
 
 class ReviewTool(TankkeeperTool):
-    """A Tankkeeper tool for a review: it acts as the review and hides confirm codes.
+    """A Tankkeeper tool for a review or photo check: it acts as that and hides confirm codes.
 
     It stops answering once the review has called MAX_TOOL_CALLS tools.
     """
 
-    def __init__(self, spec: Spec, service: TankkeeperService, calls: _Calls) -> None:
+    def __init__(self, spec: Spec, service: TankkeeperService, calls: _Calls, actor: Actor) -> None:
         """Share the review's call count with its other tools."""
         super().__init__(spec, service)
         self._calls = calls
+        self._actor = actor
 
     @override
     def actor(self, data: Record, llm_context: LLMContext) -> Actor:
-        return REVIEW_ACTOR
+        return self._actor
 
     @override
     async def async_call(self, hass: HomeAssistant, tool_input: ToolInput, llm_context: LLMContext) -> ToolResult:
@@ -94,22 +98,26 @@ class ReviewTool(TankkeeperTool):
             return ToolResult(data={"error": "too_many_calls", "message": message}, error=True)
         self._calls.count += 1
         result = await super().async_call(hass, tool_input, llm_context)
-        return ToolResult(data=cast(JsonObjectType, without_codes(result.data)), error=result.error)
+        return ToolResult(data=cast(JsonObjectType, without_keys(result.data, HIDDEN_KEYS)), error=result.error)
 
 
 class ReviewAPI(API):
-    """The tools a review may use: every read, and proposals for the plan."""
+    """The tools a review or photo check may use: every read, and proposals for the plan."""
 
-    def __init__(self, hass: HomeAssistant, service: TankkeeperService) -> None:
-        """Bind the API to one tank."""
+    def __init__(
+        self, hass: HomeAssistant, service: TankkeeperService, *, actor: Actor = REVIEW_ACTOR, prompt: str = API_PROMPT
+    ) -> None:
+        """Bind the API to one tank, acting as the review or photo check."""
         super().__init__(hass=hass, id=REVIEW_API_ID, name="Tankkeeper review")
         self._service = service
+        self._actor = actor
+        self._prompt = prompt
 
     @override
     async def async_get_api_instance(self, llm_context: LLMContext) -> APIInstance:
         calls = _Calls()
-        tools: list[Tool] = [ReviewTool(spec, self._service, calls) for spec in REVIEW_TOOLS]
-        return APIInstance(api=self, api_prompt=API_PROMPT, llm_context=llm_context, tools=tools)
+        tools: list[Tool] = [ReviewTool(spec, self._service, calls, self._actor) for spec in REVIEW_TOOLS]
+        return APIInstance(api=self, api_prompt=self._prompt, llm_context=llm_context, tools=tools)
 
 
 class ReviewRunner:
@@ -203,38 +211,42 @@ class ReviewRunner:
     async def async_review(self, triggers: Iterable[Trigger]) -> Review:
         """Review the tank now, store the review and send it to the status-alert devices."""
         async with self._lock:
-            status = self._service.status()
-            chosen = ordered(triggers)
-            before = set(self._service.state.proposals)
-            asked, comment, note = await self._async_comment(status, chosen)
-            proposals = self._service.state.proposals
-            review = Review(
-                id=ulid_now(),
-                time=self._service.now(),
-                triggers=chosen,
-                level=status.level,
-                result=result_text(status),
-                asked=asked,
-                comment=comment,
-                note=note,
-                proposal_ids=tuple(
-                    proposal_id
-                    for proposal_id, proposal in proposals.items()
-                    if proposal_id not in before and proposal.source is Source.REVIEW
-                ),
-            )
-            await self._service.async_add_review(review)
+            with ExitStack() as stack:
+                status = self._service.status()
+                chosen = ordered(triggers)
+                before = set(self._service.state.proposals)
+                asked, comment, note = await self._async_comment(status, chosen, stack)
+                proposals = self._service.state.proposals
+                review = Review(
+                    id=ulid_now(),
+                    time=self._service.now(),
+                    triggers=chosen,
+                    level=status.level,
+                    result=result_text(status),
+                    asked=asked,
+                    comment=comment,
+                    note=note,
+                    proposal_ids=tuple(
+                        proposal_id
+                        for proposal_id, proposal in proposals.items()
+                        if proposal_id not in before and proposal.source is Source.REVIEW
+                    ),
+                )
+                await self._service.async_add_review(review)
         await self._async_send(review)
         return review
 
     async def _async_comment(
-        self, status: Status, triggers: tuple[Trigger, ...]
+        self, status: Status, triggers: tuple[Trigger, ...], stack: ExitStack
     ) -> tuple[bool, str | None, str | None]:
-        """Whether Claude was asked, its comment, and a note on why there is none."""
+        """Whether Claude was asked, its comment, and a note on why there is none.
+
+        Asking counts toward the daily cap until the stack closes, after the review is stored.
+        """
         settings = self._service.claude()
         if not settings.comments or settings.ai_task is None:
             return False, None, None
-        if self._service.comments_today() >= settings.daily_cap:
+        if not stack.enter_context(self._service.reserve_ask(settings.daily_cap)):
             return False, None, CAP_NOTE.format(cap=settings.daily_cap)
         instructions = INSTRUCTIONS.format(
             name=self._service.tank_name(),

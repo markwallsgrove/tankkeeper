@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import cast, override
 
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.llm import LLMContext, Tool, ToolAnnotations, ToolInput, ToolResult
 from homeassistant.util import dt as dt_util
@@ -54,6 +55,7 @@ from .lights import (
     remove_summary as light_remove_summary,
     with_control,
 )
+from .photos import MAX_KEEP_DAYS, PHOTO_PATH, CameraSettings, CheckReason, PhotoCheck
 from .plan import (
     PlanEvent,
     Reminders,
@@ -108,6 +110,10 @@ owner one thing at a time. In Claude Code, read the notes the owner points to. T
 draft back with tankkeeper__get_batch and apply it after one yes.
 - A proposal still waiting 10 minutes after its last change goes to the owner's phone, where they can \
 accept or reject it.
+- With a camera, tankkeeper__get_photo takes a fresh photo when the owner asks how the tank looks; \
+tell them what Claude saw and give photo_url. An issue the camera found waits for the owner. When they \
+say it is not a problem, call tankkeeper__dismiss_finding. Camera settings are proposals made with \
+tankkeeper__set_camera.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
 
 SINGLE_STEP = "Read the changes back to the owner. Call tankkeeper__apply_change with the code only after they say yes."
@@ -125,6 +131,8 @@ type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObject
 
 NON_EMPTY = p.All(str, p.Length(min=1))
 LIGHT_ONLY = frozenset({"get_light"})
+CAMERA_ONLY = frozenset({"get_photo", "check_now", "list_photos", "dismiss_finding"})
+PHOTO_LINK_MINUTES = 10
 LIGHT_HISTORY = 20
 LIGHT_ACTIONS = ["add", "update", "remove", "one_day", "cancel_one_day"]
 PLAN_DAYS = 7
@@ -275,8 +283,13 @@ def _assist_conversation(llm_context: LLMContext) -> str | None:
 
 
 def build_tools(service: TankkeeperService) -> list[Tool]:
-    """Every Tankkeeper tool, bound to one tank. get_light is only there when a light is set."""
-    return [TankkeeperTool(spec, service) for spec in SPECS if spec.name not in LIGHT_ONLY or service.has_lights()]
+    """Every Tankkeeper tool, bound to one tank. get_light needs a light, and the photo tools need a camera."""
+    hidden: set[str] = set()
+    if not service.has_lights():
+        hidden |= LIGHT_ONLY
+    if service.camera().camera is None:
+        hidden |= CAMERA_ONLY
+    return [TankkeeperTool(spec, service) for spec in SPECS if spec.name not in hidden]
 
 
 async def get_tank(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -807,6 +820,66 @@ async def set_claude(service: TankkeeperService, data: Record, actor: Actor) -> 
         summary="Change the Claude settings",
         targets=service.claude_targets(settings),
     )
+
+
+async def get_camera(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The camera settings, the latest photo check and the open issues."""
+    checks = service.photo_checks()
+    return {
+        **service.camera().to_json(),
+        "latest": photo_json(service, checks[-1]) if checks else None,
+        "open": [photo_json(service, check) for check in service.open_issues()],
+    }
+
+
+async def set_camera(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose new camera settings. An empty camera or check time clears it."""
+    current = service.camera()
+    check_time = current.check_time if "check_time" not in data else _time_or_none(_cleared(data, "check_time"))
+    settings = CameraSettings(
+        camera=_cleared(data, "camera") if "camera" in data else current.camera,
+        check_time=check_time,
+        after_test=bool(data.get("after_test", current.after_test)),
+        alerts=bool(data.get("alerts", current.alerts)),
+        keep_days=int(cast(int, data.get("keep_days", current.keep_days))),
+    )
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="set_camera",
+        summary="Change the camera settings",
+        targets=service.camera_targets(settings),
+    )
+
+
+async def check_now(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Take a photo now and store what Claude sees in it."""
+    return photo_json(service, await service.async_check_photo(CheckReason.MANUAL))
+
+
+async def get_photo(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Take a fresh photo for the chat. It never alerts."""
+    return photo_json(service, await service.async_check_photo(CheckReason.CHAT))
+
+
+async def list_photos(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The photo checks kept, newest first."""
+    checks = list(reversed(service.photo_checks()))[: _int(data, "limit")]
+    return {"photos": [photo_json(service, check) for check in checks]}
+
+
+async def dismiss_finding(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Close an issue as not a problem, so Claude does not raise it again."""
+    return photo_json(service, await service.async_dismiss(_str(data, "check_id"), actor.user_id))
+
+
+def photo_json(service: TankkeeperService, check: PhotoCheck) -> JsonObjectType:
+    """A photo check with a link to its photo that works without signing in for PHOTO_LINK_MINUTES, or None."""
+    photo_url = None
+    if service.photo_path(check) is not None:
+        photo_url = async_sign_path(service.hass, f"{PHOTO_PATH}/{check.id}", timedelta(minutes=PHOTO_LINK_MINUTES))
+    return {**check.to_json(), "photo_url": photo_url}
 
 
 async def list_decisions(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -1902,6 +1975,73 @@ SPECS: tuple[Spec, ...] = (
             **REASON,
             **CONVERSATION,
         },
+    ),
+    Spec(
+        name="get_camera",
+        title="Get the camera",
+        annotations=READ,
+        handler=get_camera,
+        description="The camera settings: the camera entity, the daily photo check time (only while a light is on), "
+        "whether a test starts a check, whether issues alert the status-alert devices and how many days photos are "
+        "kept. Also the latest photo check and the issues waiting for the owner. photo_url links to the photo for a "
+        "few minutes; MCP can't return the image itself.",
+        schema={},
+    ),
+    Spec(
+        name="set_camera",
+        title="Propose camera settings",
+        annotations=PROPOSE,
+        handler=set_camera,
+        description="Propose new camera settings. An empty camera or check_time clears it. Each photo check uses "
+        "paid Anthropic API usage and counts toward the Claude daily cap. Returns a confirm code; nothing changes "
+        "until tankkeeper__apply_change.",
+        schema={
+            p.Optional("camera", description="The camera entity pointed at the tank, such as camera.tank"): p.Any(
+                None, str
+            ),
+            p.Optional("check_time", description="A daily photo check at HH:MM, or empty for none"): p.Any(None, str),
+            p.Optional("after_test", description="Whether a test starts a photo check"): p.Boolean(),
+            p.Optional("alerts", description="Whether an issue goes to the status-alert devices"): p.Boolean(),
+            p.Optional("keep_days", description=f"Days to keep photos, 1 to {MAX_KEEP_DAYS}"): p.Coerce(int),
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="check_now",
+        title="Check the tank with the camera",
+        annotations=RECORD,
+        handler=check_now,
+        description="Take a photo now and ask Claude to look at it. The check is stored with what Claude saw and "
+        "whether it is an issue. Counts toward the daily cap. Fails with lights_off when every light is off.",
+        schema={**CONVERSATION},
+    ),
+    Spec(
+        name="get_photo",
+        title="Get a photo of the tank",
+        annotations=RECORD,
+        handler=get_photo,
+        description="Take a fresh photo when the owner asks how the tank looks, and get what Claude saw in it as "
+        "text, with photo_url to show the photo. MCP can't return the image itself. Counts toward the daily cap.",
+        schema={**CONVERSATION},
+    ),
+    Spec(
+        name="list_photos",
+        title="List photo checks",
+        annotations=READ,
+        handler=list_photos,
+        description="The photo checks kept, newest first, with what Claude saw. photo_url is null once the photo is "
+        "older than the camera keeps photos.",
+        schema={**LIMIT},
+    ),
+    Spec(
+        name="dismiss_finding",
+        title="Mark a camera finding as not a problem",
+        annotations=RECORD,
+        handler=dismiss_finding,
+        description="Close an issue the camera found as not a problem, when the owner says so. Later photo checks "
+        "are told not to raise it again, and its plan changes are rejected.",
+        schema={p.Required("check_id"): NON_EMPTY, **CONVERSATION},
     ),
     Spec(
         name="list_decisions",

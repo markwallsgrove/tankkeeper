@@ -258,6 +258,7 @@
           "reminders": "Reminders",
           "rules": "Rules and status",
           "claude": "Claude",
+          "camera": "Camera",
           "add_light": "Add a light",
           "change_light": "Change a light",
           "one_day": "Change a light for one day",
@@ -334,6 +335,24 @@
           "comments": "Each comment is one call to the AI task entity, which uses Anthropic credits.",
           "daily_time": "Also review once a day at this time. Leave empty for no daily review.",
           "daily_cap": "The most Claude comments in a day. Reviews past it have only the rules result."
+        }
+      },
+      "camera": {
+        "title": "Camera",
+        "description": "A camera, for example a Tapo C100, sends a photo of the tank to Claude, who looks for problems. Photos stay in config/tankkeeper/photos and go only to the AI task entity, so to Anthropic. Each check is one call to the AI task entity, uses Anthropic credits and counts toward the comments a day.",
+        "data": {
+          "camera": "Camera",
+          "check_time": "Daily check time",
+          "after_test": "Check after each test",
+          "alerts": "Alert me about issues",
+          "keep_days": "Keep photos for"
+        },
+        "data_description": {
+          "camera": "The camera entity that sees the tank. Leave empty for no photo checks.",
+          "check_time": "Check once a day at this time, only while a light is on. Leave empty for no daily check.",
+          "after_test": "Also check when a water test is recorded.",
+          "alerts": "Send issues from daily and after-test checks to the status alert devices, with the photo.",
+          "keep_days": "Days to keep photos. Open issues and the latest checks are always kept."
         }
       },
       "add_light": {
@@ -417,7 +436,8 @@
     "error": {
       "invalid_light": "{error}",
       "invalid_rules": "{error}",
-      "invalid_claude": "{error}"
+      "invalid_claude": "{error}",
+      "invalid_camera": "{error}"
     }
   },
   "exceptions": {
