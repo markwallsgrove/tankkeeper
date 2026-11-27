@@ -106,6 +106,9 @@ export const shared = css`
   .chart .target {
     stroke-dasharray: 4 3;
   }
+  .chart .line-label {
+    font-size: 8px;
+  }
   .chart .off {
     fill: var(--divider-color);
   }

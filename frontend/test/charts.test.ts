@@ -61,7 +61,23 @@ describe("cycleChart", () => {
       ["Act", 4],
     ]);
     expect(chart.min).toBe(0);
-    expect(chart.max).toBe(4);
+    expect(chart.max).toBeCloseTo(4.38);
+  });
+
+  it("fits the scale to the readings and the lines, with a little room, never under zero", () => {
+    const ph = parameterCharts(log, { ph_watch: 6.8, ph_act: 6.4 }, null, { ph: 7.4 }).charts.find(
+      (item) => item.key === "ph",
+    );
+
+    expect(ph?.chart.min).toBeCloseTo(6.28);
+    expect(ph?.chart.max).toBeCloseTo(7.72);
+  });
+
+  it("gives one flat value room above and below", () => {
+    const kh = parameterCharts(log, {}, null, null).charts.find((item) => item.key === "kh");
+
+    expect(kh?.chart.min).toBeCloseTo(3.6);
+    expect(kh?.chart.max).toBeCloseTo(4.4);
   });
 
   it("keeps tap readings out of the tank lines", () => {
@@ -173,6 +189,25 @@ describe("renderChart", () => {
     expect(host.querySelectorAll("line.target").length).toBe(1);
     expect(host.querySelectorAll(".legend .swatch.hollow").length).toBe(1);
     expect(host.textContent).toContain("Tap water");
+  });
+
+  it("labels each guidance line with its value, and rounds the scale", () => {
+    const host = document.createElement("div");
+    const ph = parameterCharts(log, { ph_watch: 6.8, ph_act: 6.4 }, null, { ph: 7.4 }).charts.find(
+      (item) => item.key === "ph",
+    );
+    if (ph === undefined) throw new Error("No pH chart");
+    render(renderChart(ph.chart, ph.label), host);
+
+    expect([...host.querySelectorAll("text.line-label")].map((text) => text.textContent)).toEqual([
+      "Watch 6.8",
+      "Act 6.4",
+      "Tap water 7.4",
+    ]);
+    expect([...host.querySelectorAll("text.tick")].map((text) => text.textContent)).toEqual([
+      "7.72",
+      "6.28",
+    ]);
   });
 
   it("says when there are no readings", () => {
