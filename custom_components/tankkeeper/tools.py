@@ -12,7 +12,9 @@ from homeassistant.util.json import JsonObjectType
 from homeassistant.util.ulid import ulid_now
 import probatio as p
 
+from . import decisions as dec
 from .const import DOMAIN
+from .decisions import Decision, DecisionStatus
 from .domain import (
     TANK_ID,
     WATER_ID,
@@ -87,7 +89,10 @@ and a one-day change, are proposals made with tankkeeper__set_light. No tool swi
 - The status is the worst rule result: on course, watch or act. Each rule gives its reason and what to \
 do. Read it with tankkeeper__get_status; tankkeeper__record_test returns it too. Change the limits with \
 tankkeeper__set_rules and whether the tank is cycling with tankkeeper__set_tank.
-- Decisions are numbered and keep their history. Adding, accepting and replacing a decision are proposals.
+- Decisions are numbered and keep their history. Adding, accepting and replacing a decision are \
+proposals made with tankkeeper__set_decision. The answers to decisions come from the owner.
+- To move the owner's earlier notes in, read them yourself and pass their content to \
+tankkeeper__import_decisions and tankkeeper__import_log. Both are proposals.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
 
 READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_world=False)
@@ -120,6 +125,7 @@ REASON: dict[p.Marker, object] = {
 LIMIT: dict[p.Marker, object] = {p.Optional("limit", default=20): p.All(int, p.Range(min=1, max=200))}
 CONTENT_TYPES = ["plant", "rock", "wood", "substrate", "decoration", "fish", "other"]
 DAYS = p.All(int, p.Range(min=0, max=365))
+DECISION_NUMBER = p.All(int, p.Range(min=1, max=9999))
 PPM = p.All(p.Coerce(float), p.Range(min=0, min_included=False))
 RULE_FIELDS: dict[p.Marker, object] = {
     p.Optional("nitrogen_watch", description="Ammonia or nitrite above this, in ppm, is Watch"): PPM,
@@ -644,6 +650,153 @@ async def set_rules(service: TankkeeperService, data: Record, actor: Actor) -> J
     )
 
 
+async def list_decisions(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Every decision, by number."""
+    status = _optional_str(data, "status")
+    decisions = dec.decisions_of(service.records(Collection.DECISIONS))
+    return {
+        "decisions": [
+            decisions[number].summary()
+            for number in sorted(decisions)
+            if status in (None, decisions[number].status.value)
+        ]
+    }
+
+
+async def get_decision(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """One decision in full, with the numbers it replaced."""
+    decisions = dec.decisions_of(service.records(Collection.DECISIONS))
+    decision = dec.find(decisions, _int(data, "number"))
+    replaced: list[JsonValue] = list(dec.replaces(decisions, decision.number))
+    return {**decision.to_record(), "replaces": replaced}
+
+
+async def set_decision(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose adding, accepting or replacing a decision."""
+    decisions = dec.decisions_of(service.records(Collection.DECISIONS))
+    action = _str(data, "action")
+    if action == "add":
+        missing = [key for key in ("title", "decision", "why") if key not in data]
+        if missing:
+            raise InvalidInputError(f"A new decision needs {', '.join(missing)}")
+        new = Decision(
+            number=dec.next_number(decisions),
+            title=_str(data, "title"),
+            day=dec.parse_day(_date_or_today(data, "date")),
+            status=DecisionStatus(_str(data, "status")),
+            decision=_str(data, "decision"),
+            why=_str(data, "why"),
+            open=tuple(str(item) for item in cast(list[JsonValue], data.get("open", []))),
+        )
+        replaces = [int(cast(int, number)) for number in cast(list[JsonValue], data.get("replaces", []))]
+        changed = dec.add(decisions, new, replaces)
+        summary = f"Add decision {new.record_id}: {new.title}"
+        if replaces:
+            summary += ", replacing " + ", ".join(dec.record_id(number) for number in replaces)
+    else:
+        if "number" not in data:
+            raise InvalidInputError(f"{action} needs the number of the decision")
+        number = _int(data, "number")
+        if action == "accept":
+            accepted = dec.accept(decisions, number)
+            changed = [accepted]
+            summary = f"Accept decision {accepted.record_id}: {accepted.title}"
+        else:
+            if "replaced_by" not in data:
+                raise InvalidInputError("replace needs replaced_by, the number of the decision that replaces it")
+            replaced_by = _int(data, "replaced_by")
+            changed = [dec.replace_with(decisions, number, replaced_by)]
+            summary = f"Replace decision {dec.record_id(number)} with {dec.record_id(replaced_by)}"
+    return await _propose(
+        service, data, actor, tool="set_decision", summary=summary, targets=[_decision_target(d) for d in changed]
+    )
+
+
+async def import_decisions(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose adding or updating decisions given in full, such as from the owner's notes."""
+    imported = [Decision.from_record(cast(Record, item)) for item in cast(list[JsonValue], data["decisions"])]
+    dec.check_import(dec.decisions_of(service.records(Collection.DECISIONS)), imported)
+    count = len(imported)
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="import_decisions",
+        summary=f"Import {count} decision{'' if count == 1 else 's'}",
+        targets=[_decision_target(decision) for decision in sorted(imported, key=lambda item: item.number)],
+    )
+
+
+async def import_log(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose adding the owner's earlier log as doses, tests and events.
+
+    Each stored record leaves out one equal imported record, so importing the same log again adds nothing.
+    """
+    unmatched = list(service.records(Collection.LOG).values())
+    records = [record for entry in cast(list[JsonValue], data["entries"]) for record in _log_records(service, entry)]
+    new: list[Record] = []
+    for record in records:
+        if record in unmatched:
+            unmatched.remove(record)
+        else:
+            new.append(record)
+    count = len(new)
+    proposal = await _propose(
+        service,
+        data,
+        actor,
+        tool="import_log",
+        summary=f"Import {count} log record{'' if count == 1 else 's'}",
+        targets=[(Collection.LOG, ulid_now(), record) for record in new],
+    )
+    return {**proposal, "skipped": len(records) - count}
+
+
+def _log_records(service: TankkeeperService, value: JsonValue) -> list[Record]:
+    """The log records for one day of the owner's log: an event, each dose and the test."""
+    entry = cast(Record, value)
+    moment = _moment(f"{dec.parse_day(_str(entry, 'date')).isoformat()}T{_str(entry, 'time')}").isoformat()
+    why, notes = entry.get("why"), entry.get("notes")
+    doses = cast(list[JsonValue], entry.get("doses", []))
+    tests = cast(Record | None, entry.get("tests"))
+    records: list[Record] = []
+    if any(key in entry for key in ("tasks", "water_litres", "water_change_percent")) or not (doses or tests):
+        records.append(
+            {
+                "kind": "event",
+                "time": moment,
+                "tasks": entry.get("tasks", []),
+                "water_litres": entry.get("water_litres"),
+                "water_change_percent": entry.get("water_change_percent"),
+                "why": why,
+                "notes": notes,
+            }
+        )
+    for item in doses:
+        dose = cast(Record, item)
+        name = _str(dose, "product")
+        try:
+            product_id, product = _find_product(service, name)
+        except InvalidInputError:
+            product_id, product = None, {"name": name}
+        records.append(
+            {
+                "kind": "dose",
+                "time": moment,
+                "product_id": product_id,
+                "product": product.get("name"),
+                "amount_ml": dose["ml"],
+                "why": why,
+                "notes": notes,
+            }
+        )
+    if tests is not None:
+        records.append(
+            {"kind": "test", "time": moment, "source": entry["source"], "values": tests, "why": why, "notes": notes}
+        )
+    return records
+
+
 async def import_plan(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose importing tasks from another calendar, keeping Complete: and Skip:."""
     calendar = _str(data, "calendar")
@@ -829,6 +982,10 @@ async def _propose(
         evidence=_optional_str(data, "evidence"),
     )
     return _proposal_json(proposal, with_code=True)
+
+
+def _decision_target(decision: Decision) -> Target:
+    return (Collection.DECISIONS, decision.record_id, decision.to_record())
 
 
 def _task_target(task: Task) -> Target:
@@ -1059,9 +1216,10 @@ SPECS: tuple[Spec, ...] = (
         title="Get the log",
         annotations=READ,
         handler=get_log,
-        description="Doses and water tests, newest first. since and until are ISO dates or times.",
+        description="Doses, water tests and events (tasks done, fills and water changes from an imported log), "
+        "newest first. since and until are ISO dates or times.",
         schema={
-            p.Optional("kind", default="all"): p.In(["all", "dose", "test"]),
+            p.Optional("kind", default="all"): p.In(["all", "dose", "test", "event"]),
             p.Optional("since"): NON_EMPTY,
             p.Optional("until"): NON_EMPTY,
             p.Optional("limit", default=50): p.All(int, p.Range(min=1, max=500)),
@@ -1400,6 +1558,112 @@ SPECS: tuple[Spec, ...] = (
         description="Propose new limits for the rules. Each Act limit must be at least as strict as its Watch "
         "limit. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
         schema={**RULE_FIELDS, **REASON, **CONVERSATION},
+    ),
+    Spec(
+        name="list_decisions",
+        title="List decisions",
+        annotations=READ,
+        handler=list_decisions,
+        description="Every decision by number, with its title, date, status and the decision that replaced it.",
+        schema={p.Optional("status"): p.In(list(DecisionStatus))},
+    ),
+    Spec(
+        name="get_decision",
+        title="Get a decision",
+        annotations=READ,
+        handler=get_decision,
+        description="One decision in full: the decision, why, open points, what replaced it and what it replaced. "
+        "Its earlier versions are in tankkeeper__get_history with collection decisions and the four-digit number.",
+        schema={p.Required("number"): DECISION_NUMBER},
+    ),
+    Spec(
+        name="set_decision",
+        title="Propose a decision change",
+        annotations=PROPOSE,
+        handler=set_decision,
+        description="Propose a decision change. add takes title, decision and why, and optional open points, "
+        "date (ISO, defaults to today), status (proposed or accepted) and the numbers it replaces; it gets the "
+        "next number. accept takes the number of a proposed decision. replace takes the number and replaced_by. "
+        "The answers to decisions come from the owner. Returns a confirm code; nothing changes until "
+        "tankkeeper__apply_change.",
+        schema={
+            p.Required("action"): p.In(["add", "accept", "replace"]),
+            p.Optional("number"): DECISION_NUMBER,
+            p.Optional("title"): NON_EMPTY,
+            p.Optional("decision", description="What was decided, in Markdown"): NON_EMPTY,
+            p.Optional("why", description="Why, with sources, in Markdown"): NON_EMPTY,
+            p.Optional("open", description="Open points, one each"): [NON_EMPTY],
+            p.Optional("date", description="ISO date"): NON_EMPTY,
+            p.Optional("status", default="proposed"): p.In(["proposed", "accepted"]),
+            p.Optional("replaces"): [DECISION_NUMBER],
+            p.Optional("replaced_by"): DECISION_NUMBER,
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="import_decisions",
+        title="Propose importing decisions",
+        annotations=PROPOSE,
+        handler=import_decisions,
+        description="Propose adding or updating decisions given in full, such as the owner's decision files. A "
+        "replaced decision names the decision that replaced it. Decisions already stored the same are left out. "
+        "Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("decisions"): p.All(
+                [
+                    {
+                        p.Required("number"): DECISION_NUMBER,
+                        p.Required("title"): NON_EMPTY,
+                        p.Required("date", description="ISO date"): NON_EMPTY,
+                        p.Required("status"): p.In(list(DecisionStatus)),
+                        p.Required("decision"): NON_EMPTY,
+                        p.Required("why"): NON_EMPTY,
+                        p.Optional("open"): [NON_EMPTY],
+                        p.Optional("replaced_by"): p.Any(None, DECISION_NUMBER),
+                    }
+                ],
+                p.Length(min=1, max=500),
+            ),
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="import_log",
+        title="Propose importing a log",
+        annotations=PROPOSE,
+        handler=import_log,
+        description="Propose adding the owner's earlier log, one entry per day as in their notes. Each dose and "
+        "each test becomes a log record; tasks, water_litres and water_change_percent become an event. time is "
+        "local and defaults to 12:00. A product not in tankkeeper__list_products is kept by name. Records "
+        "already in the log are left out. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("entries"): p.All(
+                [
+                    {
+                        p.Required("date", description="ISO date"): NON_EMPTY,
+                        p.Optional("time", default="12:00", description="HH:MM, local"): p.Match(
+                            r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                        ),
+                        p.Optional("tasks"): [NON_EMPTY],
+                        p.Optional("doses"): [{p.Required("product"): NON_EMPTY, p.Required("ml"): NOT_NEGATIVE}],
+                        p.Optional("tests"): p.All(
+                            {p.Optional(name): NOT_NEGATIVE for name in TEST_VALUES} | {p.Optional("ph"): PH},
+                            p.Length(min=1),
+                        ),
+                        p.Optional("source", default="tank"): p.In(["tank", "tap"]),
+                        p.Optional("water_litres"): NOT_NEGATIVE,
+                        p.Optional("water_change_percent"): p.All(p.Coerce(float), p.Range(min=0, max=100)),
+                        p.Optional("why"): NON_EMPTY,
+                        p.Optional("notes"): NON_EMPTY,
+                    }
+                ],
+                p.Length(min=1, max=2000),
+            ),
+            **REASON,
+            **CONVERSATION,
+        },
     ),
     Spec(
         name="import_plan",
