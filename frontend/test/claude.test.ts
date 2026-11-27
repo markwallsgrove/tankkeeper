@@ -11,6 +11,7 @@ const settings = {
   comments: false,
   daily_time: null,
   daily_cap: 5,
+  chat_agent: "conversation.claude_conversation",
   model_note: "Choose the model in the Anthropic integration.",
 };
 
@@ -58,12 +59,28 @@ describe("tk-claude", () => {
     expect(text(element)).toContain("Claude comments on reviews No");
     expect(text(element)).toContain("Review after test, status");
     expect(findAll(element, "tk-form")).toEqual([]);
+    expect(findAll(element, "tk-history, details")).toEqual([]);
+    find(element, "ha-icon-button.history").click();
+    await settle(element);
     const history = find(element, "tk-history") as unknown as {
       collection: string;
       recordId: string;
     };
     expect([history.collection, history.recordId]).toEqual(["settings", "claude"]);
     expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
+  });
+
+  it("shows the agent the chat uses when none is chosen", async () => {
+    const conn = connection().on("get_claude", {
+      ...settings,
+      agent: null,
+      chat_agent: "conversation.only_agent",
+    });
+    const element = mount<TkClaude>("tk-claude", { api: new TankkeeperApi(conn) });
+    await settle(element);
+
+    expect(text(element)).toContain("Conversation agent TankKeeper chats through Not set");
+    expect(text(element)).toContain("Conversation agent the chat uses conversation.only_agent");
   });
 
   it("shows why the settings could not load", async () => {

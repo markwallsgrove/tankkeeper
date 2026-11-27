@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import "../src/tk-history";
 import type { TkHistory } from "../src/tk-history";
+import { UNDO } from "../src/buttons";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const entry = {
@@ -39,8 +40,13 @@ describe("tk-history", () => {
     expect(text(element)).toContain("Change the tank details");
     expect(text(element)).toContain("tank: name Nano → Big");
     expect(text(element)).toContain("Panel");
+    const undo = find(element, "ha-icon-button.undo");
+    expect([undo.getAttribute("label"), (undo as unknown as { path: string }).path]).toEqual([
+      "Undo",
+      UNDO,
+    ]);
 
-    find(element, "button.undo").click();
+    find(element, "ha-icon-button.undo").click();
     await settle(element);
 
     expect(connection.last("undo_change").args).toEqual({ history_id: "h1" });
@@ -59,14 +65,14 @@ describe("tk-history", () => {
     await settle(element);
     expect(connection.last("get_history").args).toEqual({ collection: "notes", limit: 10 });
 
-    find(element, "button.undo").click();
+    find(element, "ha-icon-button.undo").click();
     await settle(element);
     expect(find(element, ".error").textContent).toBe("That change is gone");
 
     connection.on("get_history", { history: [] });
     element.collection = "lights";
     await settle(element);
-    expect(findAll(element, "button.undo")).toEqual([]);
+    expect(findAll(element, "ha-icon-button.undo")).toEqual([]);
     expect(text(element)).toContain("No changes yet");
   });
 

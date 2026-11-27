@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
+import { BACK, CHAT, OPEN, SEARCH, UNDO, iconButton, textButton } from "../buttons";
 import { changeText, shortTime, sourceText } from "../format";
 import { markdown } from "../markdown";
 import { snippet } from "../search";
@@ -80,18 +81,23 @@ export class TkConversations extends TkView {
   private renderDetail(detail: ConversationDetail): TemplateResult {
     return html`<section>
       <div class="row">
-        <button class="back" @click=${() => (this.selected = undefined)}>Back</button>
+        ${textButton({
+          icon: BACK,
+          label: "Back",
+          className: "back",
+          onClick: () => (this.selected = undefined),
+        })}
         <h2 class="grow">${detail.name}</h2>
         ${
           detail.id.startsWith(PANEL_CHAT)
-            ? html`<button
-                class="resume"
-                @click=${() => {
+            ? textButton({
+                icon: CHAT,
+                label: "Continue in Chat",
+                className: "resume",
+                onClick: () => {
                   openChat(this, { kind: "resume", id: detail.id });
-                }}
-              >
-                Continue in Chat
-              </button>`
+                },
+              })
             : nothing
         }
         <tk-delete-conversation
@@ -124,9 +130,13 @@ export class TkConversations extends TkView {
             html`<li>
               <div class="row">
                 <span class="grow">${entry.summary}</span>
-                <button class="undo" ?disabled=${this.busy} @click=${() => this.undo(entry)}>
-                  Undo
-                </button>
+                ${iconButton({
+                  icon: UNDO,
+                  label: "Undo",
+                  className: "undo",
+                  disabled: this.busy,
+                  onClick: () => void this.undo(entry),
+                })}
               </div>
               <div class="muted">${shortTime(entry.time)} · ${sourceText(entry.source)}</div>
               ${entry.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
@@ -152,7 +162,7 @@ export class TkConversations extends TkView {
           aria-label="Search conversations"
           .value=${this.query}
         />
-        <button type="submit">Search</button>
+        ${textButton({ icon: SEARCH, label: "Search", className: "search", type: "submit" })}
       </form>
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
       ${this.conversations.length === 0 ? html`<p class="muted">No conversations</p>` : nothing}
@@ -164,7 +174,12 @@ export class TkConversations extends TkView {
             html`<li data-id=${conversation.id}>
               <div class="row">
                 <strong class="grow">${conversation.name}</strong>
-                <button class="open" @click=${() => (this.selected = conversation.id)}>Open</button>
+                ${iconButton({
+                  icon: OPEN,
+                  label: "Open",
+                  className: "open",
+                  onClick: () => (this.selected = conversation.id),
+                })}
               </div>
               <div class="muted">
                 ${sourceText(conversation.source)} · ${shortTime(conversation.updated)}

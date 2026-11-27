@@ -1,5 +1,6 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { ifDefined } from "lit/directives/if-defined.js";
+import { SAVE, buttonStyles, icon } from "./buttons";
 import type { Field, Values } from "./types";
 
 type Input = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
@@ -73,6 +74,7 @@ export class TkForm extends LitElement {
     fields: { attribute: false },
     values: { attribute: false },
     submitLabel: { attribute: false },
+    submitIcon: { attribute: false },
     busy: { type: Boolean },
     error: { attribute: false },
   };
@@ -80,6 +82,7 @@ export class TkForm extends LitElement {
   declare fields: Field[];
   declare values: Values;
   declare submitLabel: string;
+  declare submitIcon: string;
   declare busy: boolean;
   declare error: string;
 
@@ -88,69 +91,73 @@ export class TkForm extends LitElement {
     this.fields = [];
     this.values = {};
     this.submitLabel = "Save";
+    this.submitIcon = SAVE;
     this.busy = false;
     this.error = "";
   }
 
-  static override styles = css`
-    form {
-      display: grid;
-      gap: 8px;
-    }
-    label {
-      display: grid;
-      gap: 2px;
-      font-size: 0.9em;
-      color: var(--secondary-text-color);
-    }
-    input:not([type="checkbox"]),
-    select,
-    textarea {
-      font: inherit;
-      padding: 6px;
-      color: var(--primary-text-color);
-      background: var(--input-fill-color, var(--secondary-background-color));
-      border: 1px solid var(--divider-color);
-      border-radius: 4px;
-      box-sizing: border-box;
-      width: 100%;
-    }
-    button {
-      justify-self: start;
-      font: inherit;
-      padding: 6px 14px;
-      border: none;
-      border-radius: 4px;
-      color: var(--text-primary-color, #fff);
-      background: var(--primary-color);
-      cursor: pointer;
-    }
-    button:disabled {
-      opacity: 0.5;
-    }
-    .error {
-      color: var(--error-color);
-    }
-    fieldset {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px 12px;
-      margin: 0;
-      padding: 0;
-      border: none;
-      font-size: 0.9em;
-      color: var(--secondary-text-color);
-    }
-    legend {
-      padding: 0 0 2px;
-    }
-    label.day {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      color: var(--primary-text-color);
-    }
-  `;
+  static override styles = [
+    buttonStyles,
+    css`
+      form {
+        display: grid;
+        gap: 8px;
+      }
+      label {
+        display: grid;
+        gap: 2px;
+        font-size: 0.9em;
+        color: var(--secondary-text-color);
+      }
+      input:not([type="checkbox"]),
+      select,
+      textarea {
+        font: inherit;
+        padding: 6px;
+        color: var(--primary-text-color);
+        background: var(--input-fill-color, var(--secondary-background-color));
+        border: 1px solid var(--divider-color);
+        border-radius: 4px;
+        box-sizing: border-box;
+        width: 100%;
+      }
+      button {
+        justify-self: start;
+        font: inherit;
+        padding: 6px 14px;
+        border: none;
+        border-radius: 4px;
+        color: var(--text-primary-color, #fff);
+        background: var(--primary-color);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+      }
+      .error {
+        color: var(--error-color);
+      }
+      fieldset {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+        margin: 0;
+        padding: 0;
+        border: none;
+        font-size: 0.9em;
+        color: var(--secondary-text-color);
+      }
+      legend {
+        padding: 0 0 2px;
+      }
+      label.day {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        color: var(--primary-text-color);
+      }
+    `,
+  ];
 
   private weekdays(field: Field): TemplateResult {
     const value = this.values[field.name];
@@ -206,11 +213,6 @@ export class TkForm extends LitElement {
     />`;
   }
 
-  /** Clear what was typed, after a new record was saved. */
-  reset(): void {
-    this.renderRoot.querySelector("form")?.reset();
-  }
-
   private submit(event: Event): void {
     event.preventDefault();
     const detail = readForm(this.fields, event.target as HTMLFormElement, this.values);
@@ -231,18 +233,11 @@ export class TkForm extends LitElement {
           : html`<label>${field.label} ${this.input(field)}</label>`,
       )}
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
-      <button type="submit" ?disabled=${this.busy}>${this.submitLabel}</button>
+      <button class="with-icon" type="submit" ?disabled=${this.busy}>
+        ${icon(this.submitIcon)}<span>${this.submitLabel}</span>
+      </button>
     </form>`;
   }
 }
 
 customElements.define("tk-form", TkForm);
-
-/** Save what a tk-form sent, and clear that form when the save succeeds. */
-export async function saveAndClear(
-  event: CustomEvent<Values>,
-  save: (values: Values) => Promise<boolean>,
-): Promise<void> {
-  const form = event.target as TkForm;
-  if (await save(event.detail)) form.reset();
-}

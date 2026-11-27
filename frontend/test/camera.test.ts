@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import { CHAT } from "../src/base";
+import { CAMERA, CHAT as CHAT_ICON, CHECK, CLOSE, NOT_A_PROBLEM, PHOTOS } from "../src/buttons";
 import "../src/views/camera";
 import type { TkCamera } from "../src/views/camera";
 import type { CameraInfo, PhotoCheck } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
+
+function iconOf(button: Element): string | null | undefined {
+  return button.querySelector("svg.icon path")?.getAttribute("d");
+}
 
 const issue: PhotoCheck = {
   id: "c2",
@@ -130,6 +135,10 @@ describe("tk-camera", () => {
   it("checks now and tells the other views", async () => {
     const conn = connection();
     const element = await view(conn);
+    const check = find(element, "button.check");
+    expect([text(check), iconOf(check)]).toEqual(["Check now", CAMERA]);
+    const photos = find(element, "button.photos");
+    expect([text(photos), iconOf(photos)]).toEqual(["Photos", PHOTOS]);
     let changed = 0;
     document.body.addEventListener("tk-changed", () => (changed += 1));
 
@@ -210,6 +219,9 @@ describe("tk-camera", () => {
     expect(text(card)).toContain("Alert me about issues");
     expect(findAll(card, "tk-form")).toEqual([]);
     expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
+    expect(findAll(card, "tk-history")).toEqual([]);
+    find(card, ".settings ha-icon-button.history").click();
+    await settle(element);
     const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
     expect([history.collection, history.recordId]).toEqual(["settings", "camera"]);
   });
@@ -251,19 +263,30 @@ describe("tk-camera", () => {
     const conn = connection();
     const element = await view(conn);
     const first = '#seen li.issue[data-check="c2"]';
+    expect(
+      findAll(element, `${first} ha-icon-button`).map((button) => [
+        button.getAttribute("label"),
+        (button as unknown as { path: string }).path,
+      ]),
+    ).toEqual([
+      ["Not a problem", NOT_A_PROBLEM],
+      ["Discuss", CHAT_ICON],
+      ["Reject", CLOSE],
+      ["Accept", CHECK],
+    ]);
 
-    find(element, `${first} button.dismiss`).click();
+    find(element, `${first} ha-icon-button.dismiss`).click();
     await settle(element);
     expect(conn.last("dismiss_finding").args).toEqual({ check_id: "c2" });
 
-    find(element, `${first} button.reject`).click();
+    find(element, `${first} ha-icon-button.reject`).click();
     await settle(element);
     expect(conn.last("reject_finding")).toEqual({
       type: "tankkeeper/reject_finding",
       check_id: "c2",
     });
 
-    find(element, `${first} button.accept`).click();
+    find(element, `${first} ha-icon-button.accept`).click();
     await settle(element);
     expect(conn.last("accept_finding")).toEqual({
       type: "tankkeeper/accept_finding",
@@ -277,7 +300,7 @@ describe("tk-camera", () => {
     const starts: unknown[] = [];
     element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
 
-    find(element, "#seen button.discuss").click();
+    find(element, "#seen ha-icon-button.discuss").click();
 
     expect(starts).toEqual([{ kind: "photo", id: "c2" }]);
   });

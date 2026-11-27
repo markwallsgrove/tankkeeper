@@ -37,7 +37,12 @@ function connection(): FakeConnection {
     .on("list_notes", { notes: [] })
     .on("list_decisions", { decisions: [] })
     .on("list_conversations", { conversations: [] })
-    .on("chat_agent", { agent_id: "conversation.nano_agent", ready: true })
+    .on("chat_agent", {
+      agent_id: "conversation.nano_agent",
+      ready: true,
+      chat_agent: "conversation.claude",
+      chat_agent_name: "Claude",
+    })
     .on("get_reviews", { reviews: [] })
     .on("get_claude", {
       agent: null,
@@ -46,6 +51,7 @@ function connection(): FakeConnection {
       comments: false,
       daily_time: null,
       daily_cap: 5,
+      chat_agent: "conversation.claude",
       model_note: "",
     });
 }

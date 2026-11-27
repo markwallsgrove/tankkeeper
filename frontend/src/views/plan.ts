@@ -2,9 +2,9 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
+import { CLOSE, DELETE, DELETE_LATER, PENCIL, PLUS, iconButton, textButton } from "../buttons";
 import { addDays, isoDate } from "../format";
-import { facts, historyDetails } from "../settings";
-import { saveAndClear } from "../tk-form";
+import { facts } from "../settings";
 import "../tk-history";
 import { REPEAT } from "../tk-week";
 import type { Field, Plan, Series, Task, Values } from "../types";
@@ -117,6 +117,9 @@ export class TkPlan extends TkView {
 
   private renderTask(task: Task): TemplateResult {
     const series = this.plan?.series.find((item) => item.id === task.series_id);
+    const detail = [task.state, task.note, series?.repeat].filter(
+      (part) => part !== undefined && part !== null && part !== "",
+    );
     return html`<li data-task=${task.id}>
       <div class="row">
         ${
@@ -125,45 +128,47 @@ export class TkPlan extends TkView {
             : html`<ha-svg-icon class="repeat" .path=${REPEAT} title="Repeats"></ha-svg-icon>`
         }
         <span class="grow">${task.time ?? ""} ${task.text}</span>
-        <button
-          class="remove"
-          ?disabled=${this.busy}
-          @click=${() => this.save("remove_task", {}, task.id)}
-        >
-          Remove
-        </button>
-        ${
-          series === undefined
-            ? nothing
-            : html`<button
-                class="remove remove-future"
-                ?disabled=${this.busy}
-                @click=${() => this.save("remove_task", { scope: "future" }, task.id)}
-              >
-                Remove this and later
-              </button>`
-        }
+        <div class="actions">
+          ${iconButton({
+            icon: PENCIL,
+            label: "Edit",
+            className: "edit",
+            disabled: this.busy,
+            onClick: () => {
+              this.openDialog(`edit:${task.id}`);
+            },
+          })}
+          ${this.historyButton("tasks", task.id)}
+          ${iconButton({
+            icon: DELETE,
+            label: "Remove",
+            className: "remove",
+            disabled: this.busy,
+            onClick: () => void this.save("remove_task", {}, task.id),
+          })}
+          ${
+            series === undefined
+              ? nothing
+              : iconButton({
+                  icon: DELETE_LATER,
+                  label: "Remove this and later",
+                  className: "remove-future",
+                  disabled: this.busy,
+                  onClick: () => void this.save("remove_task", { scope: "future" }, task.id),
+                })
+          }
+        </div>
       </div>
-      <div class="muted">
-        ${[task.state, task.note, series?.repeat]
-          .filter((part) => part !== undefined && part !== null && part !== "")
-          .join(" · ")}
-      </div>
-      <details>
-        <summary>Edit and history</summary>
-        <tk-form
-          .fields=${series === undefined ? EDIT_FIELDS : OCCURRENCE_FIELDS}
-          .values=${series === undefined ? task : occurrenceValues(task, series)}
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) => this.save("update_task", event.detail, task.id)}
-        ></tk-form>
-        <tk-history
-          .api=${this.api}
-          .collection=${"tasks"}
-          .recordId=${task.id}
-          .stamp=${this.version}
-        ></tk-history>
-      </details>
+      <div class="muted detail">${detail.join(" · ")}</div>
+      ${this.historyPanel("tasks", task.id)}
+      ${this.formDialog({
+        key: `edit:${task.id}`,
+        className: "edit",
+        heading: "Edit the task",
+        fields: series === undefined ? EDIT_FIELDS : OCCURRENCE_FIELDS,
+        values: series === undefined ? task : occurrenceValues(task, series),
+        save: (values) => this.save("update_task", values, task.id),
+      })}
     </li>`;
   }
 
@@ -173,8 +178,19 @@ export class TkPlan extends TkView {
     const days = this.day === undefined ? all : all.filter((day) => day === this.day);
     return html`
       <section>
-        <h2>Plan</h2>
-        ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
+        <div class="head">
+          <h2>Plan</h2>
+          ${iconButton({
+            icon: PLUS,
+            label: "Add a task",
+            className: "add",
+            disabled: this.busy,
+            onClick: () => {
+              this.openDialog("add");
+            },
+          })}
+        </div>
+        ${this.renderError()}
         ${
           plan === undefined
             ? nothing
@@ -198,13 +214,14 @@ export class TkPlan extends TkView {
             ? nothing
             : html`<p class="filter muted">
                 Showing ${this.day}
-                <button
-                  @click=${() => {
+                ${textButton({
+                  icon: CLOSE,
+                  label: "Show all",
+                  className: "show-all",
+                  onClick: () => {
                     this.day = undefined;
-                  }}
-                >
-                  Show all
-                </button>
+                  },
+                })}
               </p>`
         }
         ${
@@ -225,17 +242,15 @@ export class TkPlan extends TkView {
                 )}
               </ul>`,
         )}
-      </section>
-      <section>
-        <h2>Add a task</h2>
-        <tk-form
-          class="add"
-          .fields=${TASK_FIELDS}
-          submitLabel="Add"
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) =>
-            saveAndClear(event, (values) => this.save("add_task", values))}
-        ></tk-form>
+        ${this.formDialog({
+          key: "add",
+          className: "add",
+          heading: "Add a task",
+          fields: TASK_FIELDS,
+          submitLabel: "Add",
+          submitIcon: PLUS,
+          save: (values) => this.save("add_task", values),
+        })}
       </section>
       ${
         plan === undefined
@@ -243,7 +258,7 @@ export class TkPlan extends TkView {
           : html`<section id="reminders">
               <h2>Reminders</h2>
               ${facts(REMINDER_FIELDS, plan.reminders)}
-              ${historyDetails(this.api, "settings", "reminders", this.version)}
+              ${this.historyDetails("settings", "reminders")}
             </section>`
       }
     `;

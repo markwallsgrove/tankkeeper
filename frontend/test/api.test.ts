@@ -54,12 +54,18 @@ describe("TankkeeperApi", () => {
 describe("TankkeeperApi chat", () => {
   it("asks for the tank's agent and sends chat to it through Home Assistant's conversation API", async () => {
     const reply = { conversation_id: "panel_1", response: { response_type: "action_done" } };
+    const agent = {
+      agent_id: "conversation.nano",
+      ready: true,
+      chat_agent: "conversation.claude",
+      chat_agent_name: "Claude",
+    };
     const connection = new FakeConnection()
-      .on("chat_agent", { agent_id: "conversation.nano", ready: true })
+      .on("chat_agent", agent)
       .on("conversation/process", reply);
     const api = new TankkeeperApi(connection);
 
-    expect(await api.chatAgent()).toEqual({ agent_id: "conversation.nano", ready: true });
+    expect(await api.chatAgent()).toEqual(agent);
     expect(await api.converse("Hello", "panel_1", "conversation.nano")).toEqual(reply);
 
     expect(connection.sent).toEqual([

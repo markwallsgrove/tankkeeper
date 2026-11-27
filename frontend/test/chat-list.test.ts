@@ -5,6 +5,7 @@ import type { TkChatList } from "../src/views/chat-list";
 import { DELETED } from "../src/tk-delete-conversation";
 import type { TkDeleteConversation } from "../src/tk-delete-conversation";
 import type { Conversation, Message } from "../src/types";
+import { RENAME } from "../src/buttons";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const panelChat: Conversation = {
@@ -179,7 +180,12 @@ describe("tk-chat-list", () => {
     const conn = connection();
     const element = await list(conn);
 
-    find(element, "li[data-id=panel_a] button.rename").click();
+    const rename = find(element, "li[data-id=panel_a] ha-icon-button.rename");
+    expect([rename.getAttribute("label"), (rename as unknown as { path: string }).path]).toEqual([
+      "Rename",
+      RENAME,
+    ]);
+    rename.click();
     await settle(element);
     const input = find(element, "li[data-id=panel_a] input.title") as HTMLInputElement;
     expect(input.value).toBe("Algae");
@@ -192,7 +198,7 @@ describe("tk-chat-list", () => {
     expect(findAll(element, "input.title")).toEqual([]);
     expect(conn.types()).not.toContain("tankkeeper/rename_conversation");
 
-    find(element, "li[data-id=panel_a] button.rename").click();
+    find(element, "li[data-id=panel_a] ha-icon-button.rename").click();
     await settle(element);
     const again = find(element, "li[data-id=panel_a] input.title") as HTMLInputElement;
     again.value = "  Green algae  ";
@@ -208,7 +214,7 @@ describe("tk-chat-list", () => {
   it("starts the rename of an untitled chat empty, with its name as the hint", async () => {
     const element = await list(connection());
 
-    find(element, 'li[data-id="01JABCDEF"] button.rename').click();
+    find(element, 'li[data-id="01JABCDEF"] ha-icon-button.rename').click();
     await settle(element);
 
     const input = find(element, "input.title") as HTMLInputElement;
@@ -224,14 +230,19 @@ describe("tk-chat-list", () => {
     const deletes = findAll(element, "tk-delete-conversation") as TkDeleteConversation[];
     expect(deletes.map((item) => item.disabled)).toEqual([true, false, false]);
     const locked = find(element, "li[data-id=panel_a] tk-delete-conversation");
-    expect((find(locked, "button.delete") as HTMLButtonElement).disabled).toBe(true);
+    expect(find(locked, "ha-icon-button.delete").hasAttribute("disabled")).toBe(true);
   });
 
   it("keeps the name when the new title is blank, and shows why a rename failed", async () => {
     const conn = connection();
     const element = await list(conn);
 
-    find(element, "li[data-id=panel_a] button.rename").click();
+    const rename = find(element, "li[data-id=panel_a] ha-icon-button.rename");
+    expect([rename.getAttribute("label"), (rename as unknown as { path: string }).path]).toEqual([
+      "Rename",
+      RENAME,
+    ]);
+    rename.click();
     await settle(element);
     const input = find(element, "input.title") as HTMLInputElement;
     input.value = "   ";
@@ -242,7 +253,7 @@ describe("tk-chat-list", () => {
     expect(findAll(element, "input.title")).toEqual([]);
 
     conn.fail("rename_conversation", "not_found", "No conversation panel_a");
-    find(element, "li[data-id=panel_a] button.rename").click();
+    find(element, "li[data-id=panel_a] ha-icon-button.rename").click();
     await settle(element);
     const retry = find(element, "input.title") as HTMLInputElement;
     retry.value = "New";

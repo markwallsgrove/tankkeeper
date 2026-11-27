@@ -104,17 +104,6 @@ describe("tk-form", () => {
     expect(find(element, "[name=count]").getAttribute("step")).toBe("any");
   });
 
-  it("clears what was typed when reset", async () => {
-    const { element } = await form();
-    set(element, "name", "Java fern");
-    set(element, "kind", "assumption");
-
-    element.reset();
-
-    expect((find(element, "[name=name]") as HTMLInputElement).value).toBe("");
-    expect((find(element, "[name=kind]") as HTMLSelectElement).value).toBe("");
-  });
-
   it("shows an error and a busy state", async () => {
     const { element } = await form();
     element.error = "No such note";

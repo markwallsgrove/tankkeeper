@@ -2,8 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
-import { historyDetails } from "../settings";
-import { saveAndClear } from "../tk-form";
+import { DELETE, PENCIL, PLUS, iconButton } from "../buttons";
 import "../tk-history";
 import type { Field, Values } from "../types";
 
@@ -25,6 +24,8 @@ interface Edit {
 /** A kind of record. A setting changes in the options and is read-only here; the rest carry an Edit. */
 interface Kind {
   title: string;
+  /** One record, in words. */
+  noun: string;
   edit?: Edit;
   collection: string;
   list: string;
@@ -51,6 +52,7 @@ function labelDose(item: Item): LabelDose {
 const KINDS: Record<string, Kind> = {
   products: {
     title: "Products",
+    noun: "product",
     collection: "products",
     list: "list_products",
     key: "products",
@@ -76,6 +78,7 @@ const KINDS: Record<string, Kind> = {
   },
   contents: {
     title: "Contents",
+    noun: "content",
     collection: "contents",
     list: "list_contents",
     key: "contents",
@@ -90,6 +93,7 @@ const KINDS: Record<string, Kind> = {
   },
   notes: {
     title: "Notes",
+    noun: "note",
     collection: "notes",
     list: "list_notes",
     key: "notes",
@@ -162,74 +166,98 @@ export class TkRecords extends TkView {
     await this.run((api) => api.call(edit.remove, { [edit.idArg]: id }));
   }
 
-  private status(edit: Edit | undefined, item: Item): TemplateResult | typeof nothing {
-    if (typeof item.removed === "string")
-      return html`<span class="muted">Removed ${item.removed}</span>`;
-    if (edit === undefined) return nothing;
-    return html`<button
-      class="remove"
-      ?disabled=${this.busy}
-      @click=${() => this.removeRecord(edit, item.id)}
-    >
-      Remove
-    </button>`;
-  }
-
-  private details(config: Kind, item: Item): TemplateResult {
+  private actions(config: Kind, item: Item): TemplateResult {
     const edit = config.edit;
-    if (edit === undefined)
-      return historyDetails(this.api, config.collection, item.id, this.version);
-    return html`<details>
-      <summary>Edit and history</summary>
-      <tk-form
-        .fields=${edit.fields}
-        .values=${item}
-        .busy=${this.busy}
-        @tk-save=${(event: CustomEvent<Values>) => this.save(edit, edit.update, event.detail, item.id)}
-      ></tk-form>
-      <tk-history
-        .api=${this.api}
-        .collection=${config.collection}
-        .recordId=${item.id}
-        .stamp=${this.version}
-      ></tk-history>
-    </details>`;
+    const removed = typeof item.removed === "string";
+    return html`<div class="actions">
+      ${removed ? html`<span class="muted">Removed ${item.removed}</span>` : nothing}
+      ${
+        edit === undefined
+          ? nothing
+          : iconButton({
+              icon: PENCIL,
+              label: "Edit",
+              className: "edit",
+              disabled: this.busy,
+              onClick: () => {
+                this.openDialog(`edit:${item.id}`);
+              },
+            })
+      }
+      ${this.historyButton(config.collection, item.id)}
+      ${
+        edit === undefined || removed
+          ? nothing
+          : iconButton({
+              icon: DELETE,
+              label: "Remove",
+              className: "remove",
+              disabled: this.busy,
+              onClick: () => void this.removeRecord(edit, item.id),
+            })
+      }
+    </div>`;
   }
 
   private item(config: Kind, item: Item): TemplateResult {
+    const edit = config.edit;
     return html`<li data-id=${item.id}>
       <div class="row">
         <strong class="grow">${config.label(item)}</strong>
-        ${this.status(config.edit, item)}
+        ${this.actions(config, item)}
       </div>
       ${config
         .lines(item)
         .filter((line) => line !== "")
         .map((line) => html`<div class="muted pre">${line}</div>`)}
-      ${this.details(config, item)}
+      ${this.historyPanel(config.collection, item.id)}
+      ${
+        edit === undefined
+          ? nothing
+          : this.formDialog({
+              key: `edit:${item.id}`,
+              className: "edit",
+              heading: `Edit the ${config.noun}`,
+              fields: edit.fields,
+              values: item,
+              save: (values) => this.save(edit, edit.update, values, item.id),
+            })
+      }
     </li>`;
   }
 
-  private add(edit: Edit | undefined): TemplateResult | typeof nothing {
+  private addButton(config: Kind): TemplateResult | typeof nothing {
+    if (config.edit === undefined) return nothing;
+    return iconButton({
+      icon: PLUS,
+      label: `Add a ${config.noun}`,
+      className: "add",
+      disabled: this.busy,
+      onClick: () => {
+        this.openDialog("add");
+      },
+    });
+  }
+
+  private addDialog(config: Kind): TemplateResult | typeof nothing {
+    const edit = config.edit;
     if (edit === undefined) return nothing;
-    return html`<section>
-      <h2>Add</h2>
-      <tk-form
-        class="add"
-        .fields=${edit.fields}
-        submitLabel="Add"
-        .busy=${this.busy}
-        @tk-save=${(event: CustomEvent<Values>) =>
-          saveAndClear(event, (values) => this.save(edit, edit.add, values))}
-      ></tk-form>
-    </section>`;
+    return this.formDialog({
+      key: "add",
+      className: "add",
+      heading: `Add a ${config.noun}`,
+      fields: edit.fields,
+      submitLabel: "Add",
+      submitIcon: PLUS,
+      save: (values) => this.save(edit, edit.add, values),
+    });
   }
 
   override render(): TemplateResult {
     const config = this.config;
     return html`
       <section>
-        <div class="row">
+        <div class="head">
           <h2 class="grow">${config.title}</h2>
           ${
             config.canShowRemoved
@@ -244,8 +272,9 @@ export class TkRecords extends TkView {
                 >`
               : nothing
           }
+          ${this.addButton(config)}
         </div>
-        ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
+        ${this.renderError()}
         <ul>
           ${repeat(
             this.items,
@@ -253,8 +282,8 @@ export class TkRecords extends TkView {
             (item) => this.item(config, item),
           )}
         </ul>
+        ${this.addDialog(config)}
       </section>
-      ${this.add(config.edit)}
     `;
   }
 }

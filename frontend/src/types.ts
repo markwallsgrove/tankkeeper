@@ -79,6 +79,9 @@ export interface Proposal {
 export interface ChatAgent {
   agent_id: string | null;
   ready: boolean;
+  /** The agent the chat goes through, or null when there is none to use. */
+  chat_agent: string | null;
+  chat_agent_name: string | null;
 }
 
 /** What Home Assistant's conversation/process answers. */
@@ -149,6 +152,8 @@ export interface ClaudeSettings {
   comments: boolean;
   daily_time: string | null;
   daily_cap: number;
+  /** The agent the chat uses: the chosen one, or the only other agent when none is chosen. */
+  chat_agent: string | null;
   model_note: string;
 }
 

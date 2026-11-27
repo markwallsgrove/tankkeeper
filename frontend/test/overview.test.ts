@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import { CHAT } from "../src/base";
+import { CHAT as CHAT_ICON, CHECK, CLOSE, SKIP } from "../src/buttons";
 import "../src/views/overview";
 import type { TkOverview } from "../src/views/overview";
 import type { Light } from "../src/types";
@@ -130,7 +131,20 @@ function connection(lights: Light[] = [light]): FakeConnection {
     .on("reject_proposal", { state: "declined" });
 }
 
-function histories(element: Element, selector: string): [string, string][] {
+function icons(root: Element): (string | null)[][] {
+  return findAll(root, "ha-icon-button").map((button) => [
+    button.getAttribute("label"),
+    (button as unknown as { path: string }).path,
+  ]);
+}
+
+/** Open every history in the selector with its history button, then name each one. */
+async function histories(element: TkOverview, selector: string): Promise<[string, string][]> {
+  expect(findAll(element, `${selector} tk-history, ${selector} details`)).toEqual([]);
+  for (const button of findAll(element, `${selector} ha-icon-button.history`)) {
+    (button as HTMLElement).click();
+  }
+  await settle(element);
   return findAll(element, `${selector} tk-history`).map((item) => {
     const history = item as unknown as { collection: string; recordId: string };
     return [history.collection, history.recordId];
@@ -170,7 +184,10 @@ describe("tk-overview", () => {
     expect(statusText).toContain("Cycling");
     expect(statusText).toContain("Change 30% of the water");
     expect(findAll(element, "#today li").length).toBe(2);
-    expect(findAll(element, "#today button.skip").length).toBe(1);
+    expect(icons(find(element, "#today"))).toEqual([
+      ["Skip", SKIP],
+      ["Complete", CHECK],
+    ]);
     expect(text(find(element, "#today"))).toContain("complete");
     expect(find(element, "#cycle svg").getAttribute("aria-label")).toBe("Cycle");
     expect(findAll(element, "#cycle polyline").length).toBe(1);
@@ -194,11 +211,11 @@ describe("tk-overview", () => {
     let changes = 0;
     document.body.addEventListener("tk-changed", () => (changes += 1));
 
-    find(element, "#today button.skip").click();
+    find(element, "#today ha-icon-button.skip").click();
     await settle(element);
     expect(conn.last("skip_task").args).toEqual({ task_id: "t1" });
 
-    find(element, "#today button.complete").click();
+    find(element, "#today ha-icon-button.complete").click();
     await settle(element);
     expect(conn.last("complete_task").args).toEqual({ task_id: "t1" });
     expect(changes).toBe(2);
@@ -213,9 +230,9 @@ describe("tk-overview", () => {
     expect(text(find(element, "#water"))).toContain("pH 7.4");
     expect(text(find(element, "#water"))).toContain("GH (dGH) Not set");
     expect(text(find(element, "#rules"))).toContain("Ammonia or nitrite Watch above (ppm) 2");
-    expect(histories(element, "#tank")).toEqual([["tank", "tank"]]);
-    expect(histories(element, "#water")).toEqual([["water", "water"]]);
-    expect(histories(element, "#rules")).toEqual([["settings", "rules"]]);
+    expect(await histories(element, "#tank")).toEqual([["tank", "tank"]]);
+    expect(await histories(element, "#water")).toEqual([["water", "water"]]);
+    expect(await histories(element, "#rules")).toEqual([["settings", "rules"]]);
   });
 
   it("has no cog on the settings cards, as the panel has one for all settings", async () => {
@@ -277,7 +294,7 @@ describe("tk-overview", () => {
       "Light on and off, last 30 days",
     );
     expect(findAll(element, "#light tk-form, #light button")).toEqual([]);
-    expect(histories(element, "#light")).toEqual([["lights", "light1"]]);
+    expect(await histories(element, "#light")).toEqual([["lights", "light1"]]);
   });
 
   it("shows a light that needs helpers with what it should run", async () => {
@@ -328,18 +345,23 @@ describe("tk-overview", () => {
     expect(findAll(element, "#waiting b")).toEqual([]);
     expect(text(find(element, "#waiting"))).toContain("Add the product <b>Excel</b>");
     expect(text(find(element, "#waiting"))).toContain("Added to products");
+    expect(icons(find(element, "#waiting"))).toEqual([
+      ["Discuss", CHAT_ICON],
+      ["Reject", CLOSE],
+      ["Accept", CHECK],
+    ]);
 
-    find(element, "#waiting button.accept").click();
+    find(element, "#waiting ha-icon-button.accept").click();
     await settle(element);
     expect(conn.sent).toContainEqual({ type: "tankkeeper/accept_proposal", proposal_id: "p1" });
 
-    find(element, "#waiting button.reject").click();
+    find(element, "#waiting ha-icon-button.reject").click();
     await settle(element);
     expect(conn.sent).toContainEqual({ type: "tankkeeper/reject_proposal", proposal_id: "p1" });
 
     const starts: unknown[] = [];
     element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
-    find(element, "#waiting button.discuss").click();
+    find(element, "#waiting ha-icon-button.discuss").click();
     expect(starts).toEqual([{ kind: "proposal", id: "p1" }]);
   });
 
@@ -415,7 +437,7 @@ describe("tk-overview", () => {
   it("shows an error when an action fails", async () => {
     const conn = connection().fail("accept_proposal", "invalid_input", "Already decided");
     const element = await view(conn);
-    find(element, "#waiting button.accept").click();
+    find(element, "#waiting ha-icon-button.accept").click();
     await settle(element);
     expect(find(element, ".error").textContent).toBe("Already decided");
   });

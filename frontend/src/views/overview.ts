@@ -2,9 +2,11 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
+import { CHAT, CHECK, CLOSE, SKIP, iconButton } from "../buttons";
 import { cycleChart, lightRows, parameterCharts, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
-import { facts, historyDetails } from "../settings";
+import { facts } from "../settings";
+import "../tk-history";
 import "./camera";
 import type {
   Field,
@@ -142,7 +144,7 @@ export class TkOverview extends TkView {
   ): TemplateResult {
     return html`<section id=${id}>
       <h2>${title}</h2>
-      ${facts(fields, values)} ${historyDetails(this.api, collection, recordId, this.version)}
+      ${facts(fields, values)} ${this.historyDetails(collection, recordId)}
     </section>`;
   }
 
@@ -179,20 +181,24 @@ export class TkOverview extends TkView {
         <span class="grow">${task.time ?? ""} ${task.text}</span>
         ${
           buttons && task.state === "open"
-            ? html`<button
-                  class="skip"
-                  ?disabled=${this.busy}
-                  @click=${() => this.act((api) => api.call("skip_task", { task_id: task.id }))}
-                >
-                  Skip
-                </button>
-                <button
-                  class="complete primary"
-                  ?disabled=${this.busy}
-                  @click=${() => this.act((api) => api.call("complete_task", { task_id: task.id }))}
-                >
-                  Complete
-                </button>`
+            ? html`<div class="actions">
+                ${iconButton({
+                  icon: SKIP,
+                  label: "Skip",
+                  className: "skip",
+                  disabled: this.busy,
+                  onClick: () =>
+                    void this.act((api) => api.call("skip_task", { task_id: task.id })),
+                })}
+                ${iconButton({
+                  icon: CHECK,
+                  label: "Complete",
+                  className: "complete",
+                  disabled: this.busy,
+                  onClick: () =>
+                    void this.act((api) => api.call("complete_task", { task_id: task.id })),
+                })}
+              </div>`
             : html`<span class="muted">${task.state === "open" ? "" : task.state}</span>`
         }
       </div>
@@ -233,7 +239,7 @@ export class TkOverview extends TkView {
       <div class="muted">Today ${light.today.on} to ${light.today.off}</div>
       ${light.problems.map((problem) => html`<div class="error">${problem}</div>`)}
       ${renderLightChart(lightRows(light.on_periods, today, LIGHT_DAYS, this.api?.timeZone))}
-      ${historyDetails(this.api, "lights", light.id, this.version)}
+      ${this.historyDetails("lights", light.id)}
     </li>`;
   }
 
@@ -265,29 +271,29 @@ export class TkOverview extends TkView {
       <div class="pre">${proposal.reason}</div>
       <div class="muted">${sourceText(proposal.source)} · ${shortTime(proposal.created)}</div>
       ${proposal.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
-      <div class="row">
-        <button
-          class="discuss"
-          @click=${() => {
+      <div class="actions">
+        ${iconButton({
+          icon: CHAT,
+          label: "Discuss",
+          className: "discuss",
+          onClick: () => {
             openChat(this, { kind: "proposal", id: proposal.proposal_id });
-          }}
-        >
-          Discuss
-        </button>
-        <button
-          class="reject"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.reject(proposal.proposal_id))}
-        >
-          Reject
-        </button>
-        <button
-          class="accept primary"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.accept(proposal.proposal_id))}
-        >
-          Accept
-        </button>
+          },
+        })}
+        ${iconButton({
+          icon: CLOSE,
+          label: "Reject",
+          className: "reject",
+          disabled: this.busy,
+          onClick: () => void this.act((api) => api.reject(proposal.proposal_id)),
+        })}
+        ${iconButton({
+          icon: CHECK,
+          label: "Accept",
+          className: "accept",
+          disabled: this.busy,
+          onClick: () => void this.act((api) => api.accept(proposal.proposal_id)),
+        })}
       </div>
     </li>`;
   }

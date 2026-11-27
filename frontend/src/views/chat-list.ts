@@ -2,6 +2,7 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
+import { RENAME, iconButton } from "../buttons";
 import { relativeTime, sourceText } from "../format";
 import { snippet } from "../search";
 import { DELETED } from "../tk-delete-conversation";
@@ -192,13 +193,13 @@ export class TkChatList extends TkView {
     >
       ${this.renderName(conversation)}
       <div class="row actions">
-        <button
-          class="rename"
-          ?disabled=${this.busy}
-          @click=${() => this.startRename(conversation)}
-        >
-          Rename
-        </button>
+        ${iconButton({
+          icon: RENAME,
+          label: "Rename",
+          className: "rename",
+          disabled: this.busy,
+          onClick: () => void this.startRename(conversation),
+        })}
         <tk-delete-conversation
           .api=${this.api}
           .conversationId=${conversation.id}
