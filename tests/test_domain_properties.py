@@ -411,3 +411,15 @@ def test_search_finds_exactly_the_matching_conversations(tc: hegel.TestCase) -> 
     expected = {key for key, values in texts.items() if any(query.lower() in value.lower() for value in values)}
     assert {item.id for item in found} == expected
     assert [item.updated for item in found] == sorted((item.updated for item in found), reverse=True)
+
+
+@hegel.test
+def test_a_match_shows_the_query_in_its_snippet(tc: hegel.TestCase) -> None:
+    conversation = tc.draw(conversations(0))
+    query = tc.draw(gs.text(alphabet="abAB ", min_size=1, max_size=3))
+
+    found = conversation.match(query)
+
+    assert (found is not None) == conversation.text_contains(query)
+    if found is not None:
+        assert found.snippet[found.start : found.end].lower() == query.lower()

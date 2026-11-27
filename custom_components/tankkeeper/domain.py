@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 import hmac
+import re
 
 type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
 type Record = dict[str, JsonValue]
@@ -22,6 +23,14 @@ MAX_CODE_ATTEMPTS = 5
 BATCH_IDLE = CODE_LIFETIME
 BATCH_MAX_AGE = timedelta(hours=2)
 MAX_CONVERSATION_MESSAGES = 200
+MAX_RECORDED_MESSAGES = 500
+SAID_ROLES = frozenset({"user", "assistant", "error"})
+SNIPPET_BEFORE = 40
+SNIPPET_AFTER = 80
+NAME_LENGTH = 80
+UNTITLED = "Untitled conversation"
+DELETED_CONVERSATION = "deleted conversation"
+NO_DELETE = "No delete of this conversation is waiting for you. Ask to delete it again"
 TANK_ID = "tank"
 WATER_ID = "water"
 
@@ -444,11 +453,89 @@ class Conversation:
 
     def text_contains(self, query: str) -> bool:
         """Whether the title, summary or any message holds the query, ignoring case."""
-        needle = query.casefold()
-        return any(
-            needle in text.casefold()
-            for text in (self.title, self.summary, *(message.text for message in self.messages))
-        )
+        return self.match(query) is not None
+
+    def match(self, query: str) -> Match | None:
+        """Where the query is, ignoring case: what was said first, then the title, the summary and tool calls."""
+        pattern = re.compile(re.escape(query), re.IGNORECASE)
+        said = [(index, message) for index, message in enumerate(self.messages) if message.role in SAID_ROLES]
+        other = [(index, message) for index, message in enumerate(self.messages) if message.role not in SAID_ROLES]
+        places: list[tuple[str, int | None, str | None, str]] = [
+            *(("message", index, message.role, message.text) for index, message in said),
+            ("title", None, None, self.title),
+            ("summary", None, None, self.summary),
+            *(("message", index, message.role, message.text) for index, message in other),
+        ]
+        for where, index, role, text in places:
+            found = pattern.search(text)
+            if found is not None:
+                return _match(where, index, role, text, found)
+        return None
+
+    def name(self) -> str:
+        """The title, or the first thing the owner said, on one line."""
+        title = " ".join(self.title.split())
+        if title:
+            return title
+        first = next((message.text for message in self.messages if message.role == "user"), "")
+        words = " ".join(first.split())
+        if not words:
+            return UNTITLED
+        return words if len(words) <= NAME_LENGTH else f"{words[: NAME_LENGTH - 1]}…"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Match:
+    """Where a conversation holds a search query: a snippet of that text on one line, with the query from start to end.
+
+    field is title, summary or message; index and role name the message.
+    """
+
+    field: str
+    index: int | None
+    role: str | None
+    snippet: str
+    start: int
+    end: int
+
+    def to_json(self) -> Record:
+        """Serialise for the tools and the panel."""
+        return {
+            "field": self.field,
+            "index": self.index,
+            "role": self.role,
+            "snippet": self.snippet,
+            "start": self.start,
+            "end": self.end,
+        }
+
+
+def _match(where: str, index: int | None, role: str | None, text: str, found: re.Match[str]) -> Match:
+    first = max(0, found.start() - SNIPPET_BEFORE)
+    last = min(len(text), found.end() + SNIPPET_AFTER)
+    prefix = "…" if first > 0 else ""
+    suffix = "…" if last < len(text) else ""
+    body = re.sub(r"\s", " ", text[first:last])
+    start = len(prefix) + found.start() - first
+    return Match(
+        field=where,
+        index=index,
+        role=role,
+        snippet=f"{prefix}{body}{suffix}",
+        start=start,
+        end=start + found.end() - found.start(),
+    )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class DeleteRequest:
+    """A request to delete a conversation, waiting for its confirm code."""
+
+    conversation_id: str
+    user_id: str | None
+    code: str
+    created: datetime
+    failed_attempts: int = 0
 
 
 @dataclass(slots=True)
@@ -852,6 +939,70 @@ def _rebased(state: TankState, changes: tuple[Change, ...]) -> tuple[Change, ...
     return tuple(change for change in rebased if change.before != change.after)
 
 
+def check_delete(request: DeleteRequest, code: str, *, now: datetime) -> None:
+    """Raise unless the code can delete the conversation now."""
+    if request.failed_attempts >= MAX_CODE_ATTEMPTS:
+        raise TooManyAttemptsError("Too many wrong codes. Ask to delete it again")
+    if not hmac.compare_digest(code.strip().upper().encode(), request.code.encode()):
+        raise CodeWrongError("The confirm code does not match")
+    if now >= request.created + CODE_LIFETIME:
+        raise CodeExpiredError("The confirm code has expired. Ask to delete it again")
+
+
+def rename_conversation(state: TankState, conversation_id: str, title: str) -> Conversation:
+    """Give a conversation a new title. Its place among the newest stays."""
+    current = state.conversation(conversation_id)
+    name = title.strip()
+    if not name:
+        raise InvalidInputError("A title needs some text")
+    renamed = replace(current, title=name)
+    state.conversations[conversation_id] = renamed
+    return renamed
+
+
+def record_turn(
+    state: TankState,
+    *,
+    conversation_id: str,
+    now: datetime,
+    source: Source,
+    user_id: str | None,
+    messages: Iterable[Message],
+) -> Conversation:
+    """Add what was said and done in a turn, starting the conversation if needed.
+
+    Past MAX_RECORDED_MESSAGES, the oldest tool calls go first, then the oldest messages.
+    """
+    current = state.conversations.get(conversation_id)
+    every = (*(() if current is None else current.messages), *messages)
+    kept = _keep_newest(every, MAX_RECORDED_MESSAGES)
+    if current is None:
+        conversation = Conversation(
+            id=conversation_id,
+            source=source,
+            user_id=user_id,
+            started=now,
+            updated=now,
+            title="",
+            summary="",
+            messages=kept,
+        )
+    else:
+        conversation = replace(current, updated=now, messages=kept)
+    state.conversations[conversation_id] = conversation
+    return conversation
+
+
+def _keep_newest(messages: tuple[Message, ...], limit: int) -> tuple[Message, ...]:
+    excess = len(messages) - limit
+    if excess <= 0:
+        return messages
+    tools = [index for index, message in enumerate(messages) if message.role not in SAID_ROLES][:excess]
+    dropped = set(tools)
+    kept = tuple(message for index, message in enumerate(messages) if index not in dropped)
+    return kept[len(kept) - limit :]
+
+
 def delete_conversation(state: TankState, conversation_id: str) -> None:
     """Delete a conversation. The changes it made stay in the history."""
     state.conversation(conversation_id)
@@ -872,7 +1023,7 @@ def save_conversation(
     """Start a conversation, or update its title and summary and add messages."""
     current = state.conversations.get(conversation_id)
     messages = tuple(messages)
-    if len(messages) + (0 if current is None else len(current.messages)) > MAX_CONVERSATION_MESSAGES:
+    if messages and len(messages) + (0 if current is None else len(current.messages)) > MAX_CONVERSATION_MESSAGES:
         raise ConversationFullError(
             f"A conversation holds up to {MAX_CONVERSATION_MESSAGES} messages. Start a new conversation"
         )

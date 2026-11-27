@@ -21,13 +21,14 @@ from custom_components.tankkeeper.conversation import (
     EARLIER_PROMPT,
     EMBED_PROMPT,
     FAILED,
+    MAX_SAID_TEXT,
     MAX_TEXT,
     NO_AGENT,
     SETUP_PROMPT,
     TITLE_PROMPT,
     messages_of,
 )
-from custom_components.tankkeeper.domain import MAX_CONVERSATION_MESSAGES
+from custom_components.tankkeeper.domain import MAX_RECORDED_MESSAGES
 
 from .agents import CLAUDE, FAILING, SIMPLE, FakeClaude, Turn, add_failing_agent, add_simple_agent
 from .common import Caller, apply, dict_of, list_of, str_of
@@ -208,23 +209,34 @@ async def test_an_agent_without_a_chat_log_has_its_speech_recorded(
 async def test_long_text_is_clipped(hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str) -> None:
     await _choose(call, CLAUDE)
 
-    result = await _say(hass, agent_id, "x" * (MAX_TEXT + 5))
+    claude.turns = [
+        Turn(tools=[("add_note", {"kind": "question", "topic": "x" * 3000, "text": "?"})], reply="y" * 9000)
+    ]
+
+    result = await _say(hass, agent_id, "x" * (MAX_SAID_TEXT + 5))
 
     messages = await _messages(call, result.conversation_id)
-    assert len(str_of(messages[0]["text"])) == MAX_TEXT
-    assert str_of(messages[0]["text"]).endswith("…")
+    assert [len(str_of(message["text"])) for message in messages] == [MAX_SAID_TEXT, MAX_TEXT, MAX_SAID_TEXT]
+    assert all(str_of(message["text"]).endswith("…") for message in messages)
 
 
-async def test_messages_past_the_limit_are_left_out(
+async def test_a_long_chat_keeps_what_was_said_and_drops_old_tool_calls(
     hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
 ) -> None:
+    await _set_up(call)
     await _choose(call, CLAUDE)
-    first = await _say(hass, agent_id, "Hello")
-    conversation_id = first.conversation_id
-    for _ in range(MAX_CONVERSATION_MESSAGES):
-        await _say(hass, agent_id, "Again", conversation_id)
+    turns = MAX_RECORDED_MESSAGES // 3 + 5
+    claude.turns = [Turn(tools=[("list_products", {})], reply=f"Reply {index}") for index in range(turns)]
+    conversation_id = (await _say(hass, agent_id, "Ask 0")).conversation_id
+    for index in range(1, turns):
+        await _say(hass, agent_id, f"Ask {index}", conversation_id)
 
-    assert len(await _messages(call, conversation_id)) == MAX_CONVERSATION_MESSAGES
+    messages = await _messages(call, conversation_id)
+
+    assert len(messages) == MAX_RECORDED_MESSAGES
+    said = [message["text"] for message in messages if message["role"] != "tool"]
+    assert said == [text for index in range(turns) for text in (f"Ask {index}", f"Reply {index}")]
+    assert messages[-2]["role"] == "tool"
 
 
 def test_messages_of_shows_tool_calls_and_skips_empty_replies() -> None:

@@ -11,12 +11,18 @@ from custom_components.tankkeeper.domain import (
     CODE_LIFETIME,
     MAX_CODE_ATTEMPTS,
     MAX_CONVERSATION_MESSAGES,
+    MAX_RECORDED_MESSAGES,
+    SNIPPET_AFTER,
+    SNIPPET_BEFORE,
+    UNTITLED,
     CodeExpiredError,
     CodeWrongError,
     Collection,
     Conversation,
     ConversationFullError,
+    DeleteRequest,
     HistoryEntry,
+    InvalidInputError,
     Message,
     NotFoundError,
     NothingToChangeError,
@@ -32,12 +38,15 @@ from custom_components.tankkeeper.domain import (
     apply_proposal,
     changes_in_conversation,
     check_code,
+    check_delete,
     delete_conversation,
     dose_for_volume,
     merge_record,
     plan_changes,
     propose,
+    record_turn,
     reject_proposal,
+    rename_conversation,
     save_conversation,
     search_conversations,
     undo_changes,
@@ -493,3 +502,158 @@ def test_from_json_rejects_wrong_types(corrupt: Callable[[Record], None]) -> Non
 
     with pytest.raises(TypeError):
         TankState.from_json(data)
+
+
+def _said(conversation_id: str, *messages: tuple[str, str], title: str = "", summary: str = "") -> Conversation:
+    return Conversation(
+        id=conversation_id,
+        source=Source.ASSIST,
+        user_id="u1",
+        started=NOW,
+        updated=NOW,
+        title=title,
+        summary=summary,
+        messages=tuple(Message(role=role, text=text) for role, text in messages),
+    )
+
+
+def test_a_match_prefers_what_was_said_then_the_title_summary_and_tool_calls() -> None:
+    chat = _said(
+        "c1",
+        ("tool", "get_log nitrate"),
+        ("user", "Is nitrate high?"),
+        ("assistant", "Nitrate is 20 ppm."),
+        title="Nitrate",
+        summary="nitrate talk",
+    )
+
+    found = chat.match("NITRATE")
+
+    assert found is not None
+    assert (found.field, found.index, found.role) == ("message", 1, "user")
+    assert found.snippet[found.start : found.end] == "nitrate"
+    assert found.to_json() == {
+        "field": "message",
+        "index": 1,
+        "role": "user",
+        "snippet": "Is nitrate high?",
+        "start": 3,
+        "end": 10,
+    }
+    title = _said("c2", ("tool", "x"), title="Algae", summary="algae")
+    summary = _said("c3", ("tool", "x"), summary="Green algae")
+    tool = _said("c4", ("tool", "algae count"))
+    for item, field, index in ((title, "title", None), (summary, "summary", None), (tool, "message", 0)):
+        hit = item.match("algae")
+        assert hit is not None
+        assert (hit.field, hit.index) == (field, index)
+    assert chat.match("shrimp") is None
+    assert not chat.text_contains("shrimp")
+    assert chat.text_contains("20 PPM")
+
+
+def test_a_snippet_is_cut_around_the_match_on_one_line() -> None:
+    before = "a" * (SNIPPET_BEFORE + 10)
+    after = "b" * (SNIPPET_AFTER + 10)
+    chat = _said("c1", ("assistant", f"{before}\nKEY\t{after}"))
+
+    found = chat.match("key")
+
+    assert found is not None
+    assert found.snippet == f"…{'a' * (SNIPPET_BEFORE - 1)} KEY {'b' * (SNIPPET_AFTER - 1)}…"
+    assert found.snippet[found.start : found.end] == "KEY"
+    short = _said("c2", ("user", "a key")).match("key")
+    assert short is not None
+    assert (short.snippet, short.start, short.end) == ("a key", 2, 5)
+
+
+def test_a_conversation_is_named_by_its_title_or_first_message() -> None:
+    assert _said("c1", ("user", "Hi"), title="Algae").name() == "Algae"
+    assert _said("c2", ("tool", "x"), ("user", "  Why is the water   green?  ")).name() == "Why is the water green?"
+    long = _said("c3", ("user", "x" * 200)).name()
+    assert len(long) == 80
+    assert long.endswith("…")
+    assert _said("c4", ("assistant", "Hello"), title="  ").name() == UNTITLED
+
+
+def test_rename_conversation_keeps_its_place() -> None:
+    state = TankState()
+    state.conversations["c1"] = _said("c1", ("user", "Hi"), title="Old")
+
+    renamed = rename_conversation(state, "c1", "  New name ")
+
+    assert (renamed.title, renamed.updated) == ("New name", NOW)
+    assert state.conversations["c1"] == renamed
+    with pytest.raises(InvalidInputError):
+        rename_conversation(state, "c1", "   ")
+    with pytest.raises(NotFoundError):
+        rename_conversation(state, "missing", "x")
+
+
+def _record(state: TankState, *messages: Message) -> Conversation:
+    return record_turn(state, conversation_id="c1", now=NOW, source=Source.ASSIST, user_id="u1", messages=messages)
+
+
+def test_record_turn_makes_room_by_dropping_the_oldest_tool_calls_first() -> None:
+    state = TankState()
+    _record(state, *(Message(role="tool", text=f"t{index}") for index in range(10)))
+    _record(state, *(Message(role="user", text=f"u{index}") for index in range(MAX_RECORDED_MESSAGES - 10)))
+
+    kept = _record(state, Message(role="user", text="new"), Message(role="assistant", text="reply"))
+
+    assert len(kept.messages) == MAX_RECORDED_MESSAGES
+    assert [message.text for message in kept.messages[:8]] == [f"t{index}" for index in range(2, 10)]
+    assert [message.text for message in kept.messages[-2:]] == ["new", "reply"]
+
+
+def test_record_turn_drops_the_oldest_messages_when_no_tool_calls_are_left() -> None:
+    state = TankState()
+    _record(state, *(Message(role="user", text=f"u{index}") for index in range(MAX_RECORDED_MESSAGES)))
+
+    kept = _record(state, Message(role="user", text="new"), Message(role="assistant", text="reply"))
+
+    assert len(kept.messages) == MAX_RECORDED_MESSAGES
+    assert kept.messages[0].text == "u2"
+    assert [message.text for message in kept.messages[-2:]] == ["new", "reply"]
+    assert kept.started == NOW
+
+
+def test_a_title_can_be_saved_on_a_long_recorded_conversation() -> None:
+    state = TankState()
+    _record(state, *(Message(role="user", text="x") for _ in range(MAX_CONVERSATION_MESSAGES + 1)))
+
+    saved = save_conversation(
+        state,
+        conversation_id="c1",
+        now=NOW,
+        source=Source.ASSIST,
+        user_id="u1",
+        title="Long chat",
+        summary=None,
+        messages=[],
+    )
+
+    assert saved.title == "Long chat"
+    with pytest.raises(ConversationFullError):
+        save_conversation(
+            state,
+            conversation_id="c1",
+            now=NOW,
+            source=Source.ASSIST,
+            user_id="u1",
+            title=None,
+            summary=None,
+            messages=[Message(role="user", text="x")],
+        )
+
+
+def test_a_delete_needs_its_code_in_time() -> None:
+    request = DeleteRequest(conversation_id="c1", user_id="u1", code=CODE, created=NOW)
+
+    check_delete(request, " abc234 ", now=NOW + CODE_LIFETIME - timedelta(seconds=1))
+    with pytest.raises(CodeWrongError):
+        check_delete(request, "ZZZ999", now=NOW)
+    with pytest.raises(CodeExpiredError):
+        check_delete(request, CODE, now=NOW + CODE_LIFETIME)
+    with pytest.raises(TooManyAttemptsError):
+        check_delete(replace(request, failed_attempts=MAX_CODE_ATTEMPTS), CODE, now=NOW)

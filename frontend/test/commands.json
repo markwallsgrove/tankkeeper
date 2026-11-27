@@ -39,6 +39,14 @@
     "required": ["query"],
     "optional": ["limit"]
   },
+  "rename_conversation": {
+    "required": ["id", "title"],
+    "optional": []
+  },
+  "delete_conversation": {
+    "required": ["id"],
+    "optional": ["code"]
+  },
   "record_dose": {
     "required": ["amount_ml", "product"],
     "optional": ["notes", "time", "why"]

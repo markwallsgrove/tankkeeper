@@ -18,6 +18,7 @@ from .claude import ASSIST_CONVERSATION, EVENT_TRIGGERS, MAX_DAILY_CAP, MODEL_NO
 from .const import DOMAIN
 from .decisions import Decision, DecisionStatus
 from .domain import (
+    CODE_LIFETIME,
     SETUP_COLLECTIONS,
     TANK_ID,
     WATER_ID,
@@ -87,6 +88,8 @@ conversation_id it returns to every other TankKeeper tool. Before you finish, ca
 summary and the key messages. When you are given a conversation_id, use that one instead: every \
 message is recorded already, so only set the title and summary.
 - Before you answer, search past conversations for what the owner already said.
+- To delete a conversation, call tankkeeper__delete_conversation, say which conversation it is and call it \
+again with the code only after the owner says yes. The changes made in it stay.
 - The plan is a list of tasks, each on a day in the task slot or the dose slot. When the owner says \
 a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_task straight away. Adding, \
 changing and removing tasks, reminder settings and importing a plan are proposals.
@@ -126,6 +129,11 @@ READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_
 RECORD = ToolAnnotations(destructive=False, open_world=False)
 PROPOSE = ToolAnnotations(destructive=False, open_world=False)
 APPLY = ToolAnnotations(open_world=False)
+DELETE = ToolAnnotations(destructive=True, idempotent=False, open_world=False)
+DELETE_STEP = (
+    "Tell the owner which conversation this deletes; the changes made in it stay. Call "
+    "tankkeeper__delete_conversation again with the code only after the owner says yes."
+)
 
 type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObjectType]]
 
@@ -382,7 +390,12 @@ async def get_history(service: TankkeeperService, data: Record, actor: Actor) ->
     entries = service.history(
         None if collection is None else Collection(collection), _optional_str(data, "record_id"), _int(data, "limit")
     )
-    return {"history": [_history_json(entry) for entry in entries]}
+    return {
+        "history": [
+            {**_history_json(entry), "conversation_name": service.conversation_name(entry.conversation_id)}
+            for entry in entries
+        ]
+    }
 
 
 async def list_conversations(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -403,7 +416,32 @@ async def get_conversation(service: TankkeeperService, data: Record, actor: Acto
 async def search_conversations(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Conversations that mention the query."""
     found = service.search_conversations(_str(data, "query"), _int(data, "limit"))
-    return {"conversations": [_conversation_summary(item) for item in found]}
+    return {"conversations": [{**_conversation_summary(item), "match": match.to_json()} for item, match in found]}
+
+
+async def rename_conversation(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Give a conversation a new title."""
+    return _conversation_summary(await service.async_rename_conversation(_str(data, "id"), _str(data, "title")))
+
+
+async def delete_conversation(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Without a code, ask for one that deletes the conversation. With it, delete the conversation."""
+    conversation_id = _str(data, "id")
+    code = _optional_str(data, "code")
+    if code is not None:
+        await service.async_delete_conversation(conversation_id, code, actor)
+        return {"deleted": True, "conversation_id": conversation_id}
+    request = service.ask_to_delete_conversation(conversation_id, actor)
+    conversation, changes = service.conversation(conversation_id)
+    return {
+        "conversation_id": conversation_id,
+        "name": conversation.name(),
+        "messages": len(conversation.messages),
+        "changes": len(changes),
+        "code": request.code,
+        "code_expires": (request.created + CODE_LIFETIME).isoformat(),
+        "next_step": DELETE_STEP,
+    }
 
 
 async def record_dose(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -1470,6 +1508,7 @@ def _conversation_summary(conversation: Conversation) -> JsonObjectType:
         "started": conversation.started.isoformat(),
         "updated": conversation.updated.isoformat(),
         "title": conversation.title,
+        "name": conversation.name(),
         "summary": conversation.summary,
     }
 
@@ -1609,6 +1648,23 @@ SPECS: tuple[Spec, ...] = (
         handler=search_conversations,
         description="Find past conversations that mention some words, newest first.",
         schema={p.Required("query"): NON_EMPTY, p.Optional("limit", default=10): p.All(int, p.Range(min=1, max=50))},
+    ),
+    Spec(
+        name="rename_conversation",
+        title="Rename a conversation",
+        annotations=RECORD,
+        handler=rename_conversation,
+        description="Give a past conversation a new title, as the owner asks.",
+        schema={p.Required("id"): NON_EMPTY, p.Required("title"): p.All(NON_EMPTY, p.Length(max=200))},
+    ),
+    Spec(
+        name="delete_conversation",
+        title="Delete a conversation",
+        annotations=DELETE,
+        handler=delete_conversation,
+        description="Delete a past conversation. Without code, returns a confirm code and deletes nothing; with "
+        "the code, after the owner says yes, deletes it. The changes made in it stay in the history.",
+        schema={p.Required("id"): NON_EMPTY, p.Optional("code"): NON_EMPTY},
     ),
     Spec(
         name="record_dose",
