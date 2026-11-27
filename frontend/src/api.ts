@@ -1,4 +1,4 @@
-import type { HassConnection, Message } from "./types";
+import type { ChatAgent, ConverseResult, HassConnection, Message } from "./types";
 
 /** Calls TankKeeper's websocket commands, which use the same service layer as the tools. */
 export class TankkeeperApi {
@@ -34,6 +34,20 @@ export class TankkeeperApi {
 
   deleteConversation(conversationId: string): Promise<unknown> {
     return this.send({ type: "tankkeeper/delete_conversation", conversation_id: conversationId });
+  }
+
+  chatAgent(): Promise<ChatAgent> {
+    return this.send<ChatAgent>({ type: "tankkeeper/chat_agent" });
+  }
+
+  /** Send one chat message to the agent through Home Assistant's conversation API. */
+  converse(text: string, conversationId: string, agentId: string): Promise<ConverseResult> {
+    return this.send<ConverseResult>({
+      type: "conversation/process",
+      text,
+      conversation_id: conversationId,
+      agent_id: agentId,
+    });
   }
 
   private send<T>(message: Message): Promise<T> {

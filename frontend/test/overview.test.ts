@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
+import { CHAT } from "../src/base";
 import "../src/views/overview";
 import type { TkOverview } from "../src/views/overview";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
@@ -297,14 +298,10 @@ describe("tk-overview", () => {
     await settle(element);
     expect(conn.sent).toContainEqual({ type: "tankkeeper/reject_proposal", proposal_id: "p1" });
 
-    const actions: unknown[] = [];
-    document.body.addEventListener("hass-action", (event) =>
-      actions.push((event as CustomEvent).detail),
-    );
+    const starts: unknown[] = [];
+    element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
     find(element, "#waiting button.discuss").click();
-    expect(actions).toEqual([
-      { config: { tap_action: { action: "assist", start_listening: false } }, action: "tap" },
-    ]);
+    expect(starts).toEqual([{ kind: "proposal", id: "p1" }]);
   });
 
   it("shows when nothing is waiting and when there are no tasks today", async () => {

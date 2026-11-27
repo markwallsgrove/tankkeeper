@@ -14,6 +14,12 @@ export interface PanelInfo {
   config?: { entry_id?: string };
 }
 
+/** Where Home Assistant's router has the panel. */
+export interface Route {
+  prefix: string;
+  path: string;
+}
+
 export interface HomeAssistant {
   connection: HassConnection;
   config?: { time_zone: string };
@@ -61,8 +67,24 @@ export interface Proposal {
   summary: string;
   reason: string;
   evidence?: string | null;
+  conversation_id?: string | null;
   changes: Change[];
   batch: boolean;
+}
+
+/** The tank's Assist agent, and whether a conversation agent is chosen for it to pass chat to. */
+export interface ChatAgent {
+  agent_id: string | null;
+  ready: boolean;
+}
+
+/** What Home Assistant's conversation/process answers. */
+export interface ConverseResult {
+  conversation_id: string | null;
+  response: {
+    response_type: string;
+    speech?: { plain?: { speech?: string } };
+  };
 }
 
 export type Level = "on_course" | "watch" | "act";

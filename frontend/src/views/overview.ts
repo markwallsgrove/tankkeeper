@@ -1,7 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
-import { TkView, openAssist, shared } from "../base";
+import { TkView, openChat, shared } from "../base";
 import { cycleChart, lightRows, parameterCharts, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
 import { facts, historyDetails, settingsHeader } from "../settings";
@@ -248,7 +248,7 @@ export class TkOverview extends TkView {
         <button
           class="discuss"
           @click=${() => {
-            openAssist(this);
+            openChat(this, { kind: "proposal", id: proposal.proposal_id });
           }}
         >
           Discuss

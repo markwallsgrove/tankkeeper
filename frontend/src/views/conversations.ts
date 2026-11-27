@@ -1,11 +1,14 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
-import { TkView, shared } from "../base";
+import { TkView, openChat, shared } from "../base";
 import { changeText, shortTime, sourceText } from "../format";
 import type { Conversation, ConversationDetail, HistoryEntry } from "../types";
 
 export const CONVERSATION_LIMIT = 50;
+
+/** Chats from the panel's chat start with this, so only they can be gone on with there. */
+export const PANEL_CHAT = "panel_";
 
 /** Conversations: list, search, read one with the changes made in it and undo them, and delete one. */
 export class TkConversations extends TkView {
@@ -83,6 +86,18 @@ export class TkConversations extends TkView {
       <div class="row">
         <button class="back" @click=${() => (this.selected = undefined)}>Back</button>
         <h2 class="grow">${detail.title}</h2>
+        ${
+          detail.id.startsWith(PANEL_CHAT)
+            ? html`<button
+                class="resume"
+                @click=${() => {
+                  openChat(this, { kind: "resume", id: detail.id });
+                }}
+              >
+                Continue in Chat
+              </button>`
+            : nothing
+        }
         <button
           class="delete"
           ?disabled=${this.busy}
