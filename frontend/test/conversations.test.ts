@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
+import { CHAT } from "../src/base";
 import "../src/views/conversations";
 import type { TkConversations } from "../src/views/conversations";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
@@ -85,6 +86,30 @@ describe("tk-conversations", () => {
     find(element, "button.back").click();
     await settle(element);
     expect(findAll(element, "button.undo")).toEqual([]);
+  });
+
+  it("goes on with a chat from the panel in the chat, and only those", async () => {
+    const conn = connection()
+      .on("list_conversations", {
+        conversations: [{ ...summary, id: "panel_1" }, summary],
+      })
+      .on("get_conversation", { ...summary, id: "panel_1", messages: [], changes: [] });
+    const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
+    const starts: unknown[] = [];
+    element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
+    await settle(element);
+
+    find(element, "li[data-id=panel_1] button.open").click();
+    await settle(element);
+    find(element, "button.resume").click();
+    expect(starts).toEqual([{ kind: "resume", id: "panel_1" }]);
+
+    find(element, "button.back").click();
+    await settle(element);
+    conn.on("get_conversation", { ...summary, messages: [], changes: [] });
+    find(element, "li[data-id=c1] button.open").click();
+    await settle(element);
+    expect(findAll(element, "button.resume")).toEqual([]);
   });
 
   it("shows a conversation without changes, and errors", async () => {

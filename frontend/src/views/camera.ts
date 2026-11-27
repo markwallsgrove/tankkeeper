@@ -1,7 +1,7 @@
 import { css, html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
-import { TkView, openAssist, shared } from "../base";
+import { TkView, openChat, shared } from "../base";
 import { changeText, shortTime } from "../format";
 import { facts, historyDetails, settingsHeader } from "../settings";
 import type { CameraInfo, Field, PhotoCheck, Proposal } from "../types";
@@ -164,7 +164,7 @@ export class TkCamera extends TkView {
         <button
           class="discuss"
           @click=${() => {
-            openAssist(this);
+            openChat(this, { kind: "photo", id: check.id });
           }}
         >
           Discuss

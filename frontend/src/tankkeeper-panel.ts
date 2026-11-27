@@ -1,7 +1,10 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { TankkeeperApi } from "./api";
-import type { HomeAssistant, PanelInfo } from "./types";
+import { CHAT, type ChatStart } from "./base";
+import type { HomeAssistant, PanelInfo, Route } from "./types";
+import "./views/chat";
+import type { TkChat } from "./views/chat";
 import "./views/claude";
 import "./views/conversations";
 import "./views/decisions";
@@ -10,8 +13,25 @@ import "./views/overview";
 import "./views/plan";
 import "./views/records";
 
+/** The query parameters a notification's Discuss link opens the chat with. Ids are plain, as TankKeeper makes them. */
+const DISCUSS_KINDS = ["proposal", "photo", "review", "status"] as const;
+const PLAIN_ID = /^[0-9A-Za-z_-]{1,64}$/;
+
+/** The item a notification's address names, if it names one TankKeeper could have made. */
+export function discussed(search: string): ChatStart | undefined {
+  const query = new URLSearchParams(search);
+  for (const kind of DISCUSS_KINDS) {
+    const id = query.get(kind);
+    if (id === null) continue;
+    const valid = kind === "status" ? id === "now" : PLAIN_ID.test(id);
+    return valid ? { kind, id } : undefined;
+  }
+  return undefined;
+}
+
 const TABS: [string, string][] = [
   ["overview", "Overview"],
+  ["chat", "Chat"],
   ["plan", "Plan"],
   ["log", "Log"],
   ["contents", "Contents"],
@@ -28,6 +48,7 @@ export class TankkeeperPanel extends LitElement {
     hass: { attribute: false },
     panel: { attribute: false },
     narrow: { type: Boolean },
+    route: { attribute: false },
     tab: { state: true },
     api: { state: true },
   };
@@ -85,6 +106,7 @@ export class TankkeeperPanel extends LitElement {
   declare hass: HomeAssistant | undefined;
   declare panel: PanelInfo | undefined;
   declare narrow: boolean;
+  declare route: Route | undefined;
   declare tab: string;
   declare api: TankkeeperApi | undefined;
 
@@ -93,11 +115,43 @@ export class TankkeeperPanel extends LitElement {
     this.hass = undefined;
     this.panel = undefined;
     this.narrow = false;
+    this.route = undefined;
+    this.addEventListener(CHAT, (event) => {
+      this.openChat((event as CustomEvent<ChatStart>).detail);
+    });
     this.tab = "overview";
     this.api = undefined;
   }
 
+  /** The chat stays the same element, so what was said stays while other tabs are open. */
+  private readonly chat = document.createElement("tk-chat") as TkChat;
+
+  override connectedCallback(): void {
+    super.connectedCallback();
+    this.followAddress();
+  }
+
+  /** Open the chat about the item the address names, then take it out of the address so a reload does not again. */
+  private followAddress(): void {
+    const start = discussed(window.location.search);
+    if (window.location.search !== "") {
+      history.replaceState(history.state, "", window.location.pathname);
+    }
+    if (start !== undefined) this.openChat(start);
+  }
+
+  private openChat(start: ChatStart): void {
+    this.chat.start = { ...start };
+    this.tab = "chat";
+  }
+
   protected override willUpdate(changed: PropertyValues<this>): void {
+    if (changed.has("route")) this.followAddress();
+    this.updateApi(changed);
+    this.chat.api = this.api;
+  }
+
+  private updateApi(changed: PropertyValues<this>): void {
     const hass = this.hass;
     if (hass === undefined || !(changed.has("hass") || changed.has("panel"))) return;
     const entryId = this.panel?.config?.entry_id;
@@ -110,6 +164,8 @@ export class TankkeeperPanel extends LitElement {
 
   private view(): TemplateResult {
     switch (this.tab) {
+      case "chat":
+        return html`${this.chat}`;
       case "plan":
         return html`<tk-plan .api=${this.api}></tk-plan>`;
       case "log":

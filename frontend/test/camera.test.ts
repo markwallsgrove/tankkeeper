@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
+import { CHAT } from "../src/base";
 import "../src/views/camera";
 import type { TkCamera } from "../src/views/camera";
 import type { CameraInfo, PhotoCheck } from "../src/types";
@@ -273,15 +274,13 @@ describe("tk-camera", () => {
     expect(count(conn, "get_camera")).toBe(4);
   });
 
-  it("opens Assist to discuss an issue", async () => {
+  it("opens the chat to discuss an issue", async () => {
     const element = await view(connection());
-    const actions: unknown[] = [];
-    element.addEventListener("hass-action", (event) => actions.push((event as CustomEvent).detail));
+    const starts: unknown[] = [];
+    element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
 
     find(element, "#seen button.discuss").click();
 
-    expect(actions).toEqual([
-      { config: { tap_action: { action: "assist", start_listening: false } }, action: "tap" },
-    ]);
+    expect(starts).toEqual([{ kind: "photo", id: "c2" }]);
   });
 });

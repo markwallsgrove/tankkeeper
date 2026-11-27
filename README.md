@@ -17,7 +17,7 @@ TankKeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> TankKeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, batch proposals and setup, the panel and the Assist agent work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> TankKeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, batch proposals and setup, the panel with its chat, and the Assist agent work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
@@ -44,7 +44,7 @@ This is the plan. Put the tank's records in Home Assistant, give Claude tools to
 
 | Where | How | Paid with |
 |---|---|---|
-| 📱 Phone | Home Assistant app: Assist chat, the TankKeeper panel, reminder notifications with Complete and Skip | Anthropic API key |
+| 📱 Phone | Home Assistant app: Assist chat, the TankKeeper panel and its chat, reminder notifications with Complete and Skip | Anthropic API key |
 | 🌐 Browser | Home Assistant in any browser: the same Assist chat and panel | Anthropic API key |
 | 💻 Claude Code | Home Assistant's Model Context Protocol integration | Your Claude plan |
 | 🖥️ Claude Desktop | The same MCP server, as a local MCP server: a small proxy on your computer reaches Home Assistant over your network or Tailscale. Not a custom connector: those connect from Anthropic's cloud and can't reach a private Home Assistant | Your Claude plan |
@@ -71,13 +71,13 @@ Saved. TankKeeper is live.
 
 **Change anything, any time.** Added a plant, swapped a fertiliser, moved a rock? Just say so. Claude reads the change back, you say yes, it's done.
 
-**Set up in one go.** Claude builds the whole tank in one draft, asking one thing at a time or reading your notes, then reads it back. One yes saves it all; one undo takes it all back. A change still waiting goes to your phone with Accept, Reject and Discuss.
+**Set up in one go.** Claude builds the whole tank in one draft, asking one thing at a time or reading your notes, then reads it back. One yes saves it all; one undo takes it all back. A change still waiting goes to your phone with Accept, Reject and Discuss, which opens a chat about it in the panel.
 
 **Ask anything.** "Should I do a water change?" "Why is my pH dropping?" "Is it safe to add fish yet?" Claude answers from your records and your decisions, not a generic guide.
 
-**Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo.
+**Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo. Chats started in the panel can be continued.
 
-**Use the panel.** The TankKeeper panel in the sidebar shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: each card's cog opens **Configure**, where they change.
+**Use the panel.** The TankKeeper panel in the sidebar has a Chat tab to talk to Claude, and shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: each card's cog opens **Configure**, where they change.
 
 **Optional extras:**
 

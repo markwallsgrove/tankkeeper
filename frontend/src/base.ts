@@ -168,16 +168,19 @@ export const shared = css`
   }
 `;
 
-/** Opens Assist in Home Assistant's frontend, which handles the action event. */
-const ASSIST = {
-  config: { tap_action: { action: "assist", start_listening: false } },
-  action: "tap",
-};
+/** Fired to open the panel's chat, about one item or to go on with a saved conversation. */
+export const CHAT = "tk-chat";
 
-/** Ask Home Assistant's frontend to open Assist, from an element inside the panel. */
-export function openAssist(from: HTMLElement): void {
+/** What the chat starts with: an item to discuss, named only by its id, or a saved conversation to go on with. */
+export interface ChatStart {
+  kind: "proposal" | "photo" | "review" | "status" | "resume";
+  id: string;
+}
+
+/** Ask the panel to open its chat, from an element inside it. */
+export function openChat(from: HTMLElement, start: ChatStart): void {
   from.dispatchEvent(
-    new CustomEvent("hass-action", { detail: ASSIST, bubbles: true, composed: true }),
+    new CustomEvent<ChatStart>(CHAT, { detail: start, bubbles: true, composed: true }),
   );
 }
 

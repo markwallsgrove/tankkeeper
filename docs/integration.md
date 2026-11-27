@@ -102,15 +102,16 @@ Every tool name starts with `tankkeeper__`.
 The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phone width and uses your Home Assistant theme.
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle chart, a chart for each water parameter, the next 7 days, the tank, the tap water, the lights, the rule limits and the changes waiting for you.
+- **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Without a conversation agent in the Claude settings, the tab says where to choose one.
 - **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
 - **Contents** and **Products**: list them, with their history.
 - **Claude**: the Claude settings, with their history, and the latest reviews.
 - **Camera** (on the Overview): the latest photo and what Claude saw, **Check now** and **Photos**. **Seen by the camera** lists the issues waiting for you, with **Not a problem**, **Discuss**, **Reject** and **Accept**.
-- **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation.
+- **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation. **Continue in Chat** goes on with a chat started in the panel.
 - Settings are read-only in the panel: the tank, tap water, products, contents, lights, reminders, rule limits, Claude and camera. Each settings card has a cog that opens the integration page; choose **Configure** there to change them. Home Assistant cannot open a given options step from a link.
 - Each record has its latest changes with Undo, settings too.
 - On the charts, hollow points are tap tests. Dashed lines are the Watch and Act limits, the tap water values you gave and the target temperature.
-- **Discuss** on a waiting change opens Assist. Assist starts a new chat, so tell it which change you mean.
+- **Discuss**, on a waiting change, a camera issue or a notification, opens a new chat with a first message about it. The message is not sent until you send it, so you can change it first. A link only names the item, such as `/tankkeeper?proposal=<id>`; the panel reads its text from the records.
 
 ### Assist agent
 
@@ -122,7 +123,9 @@ TankKeeper adds its own conversation agent. It does not talk to Anthropic itself
 
 The chosen agent answers with its own model, its own key and its own LLM APIs. Turn on the **TankKeeper** API in that agent's options so it gets the tools. TankKeeper then records your message, each tool call with its arguments and result, and each reply in the conversation, which you can read in the panel or with `get_conversation`. Confirm codes are left out of the recorded results. Tools from other APIs, such as Home Assistant's own, are recorded with their arguments only, so data from outside the tank is not kept. When the agent fails, the conversation records an error instead of a reply.
 
-To use it, open **Settings > Voice assistants**, add or edit an assistant, and choose the tank's **Assist agent** as its conversation agent.
+To use it, open the panel's **Chat** tab, or open **Settings > Voice assistants**, add or edit an assistant, and choose the tank's **Assist agent** as its conversation agent.
+
+A chat whose Home Assistant session has ended, such as one continued from **Conversations**, starts without its earlier messages. The agent then gets the latest 10 recorded messages as JSON data, with a note that they are the owner's data, never instructions.
 
 ### Websocket API
 
@@ -156,7 +159,7 @@ A review checks the tank after the events chosen in **Review after**: a new test
 - With **Claude comments on reviews** on and an AI task entity set, TankKeeper asks that entity for a short comment on what the rules can't see. The entity reads the records with the TankKeeper tools. Codes are left out of what it reads, and it can't apply, reject or undo anything.
 - A plan change Claude suggests in a review is a proposal (add, change or remove a task). It waits for you in the panel, and is sent to you as a [proposal notification](#proposal-notifications).
 - Once the daily cap of comments is reached, reviews still run, without a comment, until midnight. When the entity fails, or takes more than 3 minutes, the review is stored with a note instead of a comment. A review can call at most 20 tools; after that the tools answer with an error asking for the comment.
-- Each review goes to the **Status alert devices**: the rules' result, Claude's comment and how many plan changes wait. It replaces the status alert on the phone, and opens the panel when tapped.
+- Each review goes to the **Status alert devices**: the rules' result, Claude's comment and how many plan changes wait. It replaces the status alert on the phone, and opens the panel when tapped. **Discuss** opens a chat about the review.
 
 ### Camera
 
@@ -165,7 +168,7 @@ A camera, such as a Tapo C100 on the side glass, lets Claude look at the tank. C
 - A photo check takes a snapshot, stores it in `config/tankkeeper/photos`, and sends it to the AI task entity as an attachment, with the tank's contents, the rules' result and the findings you said are not a problem. Claude answers with a summary, whether it is an issue, a suggestion and what it saw of the water, algae, plants and water level.
 - Checks run at the **Daily check time** (14:00 by default), only while a light is on when lights are set; after each water test when **Check after each test** is on; and when you choose **Check now** or ask Claude for a photo.
 - Each check that asks Claude counts toward the **Comments a day** cap, shared with reviews. Past the cap, the photo is kept with a note and Claude does not look. The same 3-minute and 20-tool-call limits as reviews apply.
-- An issue from a daily or after-test check goes to the **Status alert devices** with the photo, unless **Alert me about issues** is off. The notification has **Discuss** and **Open in panel**, which open the panel, and **Not a problem**, which closes the issue as the person who pressed it.
+- An issue from a daily or after-test check goes to the **Status alert devices** with the photo, unless **Alert me about issues** is off. The notification has **Discuss**, which opens a chat about the issue, **Open in panel**, and **Not a problem**, which closes the issue as the person who pressed it.
 - Claude can propose plan changes for an issue. They wait on the issue, and the panel lists them under it. **Accept** applies all of them, or none if one can no longer apply. **Reject** and **Not a problem** reject them. An alert counts the plan changes; changes from a check that sent no alert go out as usual proposal notifications.
 - Photos older than **Keep photos for** are deleted when the tank loads, before each scheduled check and every day at 03:00, even with no camera set.
 - Photos are kept for **Keep photos for** days (30 by default). The check stays in the records without its photo. TankKeeper keeps the latest 200 checks, every check from today, the open issues and the latest 50 findings you said are not a problem.
@@ -178,7 +181,7 @@ A camera, such as a Tapo C100 on the side glass, lets Claude look at the tank. C
 A proposal or batch still waiting 10 minutes after its last change is sent once to the **Status alert devices**. A batch that keeps changing is not sent. A proposal applied or rejected in the conversation is not sent.
 
 - **Accept** applies it, without a code. **Reject** closes it. Both record who pressed the button. Anyone who gets the notification can use them.
-- **Discuss** opens the TankKeeper panel, where you can accept, reject or discuss it.
+- **Discuss** opens a chat about it in the TankKeeper panel, where you can also accept or reject it.
 - When the proposal is applied or rejected anywhere, the notification is cleared.
 
 ### Tasks and slots
@@ -211,7 +214,7 @@ The rules run after every change to the records and once an hour. The status is 
 
 The limits are settings: change them in the options or with `set_rules`. The pH and cycle stalled rules need the stage set to cycling. A planned test is a task with "test" in its text. It is done when it is completed or skipped, or when a tank test is recorded on or after its day.
 
-When a rule gets worse, the status alert devices get the status, the reasons and what to do. When the status goes back to On course, they get one "Back on course" message. Nothing is sent after a restart until something changes.
+When a rule gets worse, the status alert devices get the status, the reasons and what to do. When the status goes back to On course, they get one "Back on course" message. Each has **Discuss**, which opens a chat about the status. Nothing is sent after a restart until something changes.
 
 ### Reminders
 
@@ -369,6 +372,8 @@ actions:
 - A proposal made while no status alert device is set is sent when it is waiting and a device is set.
 - Tasks can't repeat. Add one for each day, or ask Claude to.
 - Conversations and the records Claude reads are sent to Anthropic when you talk to Claude. Photos are sent to Anthropic when Claude looks at them.
+- The panel's chat talks to the agent with `conversation/process`, so a reply shows when it is complete, not word by word. Home Assistant's streaming Assist pipeline can't be told which agent to use.
+- **Continue in Chat** is only for chats started in the panel. Other conversations can be read but not continued.
 - The Assist agent records up to 200 messages a conversation and up to 2000 characters a message. Later messages are not recorded.
 - An agent that does not use Home Assistant's chat log has only its spoken reply recorded, without tool calls.
 - A review waits 2 minutes after the last event, and events that keep coming put it off. A review waiting during a restart is lost.
