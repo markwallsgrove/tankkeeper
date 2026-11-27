@@ -42,7 +42,7 @@ SEEN: JsonObjectType = {
     "level": "Full",
 }
 CLEAR: JsonObjectType = {"summary": "The tank looks clear.", "issue": False}
-CAMERA_TOOLS = {"get_photo", "check_now", "list_photos", "dismiss_finding"}
+CAMERA_TOOLS = {"get_photo", "check_now", "list_photos", "get_photo_check", "dismiss_finding"}
 
 
 @pytest.fixture
@@ -213,6 +213,7 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
         "state": "open",
         "proposal_ids": [],
         "photo_url": check["photo_url"],
+        "embed": f"![The tank](tankkeeper:photo/{check_id})",
     }
     assert str_of(check["photo_url"]).startswith(f"/api/tankkeeper/photos/{check_id}?authSig=")
     assert _photo_files(hass) == [f"{check_id}.jpg"]
@@ -369,7 +370,7 @@ async def test_a_camera_that_fails_is_noted(
 
     check = await call.ok("check_now")
 
-    assert (check["asked"], check["content_type"], check["photo_url"]) == (False, None, None)
+    assert (check["asked"], check["content_type"], check["photo_url"], check["embed"]) == (False, None, None, None)
     assert check["note"] == f"The camera did not give a photo: {reason}"
     assert camera_on.ai_task.tasks == []
 
@@ -655,7 +656,12 @@ async def test_old_photos_are_deleted_but_their_checks_kept(
     photos = await _photos(call)
     assert len(photos) == 2
     kept_old = photos[1]
-    assert (kept_old["id"], kept_old["content_type"], kept_old["photo_url"]) == (old["id"], None, None)
+    assert (kept_old["id"], kept_old["content_type"], kept_old["photo_url"], kept_old["embed"]) == (
+        old["id"],
+        None,
+        None,
+        None,
+    )
     assert _photo_files(hass) == [f"{photos[0]['id']}.jpg"]
     with pytest.raises(Unresolvable):
         await media_source.async_resolve_media(hass, f"media-source://tankkeeper/{old['id']}", None)
@@ -870,7 +876,9 @@ async def test_photo_links_are_not_sent_to_the_model(call: Caller, camera_on: Fa
     await call.ok("check_now")
 
     assert [result.error for result in camera_on.ai_task.results] == [False, False]
-    assert "photo_url" not in repr([result.data for result in camera_on.ai_task.results])
+    results = repr([result.data for result in camera_on.ai_task.results])
+    assert "photo_url" not in results
+    assert "tankkeeper:photo" not in results
 
 
 async def test_a_plan_change_from_a_daily_check_is_sent_with_its_alert(
@@ -892,3 +900,18 @@ async def test_a_plan_change_from_a_daily_check_is_sent_with_its_alert(
     assert [alert["message"] for alert in _photo_alerts(tablet)] == [
         "Spots.\n1 plan change waits in the panel.\nStatus: On course."
     ]
+
+
+async def test_one_photo_check_is_found_by_its_id(call: Caller, camera_on: FakeClaude) -> None:
+    first = await call.ok("check_now")
+    await call.ok("check_now")
+
+    found = await call.ok("get_photo_check", check_id=str_of(first["id"]))
+
+    assert found == (await _photos(call))[1]
+    assert found["embed"] == f"![The tank](tankkeeper:photo/{first['id']})"
+
+
+@pytest.mark.parametrize("check_id", ["01JD0000000000000000000000", "../secrets", "x"])
+async def test_an_unknown_photo_check_is_not_found(call: Caller, camera_on: FakeClaude, check_id: str) -> None:
+    assert await call.error("get_photo_check", check_id=check_id) == "not_found"

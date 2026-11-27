@@ -54,18 +54,30 @@ const WATCH = COLOURS.ammonia;
 const ACT = COLOURS.nitrite;
 const REFERENCE = "var(--secondary-text-color, #727272)";
 
-type TestValue = keyof typeof COLOURS;
+export type TestValue = keyof typeof COLOURS;
 
-/** The values a test records, in the order they are charted, with their units. */
-const PARAMETERS: [TestValue, string][] = [
-  ["ammonia", "Ammonia (ppm)"],
-  ["nitrite", "Nitrite (ppm)"],
-  ["nitrate", "Nitrate (mg/l)"],
-  ["ph", "pH"],
-  ["kh", "KH (dKH)"],
-  ["gh", "GH (dGH)"],
-  ["phosphate", "Phosphate (mg/l)"],
-  ["temperature_c", "Temperature (°C)"],
+/** The values a test records, with their units. */
+export const LABELS: Record<TestValue, string> = {
+  ammonia: "Ammonia (ppm)",
+  nitrite: "Nitrite (ppm)",
+  nitrate: "Nitrate (mg/l)",
+  ph: "pH",
+  kh: "KH (dKH)",
+  gh: "GH (dGH)",
+  phosphate: "Phosphate (mg/l)",
+  temperature_c: "Temperature (°C)",
+};
+
+/** The test values in the order they are charted. */
+const TEST_VALUES: TestValue[] = [
+  "ammonia",
+  "nitrite",
+  "nitrate",
+  "ph",
+  "kh",
+  "gh",
+  "phosphate",
+  "temperature_c",
 ];
 
 type WaterValue = "ph" | "kh" | "gh" | "nitrate" | "phosphate";
@@ -142,9 +154,25 @@ function parameterLines(
 }
 
 /**
- * A chart for each test value that has readings, and the labels of those that have none.
- * The lines are the rule limits, the tap water values and the target temperature.
+ * One test value's chart: its tank and tap readings, with the rule limits, the tap water value or the target
+ * temperature as lines.
  */
+export function parameterChart(
+  log: LogEntry[],
+  key: TestValue,
+  settings: Record<string, number>,
+  temperature: number | null,
+  water: Water | null,
+): ParameterChart {
+  const readings = [series(log, key, "Tank", "tank"), series(log, key, "Tap", "tap")];
+  return {
+    key,
+    label: LABELS[key],
+    chart: chart(readings, parameterLines(key, settings, temperature, water)),
+  };
+}
+
+/** A chart for each test value that has readings, and the labels of those that have none. */
 export function parameterCharts(
   log: LogEntry[],
   settings: Record<string, number>,
@@ -153,17 +181,10 @@ export function parameterCharts(
 ): { charts: ParameterChart[]; empty: string[] } {
   const charts: ParameterChart[] = [];
   const empty: string[] = [];
-  for (const [key, label] of PARAMETERS) {
-    const readings = [series(log, key, "Tank", "tank"), series(log, key, "Tap", "tap")];
-    if (readings.every((item) => item.points.length === 0)) {
-      empty.push(label);
-      continue;
-    }
-    charts.push({
-      key,
-      label,
-      chart: chart(readings, parameterLines(key, settings, temperature, water)),
-    });
+  for (const key of TEST_VALUES) {
+    const found = parameterChart(log, key, settings, temperature, water);
+    if (found.chart.series.every((item) => item.points.length === 0)) empty.push(found.label);
+    else charts.push(found);
   }
   return { charts, empty };
 }

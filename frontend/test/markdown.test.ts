@@ -1,10 +1,15 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
+import { TankkeeperApi } from "../src/api";
 import { markdown } from "../src/markdown";
+import type { TkEmbed } from "../src/tk-embed";
+import { FakeConnection } from "./fake";
 
-function shown(text: string): HTMLElement {
+const ID = "01JD0000000000000000000000";
+
+function shown(text: string, api?: TankkeeperApi): HTMLElement {
   const container = document.createElement("div");
-  render(markdown(text), container);
+  render(markdown(text, api), container);
   return container;
 }
 
@@ -89,6 +94,88 @@ describe("markdown", () => {
     const container = shown(text);
     expect(container.querySelectorAll("script, img, iframe, svg, a, b").length).toBe(0);
     expect(container.textContent).toContain("<");
+  });
+
+  it("shows photos and charts in their place when it has the API", () => {
+    const api = new TankkeeperApi(new FakeConnection());
+    const container = shown(
+      `Here it is:\n![The tank](tankkeeper:photo/${ID})\n\nAnd ![](tankkeeper:chart/nitrate?days=7) **now**`,
+      api,
+    );
+
+    const embeds = [...container.querySelectorAll<TkEmbed>("tk-embed")];
+    expect(embeds.map((embed) => [embed.address, embed.alt, embed.api])).toEqual([
+      [`tankkeeper:photo/${ID}`, "The tank", api],
+      ["tankkeeper:chart/nitrate?days=7", "", api],
+    ]);
+    expect(container.textContent).toContain("Here it is:");
+    expect(container.querySelector("strong")?.textContent).toBe("now");
+  });
+
+  it("shows photos and charts as text without the API", () => {
+    const container = shown(`![The tank](tankkeeper:photo/${ID})`);
+
+    expect(container.querySelector("tk-embed")).toBeNull();
+    expect(container.textContent).toContain(`![The tank](tankkeeper:photo/${ID})`);
+  });
+
+  it.each([
+    "//example.com/tank.jpg",
+    "data:image/png;base64,AAAA",
+    "javascript:alert(1)",
+    "/api/tankkeeper/photos/01JD0000000000000000000000",
+    "tankkeeper:chart/salinity",
+    "tankkeeper:photo/../../secrets",
+  ])("shows an image from %s as text, loading nothing", (address) => {
+    const api = new TankkeeperApi(new FakeConnection());
+    const container = shown(`Look ![tank](${address}) here`, api);
+
+    expect(container.querySelectorAll("img, a, tk-embed").length).toBe(0);
+    expect(container.textContent).toContain(`![tank](${address})`);
+  });
+
+  it.each(["https://example.com/tank.jpg", "http://example.com/pixel.gif?leak=nitrate"])(
+    "shows an image from %s as a ! and a link, loading nothing",
+    (address) => {
+      const api = new TankkeeperApi(new FakeConnection());
+      const container = shown(`Done![tank](${address})`, api);
+
+      expect(container.querySelectorAll("img, tk-embed").length).toBe(0);
+      expect(container.querySelector("a")?.getAttribute("href")).toBe(address);
+      expect(container.textContent).toContain("Done!tank");
+    },
+  );
+
+  it("shows an image with no text and a web address as text, not an empty link", () => {
+    const api = new TankkeeperApi(new FakeConnection());
+    const container = shown("See ![](https://example.com/tank.jpg)", api);
+
+    expect(container.querySelectorAll("img, a, tk-embed").length).toBe(0);
+    expect(container.textContent).toContain("![](https://example.com/tank.jpg)");
+  });
+
+  it("shows at most five photos and charts in one reply, and the rest as text", () => {
+    const api = new TankkeeperApi(new FakeConnection());
+    const chart = (days: number): string =>
+      `![Nitrate](tankkeeper:chart/nitrate?days=${String(days)})`;
+    const container = shown(
+      `${chart(1)} ${chart(2)}\n- ${chart(3)}\n- ${chart(4)}\n\n**${chart(5)}** ${chart(6)}`,
+      api,
+    );
+
+    const embeds = [...container.querySelectorAll("tk-embed")] as TkEmbed[];
+    expect(embeds.map((embed) => embed.address)).toEqual(
+      [1, 2, 3, 4, 5].map((days) => `tankkeeper:chart/nitrate?days=${String(days)}`),
+    );
+    expect(container.textContent).toContain(chart(6));
+  });
+
+  it("keeps code that shows an embed as code", () => {
+    const api = new TankkeeperApi(new FakeConnection());
+    const container = shown(`\`![x](tankkeeper:photo/${ID})\``, api);
+
+    expect(container.querySelector("tk-embed")).toBeNull();
+    expect(container.querySelector("code")?.textContent).toBe(`![x](tankkeeper:photo/${ID})`);
   });
 
   it("shows nothing for empty text", () => {

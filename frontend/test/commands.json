@@ -225,6 +225,10 @@
     "required": [],
     "optional": ["limit"]
   },
+  "get_photo_check": {
+    "required": ["check_id"],
+    "optional": []
+  },
   "dismiss_finding": {
     "required": ["check_id"],
     "optional": []

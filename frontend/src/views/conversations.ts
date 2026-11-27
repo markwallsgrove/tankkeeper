@@ -3,6 +3,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
 import { changeText, shortTime, sourceText } from "../format";
+import { markdown } from "../markdown";
 import type { Conversation, ConversationDetail, HistoryEntry } from "../types";
 
 export const CONVERSATION_LIMIT = 50;
@@ -113,9 +114,13 @@ export class TkConversations extends TkView {
       <ul>
         ${detail.messages.map(
           (message) =>
-            html`<li>
-              <strong>${message.role}</strong>
-              <div class="pre">${message.text}</div>
+            html`<li class=${message.role}>
+              <div class="role muted">${message.role}</div>
+              ${
+                message.role === "assistant"
+                  ? markdown(message.text, this.api)
+                  : html`<div class="pre">${message.text}</div>`
+              }
             </li>`,
         )}
       </ul>
