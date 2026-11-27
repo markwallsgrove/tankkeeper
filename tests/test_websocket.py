@@ -1,17 +1,22 @@
 """The panel's websocket commands, against a real Home Assistant."""
 
+import json
+from pathlib import Path
+
 from homeassistant.core import HomeAssistant
 from homeassistant.util.json import JsonObjectType, JsonValueType
+import probatio as p
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, MockUser
 from pytest_homeassistant_custom_component.typing import MockHAClientWebSocket, WebSocketGenerator
 
 from custom_components.tankkeeper.tools import SPECS
-from custom_components.tankkeeper.websocket import CONVERSATION_ONLY, PANEL_COMMANDS
+from custom_components.tankkeeper.websocket import CONVERSATION_ONLY, PANEL_COMMANDS, panel_args
 
 from .common import Caller, dict_of, list_of, str_of
 
 pytestmark = pytest.mark.freeze_time("2026-11-26T12:00:00+00:00")
+COMMAND_ARGS = Path(__file__).parent.parent / "frontend" / "test" / "commands.json"
 
 
 class Panel:
@@ -67,6 +72,19 @@ def test_every_tool_the_panel_can_use_is_a_command() -> None:
     assert {"tankkeeper/accept_proposal", "tankkeeper/reject_proposal", "tankkeeper/delete_conversation"} <= (
         PANEL_COMMANDS
     )
+
+
+def test_the_frontend_tests_check_the_real_command_arguments() -> None:
+    expected = {
+        spec.name: {
+            "required": sorted(str(key) for key in panel_args(spec) if isinstance(key, p.Required)),
+            "optional": sorted(str(key) for key in panel_args(spec) if not isinstance(key, p.Required)),
+        }
+        for spec in SPECS
+        if spec.name not in CONVERSATION_ONLY
+    }
+
+    assert json.loads(COMMAND_ARGS.read_text()) == expected
 
 
 async def test_reads_answer_as_the_tools_do(panel: Panel, call: Caller) -> None:

@@ -84,6 +84,18 @@ Every tool name starts with `tankkeeper__`.
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
 
+### Panel
+
+The **Tankkeeper** panel is in the sidebar. Only admins see it. It works at phone width and uses your Home Assistant theme.
+
+- **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle and water chemistry charts, the next 7 days, the light (only when you have one) and the changes waiting for you.
+- **Plan**, **Log**, **Contents**, **Products**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
+- **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation.
+- Each record has its latest changes with Undo. Edit the tank, water, rule limits and lights from the Overview, and reminders from the Plan.
+- On the water chemistry chart, hollow points are tap tests and dashed lines are the water values you gave.
+- **Discuss** on a waiting change opens Assist. Assist starts a new chat, so tell it which change you mean.
+- Add a light with **Configure > Add a light** or with Claude. The panel edits and removes lights.
+
 ### Websocket API
 
 The panel uses websocket commands. Only admins can use them.
@@ -112,7 +124,7 @@ Setup is a batch for an empty tank: no products, contents, tasks, lights or deci
 A proposal or batch still waiting 10 minutes after its last change is sent once to the **Status alert devices**. A batch that keeps changing is not sent. A proposal applied or rejected in the conversation is not sent.
 
 - **Accept** applies it, without a code. **Reject** closes it. Both record who pressed the button. Anyone who gets the notification can use them.
-- **Discuss** opens the Tankkeeper integration page in the Home Assistant app. Home Assistant has no link that opens Assist, so ask Claude there.
+- **Discuss** opens the Tankkeeper panel, where you can accept, reject or discuss it.
 - When the proposal is applied or rejected anywhere, the notification is cleared.
 
 ### Tasks and slots
@@ -247,7 +259,8 @@ actions:
 - One tank per Home Assistant.
 - In a conversation, proposals can only be applied in the one that made them. From a notification, anyone who gets it can accept it. A proposal whose code has expired, or that had too many wrong codes, stays waiting until it is rejected. Make it again to get a new code.
 - Over MCP, a conversation is known only by the `conversation_id` Claude passes. Proposals made without one can be applied from any conversation by the same Home Assistant user.
-- No panel or camera yet. See the [design](design.html).
+- No camera yet. See the [design](design.html).
+- A log entry can't be edited or removed in the panel. No tool changes one.
 - The rule limits are settings. A decision does not change them by itself; Claude proposes the change with `set_rules`.
 - Temperature has no rule yet.
 - A light turns on and off on the same day. A schedule over midnight is not possible.

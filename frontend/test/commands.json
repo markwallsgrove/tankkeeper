@@ -1,0 +1,244 @@
+{
+  "get_tank": {
+    "required": [],
+    "optional": []
+  },
+  "list_products": {
+    "required": [],
+    "optional": ["include_removed"]
+  },
+  "list_contents": {
+    "required": [],
+    "optional": ["include_removed"]
+  },
+  "get_log": {
+    "required": [],
+    "optional": ["kind", "limit", "since", "until"]
+  },
+  "list_notes": {
+    "required": [],
+    "optional": []
+  },
+  "list_proposals": {
+    "required": [],
+    "optional": ["limit", "state"]
+  },
+  "get_history": {
+    "required": [],
+    "optional": ["collection", "limit", "record_id"]
+  },
+  "list_conversations": {
+    "required": [],
+    "optional": ["limit"]
+  },
+  "get_conversation": {
+    "required": ["id"],
+    "optional": []
+  },
+  "search_conversations": {
+    "required": ["query"],
+    "optional": ["limit"]
+  },
+  "record_dose": {
+    "required": ["amount_ml", "product"],
+    "optional": ["notes", "time", "why"]
+  },
+  "record_test": {
+    "required": ["values"],
+    "optional": ["notes", "source", "time"]
+  },
+  "add_content": {
+    "required": ["name", "type"],
+    "optional": ["added", "count", "notes", "where"]
+  },
+  "add_note": {
+    "required": ["kind", "text", "topic"],
+    "optional": ["how_to_resolve"]
+  },
+  "set_tank": {
+    "required": [],
+    "optional": [
+      "dosing_volume_litres",
+      "evidence",
+      "name",
+      "notes",
+      "reason",
+      "stage",
+      "temperature_c",
+      "volume_litres"
+    ]
+  },
+  "set_water": {
+    "required": [],
+    "optional": ["evidence", "gh", "kh", "nitrate", "notes", "ph", "phosphate", "reason", "source"]
+  },
+  "add_product": {
+    "required": ["name"],
+    "optional": [
+      "evidence",
+      "label_amount_ml",
+      "label_frequency",
+      "label_per_litres",
+      "links",
+      "notes",
+      "purpose",
+      "reason",
+      "your_dose"
+    ]
+  },
+  "update_product": {
+    "required": ["product_id"],
+    "optional": [
+      "evidence",
+      "label_amount_ml",
+      "label_frequency",
+      "label_per_litres",
+      "links",
+      "name",
+      "notes",
+      "purpose",
+      "reason",
+      "your_dose"
+    ]
+  },
+  "update_content": {
+    "required": ["content_id"],
+    "optional": ["added", "count", "evidence", "name", "notes", "reason", "type", "where"]
+  },
+  "remove_content": {
+    "required": ["content_id"],
+    "optional": ["evidence", "reason", "removed"]
+  },
+  "remove_product": {
+    "required": ["product_id"],
+    "optional": ["evidence", "reason", "removed"]
+  },
+  "update_note": {
+    "required": ["note_id"],
+    "optional": ["evidence", "how_to_resolve", "kind", "reason", "text", "topic"]
+  },
+  "remove_note": {
+    "required": ["note_id"],
+    "optional": ["evidence", "reason"]
+  },
+  "undo_change": {
+    "required": ["history_id"],
+    "optional": ["reason"]
+  },
+  "get_plan": {
+    "required": [],
+    "optional": ["end", "start"]
+  },
+  "complete_task": {
+    "required": ["task_id"],
+    "optional": ["note"]
+  },
+  "skip_task": {
+    "required": ["task_id"],
+    "optional": ["note"]
+  },
+  "add_task": {
+    "required": ["text"],
+    "optional": ["date", "evidence", "note", "reason", "slot"]
+  },
+  "update_task": {
+    "required": ["task_id"],
+    "optional": ["date", "evidence", "note", "reason", "slot", "state", "text"]
+  },
+  "remove_task": {
+    "required": ["task_id"],
+    "optional": ["evidence", "reason"]
+  },
+  "set_reminders": {
+    "required": [],
+    "optional": [
+      "dose_time",
+      "evidence",
+      "notify",
+      "reason",
+      "resend_time",
+      "status_notify",
+      "task_time"
+    ]
+  },
+  "get_status": {
+    "required": [],
+    "optional": []
+  },
+  "set_rules": {
+    "required": [],
+    "optional": [
+      "evidence",
+      "nitrogen_act",
+      "nitrogen_watch",
+      "ph_act",
+      "ph_watch",
+      "plan_act_days",
+      "plan_watch_days",
+      "reason",
+      "skip_act",
+      "skip_watch",
+      "stall_act_days",
+      "stall_watch_days",
+      "test_act_days",
+      "test_watch_days"
+    ]
+  },
+  "list_decisions": {
+    "required": [],
+    "optional": ["status"]
+  },
+  "get_decision": {
+    "required": ["number"],
+    "optional": []
+  },
+  "set_decision": {
+    "required": ["action"],
+    "optional": [
+      "date",
+      "decision",
+      "evidence",
+      "number",
+      "open",
+      "reason",
+      "replaced_by",
+      "replaces",
+      "status",
+      "title",
+      "why"
+    ]
+  },
+  "import_decisions": {
+    "required": ["decisions"],
+    "optional": ["evidence", "reason"]
+  },
+  "import_log": {
+    "required": ["entries"],
+    "optional": ["evidence", "reason"]
+  },
+  "import_plan": {
+    "required": ["calendar"],
+    "optional": ["dose_products", "end", "evidence", "reason", "start"]
+  },
+  "get_light": {
+    "required": [],
+    "optional": ["days", "light_id"]
+  },
+  "set_light": {
+    "required": ["action"],
+    "optional": [
+      "brightness_pct",
+      "control",
+      "date",
+      "entity_id",
+      "evidence",
+      "light_id",
+      "model",
+      "off",
+      "on",
+      "ramp_minutes",
+      "reason",
+      "rgb_color"
+    ]
+  }
+}

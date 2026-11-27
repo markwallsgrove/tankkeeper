@@ -7,7 +7,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.llm import async_register_api
 from homeassistant.helpers.typing import ConfigType
 
-from . import websocket
+from . import panel, websocket
 from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .light_control import LightRunner
 from .llm import TankkeeperAPI
@@ -48,11 +48,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(LightRunner(hass, service).start())
     entry.async_on_unload(StatusRunner(hass, service).start())
     entry.async_on_unload(ProposalNotifier(hass, service).start())
+    entry.async_on_unload(await panel.async_register(hass))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -> bool:
-    """Stop sharing the tools and unload the entities."""
+    """Stop sharing the tools, remove the panel and unload the entities."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

@@ -1,0 +1,51 @@
+import { describe, expect, it } from "vitest";
+import { TankkeeperApi, errorMessage } from "../src/api";
+import { FakeConnection } from "./fake";
+
+describe("TankkeeperApi", () => {
+  it("calls a tool with its args nested", async () => {
+    const connection = new FakeConnection().on("list_products", { products: [] });
+    const api = new TankkeeperApi(connection);
+
+    expect(await api.call("list_products")).toEqual({ products: [] });
+    await api.call("list_products", { include_removed: true });
+
+    expect(connection.sent).toEqual([
+      { type: "tankkeeper/list_products", args: {} },
+      { type: "tankkeeper/list_products", args: { include_removed: true } },
+    ]);
+  });
+
+  it("is refused by the fake when an argument name is wrong, as the backend refuses it", async () => {
+    const api = new TankkeeperApi(new FakeConnection().on("get_tank", {}));
+
+    await expect(api.call("get_tank", { x: 1 })).rejects.toThrow("get_tank: unknown x, missing -");
+    await expect(api.call("add_task", {})).rejects.toThrow("add_task: unknown -, missing text");
+  });
+
+  it("sends the panel-only commands with their ids", async () => {
+    const connection = new FakeConnection()
+      .on("accept_proposal", { state: "applied" })
+      .on("reject_proposal", { state: "rejected" })
+      .on("delete_conversation", { deleted: true });
+    const api = new TankkeeperApi(connection);
+
+    await api.accept("p1");
+    await api.reject("p2");
+    await api.deleteConversation("c1");
+
+    expect(connection.sent).toEqual([
+      { type: "tankkeeper/accept_proposal", proposal_id: "p1" },
+      { type: "tankkeeper/reject_proposal", proposal_id: "p2" },
+      { type: "tankkeeper/delete_conversation", conversation_id: "c1" },
+    ]);
+  });
+});
+
+describe("errorMessage", () => {
+  it("reads Home Assistant errors, errors and anything else", () => {
+    expect(errorMessage({ code: "not_found", message: "No such note" })).toBe("No such note");
+    expect(errorMessage(new Error("Lost connection"))).toBe("Lost connection");
+    expect(errorMessage(3)).toBe("3");
+  });
+});

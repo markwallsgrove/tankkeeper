@@ -1,0 +1,136 @@
+import { describe, expect, it } from "vitest";
+import { TankkeeperApi } from "../src/api";
+import "../src/views/decisions";
+import type { TkDecisions } from "../src/views/decisions";
+import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
+
+const listed = [
+  { number: 1, title: "Fishless cycle", date: "2026-11-01", status: "accepted", replaced_by: null },
+  { number: 2, title: "Dose daily", date: "2026-11-02", status: "proposed", replaced_by: null },
+];
+
+function connection(): FakeConnection {
+  return new FakeConnection()
+    .on("list_decisions", { decisions: listed })
+    .on("get_decision", (message) => ({
+      ...listed[(message.args as { number: number }).number - 1],
+      decision: "Use ammonia",
+      why: "Safer",
+      open: ["Which source?"],
+      replaces: [],
+    }))
+    .on("set_decision", { applied: true })
+    .on("get_history", { history: [] });
+}
+
+function save(element: Element, selector: string, detail: Record<string, unknown>): void {
+  find(element, selector).dispatchEvent(
+    new CustomEvent("tk-save", { detail, bubbles: true, composed: true }),
+  );
+}
+
+async function view(conn = connection()): Promise<TkDecisions> {
+  const element = mount<TkDecisions>("tk-decisions", { api: new TankkeeperApi(conn) });
+  await settle(element);
+  return element;
+}
+
+describe("tk-decisions", () => {
+  it("lists decisions and opens one with its text", async () => {
+    const conn = connection();
+    const element = await view(conn);
+    expect(text(element)).toContain("0001 Fishless cycle");
+    expect(text(element)).toContain("accepted · 2026-11-01");
+
+    find(element, "li[data-number='1'] button.open").click();
+    await settle(element);
+
+    expect(conn.last("get_decision").args).toEqual({ number: 1 });
+    expect(text(element)).toContain("Use ammonia");
+    expect(text(element)).toContain("Which source?");
+    expect(findAll(element, "button.accept")).toEqual([]);
+    const history = find(element, "tk-history") as unknown as {
+      collection: string;
+      recordId: string;
+    };
+    expect([history.collection, history.recordId]).toEqual(["decisions", "0001"]);
+
+    const status = find(element, "select.status") as HTMLSelectElement;
+    status.value = "proposed";
+    status.dispatchEvent(new Event("change"));
+    await settle(element);
+    expect(conn.last("list_decisions").args).toEqual({ status: "proposed" });
+    status.value = "";
+    status.dispatchEvent(new Event("change"));
+    await settle(element);
+    expect(conn.last("list_decisions").args).toEqual({});
+  });
+
+  it("adds, updates, accepts and replaces decisions", async () => {
+    const conn = connection();
+    const element = await view(conn);
+
+    save(element, "tk-form.add", { title: "New", decision: "Do", why: "Because" });
+    await settle(element);
+    expect(conn.last("set_decision").args).toEqual({
+      action: "add",
+      title: "New",
+      decision: "Do",
+      why: "Because",
+    });
+
+    find(element, "li[data-number='2'] button.open").click();
+    await settle(element);
+    save(element, "tk-form.update", { why: "Clearer" });
+    await settle(element);
+    expect(conn.last("set_decision").args).toEqual({ action: "update", number: 2, why: "Clearer" });
+
+    find(element, "button.accept").click();
+    await settle(element);
+    expect(conn.last("set_decision").args).toEqual({ action: "accept", number: 2 });
+
+    save(element, "tk-form.replace", { replaced_by: 1 });
+    await settle(element);
+    expect(conn.last("set_decision").args).toEqual({
+      action: "replace",
+      number: 2,
+      replaced_by: 1,
+    });
+
+    find(element, "li[data-number='1'] button.open").click();
+    find(element, "li[data-number='1'] button.open").click();
+    await settle(element);
+    expect(findAll(element, "tk-form.update")).toEqual([]);
+  });
+
+  it("shows what replaced a decision and what it replaces", async () => {
+    const conn = connection().on("get_decision", {
+      ...listed[0],
+      status: "replaced",
+      replaced_by: 3,
+      decision: "Use ammonia",
+      why: "Safer",
+      open: [],
+      replaces: [7],
+    });
+    const element = await view(conn);
+    find(element, "li[data-number='1'] button.open").click();
+    await settle(element);
+    expect(text(element)).toContain("Replaced by 0003");
+    expect(text(element)).toContain("Replaces 0007");
+    expect(text(element)).not.toContain("Open points");
+  });
+
+  it("ignores an empty form and shows errors", async () => {
+    const conn = connection().fail("set_decision", "invalid_input", "Needs a title");
+    const element = await view(conn);
+
+    save(element, "tk-form.add", {});
+    await settle(element);
+    expect(conn.types()).not.toContain("tankkeeper/set_decision");
+
+    save(element, "tk-form.add", { why: "x" });
+    await settle(element);
+    expect(find(element, ".error").textContent).toBe("Needs a title");
+  });
+});

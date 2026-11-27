@@ -45,15 +45,19 @@ def async_register(hass: HomeAssistant) -> None:
     async_register_command(hass, delete_conversation)
 
 
-def _schema(spec: Spec) -> p.Schema:
-    """The tool's own schema, without a conversation, and with a reason the panel need not give."""
+def panel_args(spec: Spec) -> dict[p.Marker, object]:
+    """The tool's own arguments, without a conversation, and with a reason the panel need not give."""
     fields: dict[p.Marker, object] = {
         key: value for key, value in spec.schema.items() if str(key) not in ("conversation_id", "reason")
     }
     if any(str(key) == "reason" for key in spec.schema):
         fields[p.Optional("reason", default=PANEL_REASON)] = NON_EMPTY
+    return fields
+
+
+def _schema(spec: Spec) -> p.Schema:
     return BASE_COMMAND_MESSAGE_SCHEMA.extend(
-        {p.Required("type"): f"{DOMAIN}/{spec.name}", p.Optional("args", default=dict): fields}
+        {p.Required("type"): f"{DOMAIN}/{spec.name}", p.Optional("args", default=dict): panel_args(spec)}
     )
 
 

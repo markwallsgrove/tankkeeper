@@ -3,6 +3,7 @@ anyio==4.14.2
 gazetteer-matcher==1.1.0
 hassil==3.12.1
 hegeltest==0.5.3
+home-assistant-frontend==20260930.5
 home-assistant-intents==2026.10.6
 ical==14.3.0
 mcp==1.28.1
