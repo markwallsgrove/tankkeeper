@@ -39,6 +39,7 @@ def test_every_tool_the_panel_can_use_is_a_command() -> None:
     assert {"tankkeeper/accept_proposal", "tankkeeper/reject_proposal", "tankkeeper/delete_conversation"} <= (
         PANEL_COMMANDS
     )
+    assert {"tankkeeper/rename_conversation"} <= PANEL_COMMANDS
 
 
 def test_the_frontend_tests_check_the_real_command_arguments() -> None:
@@ -101,11 +102,7 @@ async def test_args_can_be_left_out(panel: Panel) -> None:
 
 
 async def test_panel_commands_refuse_unknown_keys(panel: Panel) -> None:
-    for command, key in (
-        ("accept_proposal", "proposal_id"),
-        ("reject_proposal", "proposal_id"),
-        ("delete_conversation", "conversation_id"),
-    ):
+    for command, key in (("accept_proposal", "proposal_id"), ("reject_proposal", "proposal_id")):
         assert await panel.error_message(command, {key: "x", "extra": 1}) == "invalid_format"
 
 
@@ -140,17 +137,33 @@ async def test_delete_conversation_keeps_its_changes(panel: Panel, call: Caller)
     await call.ok("add_note", kind="question", topic="Light", text="?", conversation_id=conversation_id)
 
     assert (await panel.ok("get_conversation", id=conversation_id))["title"] == "Algae"
-    assert await panel.ok_message("delete_conversation", {"conversation_id": conversation_id}) == {"deleted": True}
+    asked = await panel.ok("delete_conversation", id=conversation_id)
+    assert (asked["name"], asked["changes"]) == ("Algae", 1)
+    assert await panel.ok("delete_conversation", id=conversation_id, code=asked["code"]) == {
+        "deleted": True,
+        "conversation_id": conversation_id,
+    }
 
     assert await panel.ok("list_conversations") == {"conversations": []}
-    assert (await _latest(panel))["conversation_id"] == conversation_id
-    assert await panel.error_message("delete_conversation", {"conversation_id": conversation_id}) == "not_found"
+    latest = await _latest(panel)
+    assert (latest["conversation_id"], latest["conversation_name"]) == (conversation_id, "deleted conversation")
+    assert await panel.error("delete_conversation", id=conversation_id) == "not_found"
+
+
+async def test_rename_conversation_from_the_panel(panel: Panel, call: Caller) -> None:
+    conversation_id = str_of((await call.ok("save_conversation", title="Algae"))["conversation_id"])
+
+    renamed = await panel.ok("rename_conversation", id=conversation_id, title="Green algae")
+
+    assert renamed["name"] == "Green algae"
+    assert (await call.ok("get_conversation", id=conversation_id))["title"] == "Green algae"
 
 
 async def test_proposals_from_a_deleted_conversation_can_still_be_decided(panel: Panel, call: Caller) -> None:
     conversation_id = str_of((await call.ok("save_conversation", title="Rename"))["conversation_id"])
     proposal = await call.ok("set_tank", name="Big", reason="Rename", conversation_id=conversation_id)
-    await panel.ok_message("delete_conversation", {"conversation_id": conversation_id})
+    asked = await panel.ok("delete_conversation", id=conversation_id)
+    await panel.ok("delete_conversation", id=conversation_id, code=asked["code"])
 
     accepted = await panel.ok_message("accept_proposal", {"proposal_id": proposal["proposal_id"]})
 
@@ -166,7 +179,7 @@ async def test_only_admins_can_use_the_panel(
     reader = Panel(await hass_ws_client(hass, hass_read_only_access_token))
 
     assert await reader.error("get_tank") == "unauthorized"
-    assert await reader.error_message("delete_conversation", {"conversation_id": "x"}) == "unauthorized"
+    assert await reader.error("delete_conversation", id="x") == "unauthorized"
 
 
 async def test_commands_need_a_loaded_tank(hass: HomeAssistant, panel: Panel, loaded_entry: MockConfigEntry) -> None:

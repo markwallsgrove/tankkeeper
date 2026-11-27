@@ -8,7 +8,13 @@ from homeassistant.helpers.llm import LLM_API_ASSIST
 from homeassistant.util.json import JsonValueType
 import pytest
 
-from custom_components.tankkeeper.domain import MAX_CODE_ATTEMPTS, MAX_CONVERSATION_MESSAGES
+from custom_components.tankkeeper.domain import (
+    CODE_LIFETIME,
+    DELETED_CONVERSATION,
+    MAX_CODE_ATTEMPTS,
+    MAX_CONVERSATION_MESSAGES,
+    NO_DELETE,
+)
 
 from .common import Caller, dict_of, list_of, str_of
 
@@ -448,3 +454,125 @@ async def test_history_records_who_made_the_change(call: Caller) -> None:
     history = dict_of(list_of((await call.ok("get_history"))["history"])[0])
 
     assert history["user_id"] == "u1"
+
+
+async def test_search_shows_where_each_conversation_matches(call: Caller) -> None:
+    conversation_id = await _conversation(call, "Algae")
+    await call.ok(
+        "save_conversation",
+        conversation_id=conversation_id,
+        messages=[{"role": "user", "text": "Green dust on the glass"}, {"role": "assistant", "text": "Less light"}],
+    )
+
+    found = dict_of(list_of((await call.ok("search_conversations", query="dust"))["conversations"])[0])
+
+    assert found["name"] == "Algae"
+    assert found["match"] == {
+        "field": "message",
+        "index": 0,
+        "role": "user",
+        "snippet": "Green dust on the glass",
+        "start": 6,
+        "end": 10,
+    }
+
+
+async def test_an_untitled_conversation_is_named_by_its_first_message(call: Caller) -> None:
+    saved = await call.ok("save_conversation", messages=[{"role": "user", "text": "Why is the water green?"}])
+
+    listed = dict_of(list_of((await call.ok("list_conversations"))["conversations"])[0])
+
+    assert (listed["id"], listed["title"], listed["name"]) == (saved["conversation_id"], "", "Why is the water green?")
+
+
+async def test_rename_conversation(call: Caller, freezer: FrozenDateTimeFactory) -> None:
+    first = await _conversation(call, "Algae")
+    freezer.tick(timedelta(minutes=1))
+    second = await _conversation(call, "Shrimp")
+    freezer.tick(timedelta(minutes=1))
+
+    renamed = await call.ok("rename_conversation", id=first, title=" Green algae ")
+
+    assert (renamed["id"], renamed["title"], renamed["name"]) == (first, "Green algae", "Green algae")
+    listed = list_of((await call.ok("list_conversations"))["conversations"])
+    assert [dict_of(item)["id"] for item in listed] == [second, first]
+    assert await call.error("rename_conversation", id=first, title="   ") == "invalid_input"
+    assert await call.error("rename_conversation", id=first, title="x" * 201) == "invalid_input"
+    assert await call.error("rename_conversation", id="missing", title="x") == "not_found"
+
+
+async def test_delete_conversation_needs_a_confirm_code(call: Caller) -> None:
+    conversation_id = await _conversation(call, "Algae")
+    await call.ok("add_note", kind="question", topic="Light", text="?", conversation_id=conversation_id)
+
+    asked = await call.ok("delete_conversation", id=conversation_id)
+
+    assert (asked["conversation_id"], asked["name"], asked["changes"]) == (conversation_id, "Algae", 1)
+    assert asked["code_expires"] == "2026-11-26T12:15:00+00:00"
+    assert "tankkeeper__delete_conversation" in str_of(asked["next_step"])
+    assert await call.error("delete_conversation", id=conversation_id, code="ZZZ999") == "code_wrong"
+    assert (
+        await Caller(call.hass, user_id="u2").error(
+            "delete_conversation", id=conversation_id, code=str_of(asked["code"])
+        )
+        == "code_expired"
+    )
+    assert await call.ok("delete_conversation", id=conversation_id, code=str_of(asked["code"])) == {
+        "deleted": True,
+        "conversation_id": conversation_id,
+    }
+    assert await call.error("get_conversation", id=conversation_id) == "not_found"
+    history = dict_of(list_of((await call.ok("get_history"))["history"])[0])
+    assert (history["conversation_id"], history["conversation_name"]) == (conversation_id, DELETED_CONVERSATION)
+    assert await call.error("delete_conversation", id=conversation_id) == "not_found"
+
+
+async def test_a_delete_code_expires_and_stops_after_wrong_codes(call: Caller, freezer: FrozenDateTimeFactory) -> None:
+    conversation_id = await _conversation(call, "Algae")
+    asked = await call.ok("delete_conversation", id=conversation_id)
+    freezer.tick(CODE_LIFETIME)
+
+    assert await call.error("delete_conversation", id=conversation_id, code=str_of(asked["code"])) == "code_expired"
+
+    again = await call.ok("delete_conversation", id=conversation_id)
+    for _ in range(MAX_CODE_ATTEMPTS):
+        await call.error("delete_conversation", id=conversation_id, code="ZZZ999")
+    assert await call.error("delete_conversation", id=conversation_id, code=str_of(again["code"])) == (
+        "too_many_attempts"
+    )
+    assert len(list_of((await call.ok("list_conversations"))["conversations"])) == 1
+
+
+async def _delete_message(call: Caller, conversation_id: str, code: str) -> str:
+    result = await call.result("delete_conversation", id=conversation_id, code=code)
+    assert result.error
+    return str_of(result.data["message"])
+
+
+async def test_a_spent_delete_code_is_forgotten(call: Caller, freezer: FrozenDateTimeFactory) -> None:
+    first = await _conversation(call, "Algae")
+    second = await _conversation(call, "Snails")
+    asked = await call.ok("delete_conversation", id=first)
+    freezer.tick(CODE_LIFETIME)
+    assert await _delete_message(call, first, str_of(asked["code"])) != NO_DELETE
+    assert await _delete_message(call, first, str_of(asked["code"])) == NO_DELETE
+
+    again = await call.ok("delete_conversation", id=first)
+    for _ in range(MAX_CODE_ATTEMPTS + 1):
+        await call.error("delete_conversation", id=first, code="ZZZ999")
+    assert await _delete_message(call, first, str_of(again["code"])) == NO_DELETE
+
+    stale = await call.ok("delete_conversation", id=first)
+    freezer.tick(CODE_LIFETIME)
+    await call.ok("delete_conversation", id=second)
+    assert await _delete_message(call, first, str_of(stale["code"])) == NO_DELETE
+
+
+async def test_history_names_the_conversation_of_each_change(call: Caller) -> None:
+    conversation_id = await _conversation(call, "Algae")
+    await call.ok("add_note", kind="question", topic="Light", text="?", conversation_id=conversation_id)
+    await call.ok("add_note", kind="question", topic="CO2", text="?")
+
+    history = [dict_of(item) for item in list_of((await call.ok("get_history"))["history"])]
+
+    assert [item["conversation_name"] for item in history] == [None, "Algae"]

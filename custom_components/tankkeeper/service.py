@@ -19,13 +19,19 @@ from .const import DOMAIN, STORAGE_VERSION
 from .domain import (
     CODE_ALPHABET,
     CODE_LENGTH,
-    MAX_CONVERSATION_MESSAGES,
+    CODE_LIFETIME,
+    DELETED_CONVERSATION,
+    NO_DELETE,
     TANK_ID,
+    CodeExpiredError,
+    CodeWrongError,
     Collection,
     Conversation,
+    DeleteRequest,
     FindingClosedError,
     HistoryEntry,
     InvalidInputError,
+    Match,
     Message,
     NotFoundError,
     NothingToChangeError,
@@ -35,17 +41,21 @@ from .domain import (
     Source,
     TankkeeperError,
     TankState,
+    TooManyAttemptsError,
     accept_proposal,
     add_to_batch,
     apply_changes,
     apply_proposal,
     batch_view,
     changes_in_conversation,
+    check_delete,
     delete_conversation,
     find_batch,
     plan_changes,
     propose,
+    record_turn,
     reject_proposal,
+    rename_conversation,
     save_conversation,
     search_conversations,
     start_batch,
@@ -112,6 +122,7 @@ class TankkeeperService:
         self._state = TankState()
         self._photo_checker: PhotoChecker | None = None
         self._asking = 0
+        self._deletes: dict[tuple[str, str | None], DeleteRequest] = {}
         self.photo_dir = Path(hass.config.path(DOMAIN, "photos"))
 
     @property
@@ -379,9 +390,17 @@ class TankkeeperService:
         ordered = sorted(self.state.conversations.values(), key=lambda item: item.updated, reverse=True)
         return ordered[:limit]
 
-    def search_conversations(self, query: str, limit: int) -> list[Conversation]:
-        """Conversations that hold the query, newest first."""
-        return search_conversations(self.state, query)[:limit]
+    def search_conversations(self, query: str, limit: int) -> list[tuple[Conversation, Match]]:
+        """Conversations that hold the query, newest first, each with where it matches."""
+        found = search_conversations(self.state, query)[:limit]
+        return [(conversation, match) for conversation in found if (match := conversation.match(query)) is not None]
+
+    def conversation_name(self, conversation_id: str | None) -> str | None:
+        """The name of the conversation a change was made in, DELETED_CONVERSATION when it is gone."""
+        if conversation_id is None:
+            return None
+        conversation = self.state.conversations.get(conversation_id)
+        return DELETED_CONVERSATION if conversation is None else conversation.name()
 
     async def async_record(self, collection: Collection, record: Record, actor: Actor, summary: str) -> HistoryEntry:
         """Add a record straight away, as for doses, tests, contents and notes."""
@@ -556,20 +575,22 @@ class TankkeeperService:
         return conversation
 
     async def async_record_turn(self, conversation_id: str, actor: Actor, messages: Iterable[Message]) -> None:
-        """Add messages to the conversation with this id, starting it if needed. Messages past the limit are dropped."""
-        current = self._state.conversations.get(conversation_id)
-        room = MAX_CONVERSATION_MESSAGES - (0 if current is None else len(current.messages))
-        save_conversation(
+        """Add messages to the conversation with this id, starting it if needed. Past the limit, old ones make room."""
+        record_turn(
             self._state,
             conversation_id=conversation_id,
             now=self._clock(),
             source=actor.source,
             user_id=actor.user_id,
-            title=None,
-            summary=None,
-            messages=tuple(messages)[:room],
+            messages=messages,
         )
         await self._async_save()
+
+    async def async_rename_conversation(self, conversation_id: str, title: str) -> Conversation:
+        """Give a conversation a new title."""
+        conversation = rename_conversation(self._state, conversation_id, title)
+        await self._async_save()
+        return conversation
 
     def reviews(self, limit: int) -> list[Review]:
         """The latest reviews, newest first."""
@@ -726,8 +747,33 @@ class TankkeeperService:
         await self.hass.async_add_executor_job(remove_unused, self.photo_dir, used)
         await self._async_save()
 
-    async def async_delete_conversation(self, conversation_id: str) -> None:
-        """Delete a conversation. The changes it made stay in the history."""
+    def ask_to_delete_conversation(self, conversation_id: str, actor: Actor) -> DeleteRequest:
+        """A confirm code that deletes the conversation, for this person only."""
+        self._state.conversation(conversation_id)
+        now = self._clock()
+        self._deletes = {key: value for key, value in self._deletes.items() if now < value.created + CODE_LIFETIME}
+        request = DeleteRequest(
+            conversation_id=conversation_id, user_id=actor.user_id, code=self._code_factory(), created=now
+        )
+        self._deletes[conversation_id, actor.user_id] = request
+        return request
+
+    async def async_delete_conversation(self, conversation_id: str, code: str, actor: Actor) -> None:
+        """Delete a conversation with the code asked for. The changes it made stay in the history."""
+        self._state.conversation(conversation_id)
+        key = (conversation_id, actor.user_id)
+        request = self._deletes.get(key)
+        if request is None:
+            raise CodeExpiredError(NO_DELETE)
+        try:
+            check_delete(request, code, now=self._clock())
+        except CodeWrongError:
+            self._deletes[key] = replace(request, failed_attempts=request.failed_attempts + 1)
+            raise
+        except CodeExpiredError, TooManyAttemptsError:
+            del self._deletes[key]
+            raise
+        self._deletes = {item: value for item, value in self._deletes.items() if item[0] != conversation_id}
         delete_conversation(self._state, conversation_id)
         await self._async_save()
 

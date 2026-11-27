@@ -32,7 +32,6 @@ PANEL_REASON = "Changed in the TankKeeper panel"
 PANEL_ONLY = (
     "accept_proposal",
     "reject_proposal",
-    "delete_conversation",
     "accept_finding",
     "reject_finding",
     "chat_agent",
@@ -51,7 +50,6 @@ def async_register(hass: HomeAssistant) -> None:
             async_register_command(hass, f"{DOMAIN}/{spec.name}", _tool_command(spec), _schema(spec))
     async_register_command(hass, accept_proposal)
     async_register_command(hass, reject_proposal)
-    async_register_command(hass, delete_conversation)
     async_register_command(hass, accept_finding)
     async_register_command(hass, reject_finding)
     async_register_command(hass, chat_agent)
@@ -120,11 +118,6 @@ async def _reject(service: TankkeeperService, msg: Message, actor: Actor) -> Jso
     return proposal_json(await service.async_decline(msg["proposal_id"], actor.user_id))
 
 
-async def _delete(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
-    await service.async_delete_conversation(msg["conversation_id"])
-    return {"deleted": True}
-
-
 async def _accept_finding(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
     return photo_json(service, await service.async_accept_finding(msg["check_id"], actor.user_id, Source.PANEL))
 
@@ -139,9 +132,6 @@ accept_proposal = websocket_command(
 reject_proposal = websocket_command(
     {p.Required("type"): f"{DOMAIN}/reject_proposal", p.Required("proposal_id"): NON_EMPTY}
 )(_command(_reject))
-delete_conversation = websocket_command(
-    {p.Required("type"): f"{DOMAIN}/delete_conversation", p.Required("conversation_id"): NON_EMPTY}
-)(_command(_delete))
 accept_finding = websocket_command({p.Required("type"): f"{DOMAIN}/accept_finding", p.Required("check_id"): NON_EMPTY})(
     _command(_accept_finding)
 )

@@ -28,6 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PARALLEL_UPDATES = 0
 MAX_TEXT = 2000
+MAX_SAID_TEXT = 8000
 TOOL_PREFIX = f"{DOMAIN}__"
 NO_AGENT = "Choose the conversation agent in TankKeeper's Claude settings first."
 FAILED = "The conversation agent could not answer. Try again later."
@@ -93,7 +94,7 @@ class TankkeeperAgent(conversation.ConversationEntity):
         start = len(chat_log.content)
         earlier = self._earlier(conversation_id, chat_log)
         await self._service.async_record_turn(
-            conversation_id, actor, [Message(role="user", text=_clip(user_input.text))]
+            conversation_id, actor, [Message(role="user", text=_clip(user_input.text, MAX_SAID_TEXT))]
         )
         token = ASSIST_CONVERSATION.set((conversation_id, user_input.context.id))
         try:
@@ -118,9 +119,9 @@ class TankkeeperAgent(conversation.ConversationEntity):
             ASSIST_CONVERSATION.reset(token)
         messages = messages_of(chat_log.content[start:])
         if result.response.response_type is intent.IntentResponseType.ERROR:
-            messages.append(Message(role="error", text=_clip(_speech(result.response))))
+            messages.append(Message(role="error", text=_clip(_speech(result.response), MAX_SAID_TEXT)))
         elif not any(message.role == "assistant" for message in messages):
-            messages.append(Message(role="assistant", text=_clip(_speech(result.response))))
+            messages.append(Message(role="assistant", text=_clip(_speech(result.response), MAX_SAID_TEXT)))
         await self._service.async_record_turn(conversation_id, actor, messages)
         return conversation.ConversationResult(
             response=result.response,
@@ -168,7 +169,7 @@ def messages_of(content: Iterable[conversation.Content]) -> list[Message]:
         if isinstance(item, conversation.AssistantContent):
             calls.update({call.id: call.tool_args for call in item.tool_calls or []})
             if item.content:
-                messages.append(Message(role="assistant", text=_clip(item.content)))
+                messages.append(Message(role="assistant", text=_clip(item.content, MAX_SAID_TEXT)))
         elif isinstance(item, conversation.ToolResultContent):
             args = json_dumps(calls.get(item.tool_call_id, {}))
             if item.tool_name.startswith(TOOL_PREFIX):
@@ -176,7 +177,7 @@ def messages_of(content: Iterable[conversation.Content]) -> list[Message]:
                 text = f"{name} {args} → {json_dumps(without_codes(item.result.data))}"
             else:
                 text = f"{item.tool_name} {args}"
-            messages.append(Message(role="tool", text=_clip(text)))
+            messages.append(Message(role="tool", text=_clip(text, MAX_TEXT)))
     return messages
 
 
@@ -184,8 +185,8 @@ def _speech(response: intent.IntentResponse) -> str:
     return str(response.speech.get("plain", {}).get("speech", ""))
 
 
-def _clip(text: str) -> str:
-    return text if len(text) <= MAX_TEXT else f"{text[: MAX_TEXT - 1]}…"
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else f"{text[: limit - 1]}…"
 
 
 def _error(
