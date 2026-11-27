@@ -255,6 +255,10 @@
       "init": {
         "title": "Options",
         "menu_options": {
+          "tank": "Tank",
+          "water": "Tap water",
+          "products": "Products",
+          "contents": "Contents",
           "reminders": "Reminders",
           "rules": "Rules and status",
           "claude": "Claude",
@@ -263,6 +267,160 @@
           "change_light": "Change a light",
           "one_day": "Change a light for one day",
           "remove_light": "Remove a light"
+        }
+      },
+      "tank": {
+        "title": "Tank",
+        "description": "The tank's name, volumes, temperature and notes. A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "tank_name": "[%key:component::tankkeeper::config::step::user::data::tank_name%]",
+          "volume_litres": "[%key:component::tankkeeper::config::step::user::data::volume_litres%]",
+          "dosing_volume_litres": "[%key:component::tankkeeper::config::step::user::data::dosing_volume_litres%]",
+          "temperature_c": "[%key:component::tankkeeper::config::step::user::data::temperature_c%]",
+          "notes": "[%key:component::tankkeeper::config::step::user::data::notes%]"
+        },
+        "data_description": {
+          "tank_name": "[%key:component::tankkeeper::config::step::user::data_description::tank_name%]",
+          "volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::volume_litres%]",
+          "dosing_volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::dosing_volume_litres%]",
+          "temperature_c": "[%key:component::tankkeeper::config::step::user::data_description::temperature_c%]",
+          "notes": "[%key:component::tankkeeper::config::step::user::data_description::notes%]"
+        }
+      },
+      "water": {
+        "title": "[%key:component::tankkeeper::config::step::water::title%]",
+        "description": "The values of the water you fill the tank with, from your water supplier or a test. A field left empty is cleared. The old values stay in the history.",
+        "data": {
+          "source": "[%key:component::tankkeeper::config::step::water::data::source%]",
+          "ph": "[%key:component::tankkeeper::config::step::water::data::ph%]",
+          "gh": "[%key:component::tankkeeper::config::step::water::data::gh%]",
+          "kh": "[%key:component::tankkeeper::config::step::water::data::kh%]",
+          "nitrate": "[%key:component::tankkeeper::config::step::water::data::nitrate%]",
+          "phosphate": "[%key:component::tankkeeper::config::step::water::data::phosphate%]",
+          "notes": "[%key:component::tankkeeper::config::step::water::data::notes%]"
+        },
+        "data_description": {
+          "gh": "[%key:component::tankkeeper::config::step::water::data_description::gh%]",
+          "kh": "[%key:component::tankkeeper::config::step::water::data_description::kh%]",
+          "nitrate": "[%key:component::tankkeeper::config::step::water::data_description::nitrate%]",
+          "phosphate": "[%key:component::tankkeeper::config::step::water::data_description::phosphate%]"
+        }
+      },
+      "products": {
+        "title": "[%key:component::tankkeeper::config::step::products::title%]",
+        "description": "Fertilisers, water conditioners and other products the tank gets. In use: {listed}",
+        "menu_options": {
+          "add_product": "[%key:component::tankkeeper::config::step::products::menu_options::add_product%]",
+          "change_product": "Change a product",
+          "remove_product": "Stop using a product"
+        }
+      },
+      "add_product": {
+        "title": "[%key:component::tankkeeper::config::step::add_product::title%]",
+        "description": "[%key:component::tankkeeper::config::step::add_product::description%]",
+        "data": {
+          "name": "[%key:component::tankkeeper::config::step::add_product::data::name%]",
+          "purpose": "[%key:component::tankkeeper::config::step::add_product::data::purpose%]",
+          "label_amount_ml": "[%key:component::tankkeeper::config::step::add_product::data::label_amount_ml%]",
+          "label_per_litres": "[%key:component::tankkeeper::config::step::add_product::data::label_per_litres%]",
+          "label_frequency": "[%key:component::tankkeeper::config::step::add_product::data::label_frequency%]",
+          "your_dose": "[%key:component::tankkeeper::config::step::add_product::data::your_dose%]",
+          "notes": "[%key:component::tankkeeper::config::step::add_product::data::notes%]",
+          "links": "Links"
+        },
+        "data_description": {
+          "label_amount_ml": "[%key:component::tankkeeper::config::step::add_product::data_description::label_amount_ml%]",
+          "label_per_litres": "[%key:component::tankkeeper::config::step::add_product::data_description::label_per_litres%]",
+          "label_frequency": "[%key:component::tankkeeper::config::step::add_product::data_description::label_frequency%]",
+          "your_dose": "[%key:component::tankkeeper::config::step::add_product::data_description::your_dose%]",
+          "links": "Web pages about the product, such as the maker's page or the label."
+        }
+      },
+      "change_product": {
+        "title": "Change a product",
+        "data": {
+          "product_id": "Product"
+        }
+      },
+      "edit_product": {
+        "title": "Change a product",
+        "description": "A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "name": "[%key:component::tankkeeper::config::step::add_product::data::name%]",
+          "purpose": "[%key:component::tankkeeper::config::step::add_product::data::purpose%]",
+          "label_amount_ml": "[%key:component::tankkeeper::config::step::add_product::data::label_amount_ml%]",
+          "label_per_litres": "[%key:component::tankkeeper::config::step::add_product::data::label_per_litres%]",
+          "label_frequency": "[%key:component::tankkeeper::config::step::add_product::data::label_frequency%]",
+          "your_dose": "[%key:component::tankkeeper::config::step::add_product::data::your_dose%]",
+          "notes": "[%key:component::tankkeeper::config::step::add_product::data::notes%]",
+          "links": "Links"
+        },
+        "data_description": {
+          "label_amount_ml": "[%key:component::tankkeeper::config::step::add_product::data_description::label_amount_ml%]",
+          "label_per_litres": "[%key:component::tankkeeper::config::step::add_product::data_description::label_per_litres%]",
+          "label_frequency": "[%key:component::tankkeeper::config::step::add_product::data_description::label_frequency%]",
+          "your_dose": "[%key:component::tankkeeper::config::step::add_product::data_description::your_dose%]",
+          "links": "Web pages about the product, such as the maker's page or the label."
+        }
+      },
+      "remove_product": {
+        "title": "Stop using a product",
+        "description": "The product stays in the records with today's date.",
+        "data": {
+          "product_id": "Product"
+        }
+      },
+      "contents": {
+        "title": "[%key:component::tankkeeper::config::step::contents::title%]",
+        "description": "Plants, fish, rocks, wood and anything else in the tank. In the tank: {listed}",
+        "menu_options": {
+          "add_content": "[%key:component::tankkeeper::config::step::contents::menu_options::add_content%]",
+          "change_content": "Change something",
+          "remove_content": "Take something out"
+        }
+      },
+      "add_content": {
+        "title": "[%key:component::tankkeeper::config::step::add_content::title%]",
+        "data": {
+          "type": "[%key:component::tankkeeper::config::step::add_content::data::type%]",
+          "name": "[%key:component::tankkeeper::config::step::add_content::data::name%]",
+          "count": "[%key:component::tankkeeper::config::step::add_content::data::count%]",
+          "where": "[%key:component::tankkeeper::config::step::add_content::data::where%]",
+          "notes": "[%key:component::tankkeeper::config::step::add_content::data::notes%]",
+          "added": "Added"
+        },
+        "data_description": {
+          "where": "[%key:component::tankkeeper::config::step::add_content::data_description::where%]",
+          "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
+        }
+      },
+      "change_content": {
+        "title": "Change something in the tank",
+        "data": {
+          "content_id": "Item"
+        }
+      },
+      "edit_content": {
+        "title": "Change something in the tank",
+        "description": "A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "type": "[%key:component::tankkeeper::config::step::add_content::data::type%]",
+          "name": "[%key:component::tankkeeper::config::step::add_content::data::name%]",
+          "count": "[%key:component::tankkeeper::config::step::add_content::data::count%]",
+          "where": "[%key:component::tankkeeper::config::step::add_content::data::where%]",
+          "notes": "[%key:component::tankkeeper::config::step::add_content::data::notes%]",
+          "added": "Added"
+        },
+        "data_description": {
+          "where": "[%key:component::tankkeeper::config::step::add_content::data_description::where%]",
+          "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
+        }
+      },
+      "remove_content": {
+        "title": "Take something out",
+        "description": "The item stays in the records with today's date.",
+        "data": {
+          "content_id": "Item"
         }
       },
       "reminders": {
@@ -434,6 +592,9 @@
       "nothing_changed": "[%key:component::tankkeeper::config::abort::nothing_changed%]"
     },
     "error": {
+      "dosing_above_volume": "[%key:component::tankkeeper::config::error::dosing_above_volume%]",
+      "label_dose_incomplete": "[%key:component::tankkeeper::config::error::label_dose_incomplete%]",
+      "name_required": "[%key:component::tankkeeper::config::error::name_required%]",
       "invalid_light": "{error}",
       "invalid_rules": "{error}",
       "invalid_claude": "{error}",

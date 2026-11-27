@@ -16,6 +16,7 @@ from .common import LAMP, PLUG, Devices
 
 pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 
+SETTINGS = ["tank", "water", "products", "contents", "reminders", "rules", "claude", "camera"]
 PLUG_LIGHT = {"entity_id": PLUG, "model": "LED 10120", "control": "on_off", "on": "11:00:00", "off": "20:00:00"}
 
 
@@ -55,17 +56,14 @@ async def test_the_menu_offers_light_steps_only_with_a_light(
     plugs.add(PLUG)
     menu = await hass.config_entries.options.async_init(loaded_entry.entry_id)
     assert menu["type"] is FlowResultType.MENU
-    assert menu["menu_options"] == ["reminders", "rules", "claude", "camera", "add_light"]
+    assert menu["menu_options"] == [*SETTINGS, "add_light"]
 
     await _add(hass, loaded_entry, PLUG_LIGHT)
     menu = await hass.config_entries.options.async_init(loaded_entry.entry_id)
 
     assert menu["type"] is FlowResultType.MENU
     assert menu["menu_options"] == [
-        "reminders",
-        "rules",
-        "claude",
-        "camera",
+        *SETTINGS,
         "add_light",
         "change_light",
         "one_day",

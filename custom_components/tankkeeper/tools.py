@@ -182,6 +182,8 @@ RULE_FIELDS: dict[p.Marker, object] = {
     p.Optional("plan_watch_days", description="Days left in the plan for Watch"): DAYS,
     p.Optional("plan_act_days", description="Days left in the plan for Act"): DAYS,
 }
+TANK_SUMMARY = "Change the tank details"
+WATER_SUMMARY = "Change the water values"
 TEST_VALUES = ["ammonia", "nitrite", "nitrate", "ph", "kh", "gh", "phosphate", "temperature_c"]
 TANK_FIELDS: dict[p.Marker, object] = {
     p.Optional("name"): NON_EMPTY,
@@ -449,8 +451,12 @@ def new_content(data: Record) -> Record:
 
 async def add_content(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Add a plant, rock or anything else that went into the tank."""
-    content = new_content(data)
-    return _recorded(await service.async_record(Collection.CONTENTS, content, actor, f"Added {data['name']}"))
+    return _recorded(await record_content(service, data, actor))
+
+
+async def record_content(service: TankkeeperService, data: Record, actor: Actor) -> HistoryEntry:
+    """Store a new contents item straight away. Adding to the tank is a record, not a proposal."""
+    return await service.async_record(Collection.CONTENTS, new_content(data), actor, f"Added {data['name']}")
 
 
 async def add_note(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -485,32 +491,54 @@ async def save_conversation(service: TankkeeperService, data: Record, actor: Act
 
 async def set_tank(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose new tank details."""
-    current = service.records(Collection.TANK).get(TANK_ID, {})
-    tank = merge_record(current, _fields(data, TANK_FIELDS))
-    if not dosing_within_tank(tank):
-        raise InvalidInputError("The volume of water can't be larger than the volume of the tank")
     return await _propose(
         service,
         data,
         actor,
         tool="set_tank",
-        summary="Change the tank details",
-        targets=[(Collection.TANK, TANK_ID, tank)],
+        summary=TANK_SUMMARY,
+        targets=[tank_target(service, _fields(data, TANK_FIELDS))],
     )
+
+
+def tank_target(service: TankkeeperService, updates: Record) -> Target:
+    """The tank with the given fields replaced, or InvalidInputError when the water would not fit in it."""
+    tank = merge_record(service.records(Collection.TANK).get(TANK_ID, {}), updates)
+    if not dosing_within_tank(tank):
+        raise InvalidInputError("The volume of water can't be larger than the volume of the tank")
+    return (Collection.TANK, TANK_ID, tank)
 
 
 async def set_water(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose new tap water values."""
-    current = service.records(Collection.WATER).get(WATER_ID, {})
-    updates = _fields(data, WATER_FIELDS)
     return await _propose(
         service,
         data,
         actor,
         tool="set_water",
-        summary="Change the water values",
-        targets=[(Collection.WATER, WATER_ID, merge_record(current, updates))],
+        summary=WATER_SUMMARY,
+        targets=[water_target(service, _fields(data, WATER_FIELDS))],
     )
+
+
+def water_target(service: TankkeeperService, updates: Record) -> Target:
+    """The tap water values with the given fields replaced."""
+    return (Collection.WATER, WATER_ID, merge_record(service.records(Collection.WATER).get(WATER_ID, {}), updates))
+
+
+def added_product_summary(product: Record) -> str:
+    """The summary of adding a product."""
+    return f"Add the product {product.get('name')}"
+
+
+def changed_product_summary(product: Record) -> str:
+    """The summary of changing a product."""
+    return f"Change the product {product.get('name')}"
+
+
+def changed_content_summary(content: Record) -> str:
+    """The summary of changing a contents item."""
+    return f"Change {content.get('name')}"
 
 
 def new_product(data: Record) -> Record:
@@ -534,7 +562,7 @@ async def add_product(service: TankkeeperService, data: Record, actor: Actor) ->
         data,
         actor,
         tool="add_product",
-        summary=f"Add the product {data['name']}",
+        summary=added_product_summary(product),
         targets=[(Collection.PRODUCTS, ulid_now(), product)],
     )
 
@@ -549,7 +577,7 @@ async def update_product(service: TankkeeperService, data: Record, actor: Actor)
         data,
         actor,
         tool="update_product",
-        summary=f"Change the product {product.get('name')}",
+        summary=changed_product_summary(product),
         targets=[(Collection.PRODUCTS, product_id, product)],
     )
 
@@ -567,39 +595,32 @@ async def update_content(service: TankkeeperService, data: Record, actor: Actor)
         data,
         actor,
         tool="update_content",
-        summary=f"Change {content.get('name')}",
+        summary=changed_content_summary(content),
         targets=[(Collection.CONTENTS, content_id, content)],
     )
 
 
 async def remove_content(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose taking an item out. It stays in the records with the date it went."""
-    content_id = _str(data, "content_id")
-    current = service.state.require(Collection.CONTENTS, content_id)
-    content = merge_record(current, {"removed": _date_or_today(data, "removed")})
-    return await _propose(
-        service,
-        data,
-        actor,
-        tool="remove_content",
-        summary=f"Remove {current.get('name')}",
-        targets=[(Collection.CONTENTS, content_id, content)],
-    )
+    target, summary = removal(service, Collection.CONTENTS, _str(data, "content_id"), data)
+    return await _propose(service, data, actor, tool="remove_content", summary=summary, targets=[target])
 
 
 async def remove_product(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose that the owner stopped using a product. It stays in the records with the date."""
-    product_id = _str(data, "product_id")
-    current = service.state.require(Collection.PRODUCTS, product_id)
-    product = merge_record(current, {"removed": _date_or_today(data, "removed")})
-    return await _propose(
-        service,
-        data,
-        actor,
-        tool="remove_product",
-        summary=f"Remove the product {current.get('name')}",
-        targets=[(Collection.PRODUCTS, product_id, product)],
-    )
+    target, summary = removal(service, Collection.PRODUCTS, _str(data, "product_id"), data)
+    return await _propose(service, data, actor, tool="remove_product", summary=summary, targets=[target])
+
+
+def removal(service: TankkeeperService, collection: Collection, record_id: str, data: Record) -> tuple[Target, str]:
+    """A product or contents item marked removed on the given date or today, and the summary of the change.
+
+    It stays in the records with the date it went.
+    """
+    current = service.state.require(collection, record_id)
+    record = merge_record(current, {"removed": _date_or_today(data, "removed")})
+    what = "the product " if collection is Collection.PRODUCTS else ""
+    return (collection, record_id, record), f"Remove {what}{current.get('name')}"
 
 
 async def update_note(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:

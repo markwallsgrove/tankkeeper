@@ -1,8 +1,10 @@
 """Set up a tank step by step and change its name and volumes later.
 
-The options set the reminders, the rules, Claude, the camera and the lights.
+The options change the tank, the tap water, the products, the contents, the reminders, the rules,
+Claude, the camera and the lights.
 """
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 from homeassistant.config_entries import (
@@ -13,6 +15,7 @@ from homeassistant.config_entries import (
     OptionsFlow,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.selector import (
     BooleanSelector,
     ColorRGBSelector,
@@ -29,6 +32,7 @@ from homeassistant.helpers.selector import (
     SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
+    TextSelectorType,
     TimeSelector,
 )
 from homeassistant.util.ulid import ulid_now
@@ -52,8 +56,22 @@ from .lights import SWITCH_DOMAINS, Control, Light
 from .photos import CAMERA_DOMAIN, MAX_KEEP_DAYS, CameraSettings
 from .plan import REMINDERS_ID, Reminders, format_time, parse_time
 from .rules import RuleSettings, Stage
-from .service import Actor, TankkeeperService, light_target
-from .tools import CONTENT_TYPES, new_content, new_light, new_product, planned_light
+from .service import Actor, TankkeeperService, Target, light_target
+from .tools import (
+    CONTENT_TYPES,
+    TANK_SUMMARY,
+    WATER_SUMMARY,
+    added_product_summary,
+    changed_content_summary,
+    changed_product_summary,
+    new_content,
+    new_light,
+    new_product,
+    planned_light,
+    record_content,
+    removal,
+    tank_target,
+)
 
 NOTIFY_DOMAIN = "notify"
 NOT_DEVICES = frozenset({"send_message", "persistent_notification"})
@@ -87,6 +105,11 @@ CONF_AFTER_TEST = "after_test"
 CONF_ALERTS = "alerts"
 CONF_KEEP_DAYS = "keep_days"
 LIGHT_STEPS = ["change_light", "one_day", "remove_light"]
+SETTINGS_STEPS = ["tank", "water", "products", "contents", "reminders", "rules", "claude", "camera", "add_light"]
+WATER_VALUES = ("source", "ph", "gh", "kh", "nitrate", "phosphate")
+PRODUCT_VALUES = ("name", "purpose", "label_dose", "your_dose", "notes", "links")
+CONF_PRODUCT_ID = "product_id"
+CONF_CONTENT_ID = "content_id"
 NONE_ADDED = "-"
 
 VOLUME = NumberSelector(
@@ -196,6 +219,11 @@ CONTENT_SCHEMA = p.Schema(
     }
 )
 
+PRODUCT_OPTIONS_SCHEMA = PRODUCT_SCHEMA.extend(
+    {p.Optional("links"): TextSelector(TextSelectorConfig(type=TextSelectorType.URL, multiple=True))}
+)
+CONTENT_OPTIONS_SCHEMA = CONTENT_SCHEMA.extend({p.Optional("added"): DateSelector()})
+
 
 class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
     """Set up a tank in steps: tank, water, products, contents, light and reminders.
@@ -260,16 +288,13 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_add_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Add a product the tank gets."""
-        if user_input is not None and not str(user_input["name"]).strip():
-            return self._name_required("add_product", PRODUCT_SCHEMA, user_input)
         if user_input is not None:
-            try:
-                product = new_product(dict(user_input))
-            except TankkeeperError:
+            product, errors = _product_from(user_input)
+            if product is None:
                 return self.async_show_form(
                     step_id="add_product",
                     data_schema=self.add_suggested_values_to_schema(PRODUCT_SCHEMA, user_input),
-                    errors={"base": "label_dose_incomplete"},
+                    errors=errors,
                 )
             self._add(Collection.PRODUCTS, ulid_now(), product)
             self._products.append(str(product["name"]))
@@ -285,10 +310,7 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None and not str(user_input["name"]).strip():
             return self._name_required("add_content", CONTENT_SCHEMA, user_input)
         if user_input is not None:
-            data = dict(user_input)
-            if "count" in data:
-                data["count"] = int(data["count"])
-            content = new_content(data)
+            content = new_content(_content_data(user_input))
             self._add(Collection.CONTENTS, ulid_now(), content)
             self._contents.append(str(content["name"]))
             return await self.async_step_contents()
@@ -407,19 +429,202 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class TankkeeperOptionsFlow(OptionsFlow):
-    """Set the reminders, and add, change or remove a light. Changes apply straight away, with no proposal."""
+    """Change the tank's settings. Changes apply straight away, with no proposal, and stay in the history."""
 
     def __init__(self) -> None:
-        """No light is picked yet."""
+        """No light, product or contents item is picked yet."""
         self._light_id: str | None = None
+        self._record_id: str | None = None
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show what can be changed. The light steps show only when a light is set."""
         if self.config_entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
         service: TankkeeperService = self.config_entry.runtime_data
-        steps = ["reminders", "rules", "claude", "camera", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
+        steps = [*SETTINGS_STEPS, *(LIGHT_STEPS if service.has_lights() else [])]
         return self.async_show_menu(step_id="init", menu_options=steps)
+
+    async def async_step_tank(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the tank details, and store them through the service layer. A field left empty is cleared."""
+        service = self._service()
+        errors = _errors(user_input)
+        if user_input is not None and not errors:
+            updates: Record = {
+                "name": user_input[CONF_TANK_NAME],
+                "volume_litres": user_input[CONF_VOLUME],
+                "dosing_volume_litres": user_input[CONF_DOSING_VOLUME],
+                "temperature_c": user_input.get(CONF_TEMPERATURE),
+                "notes": user_input.get(CONF_NOTES, ""),
+            }
+            result = await self._async_set([tank_target(service, updates)], TANK_SUMMARY)
+            if result["type"] is FlowResultType.CREATE_ENTRY:
+                self._rename(user_input)
+            return result
+        tank = service.records(Collection.TANK).get(TANK_ID, {})
+        suggested = user_input or _filled(
+            {
+                CONF_TANK_NAME: tank.get("name"),
+                CONF_VOLUME: tank.get("volume_litres"),
+                CONF_DOSING_VOLUME: tank.get("dosing_volume_litres"),
+                CONF_TEMPERATURE: tank.get("temperature_c"),
+                CONF_NOTES: tank.get("notes"),
+            }
+        )
+        return self.async_show_form(
+            step_id="tank", data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, suggested), errors=errors
+        )
+
+    async def async_step_water(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the tap water values, and store them through the service layer. A field left empty is removed."""
+        service = self._service()
+        water = service.records(Collection.WATER).get(WATER_ID, {})
+        if user_input is not None:
+            fields = (*WATER_VALUES, CONF_NOTES)
+            record: Record = {key: value for key, value in water.items() if key not in fields}
+            record.update({key: user_input[key] for key in fields if user_input.get(key) not in (None, "")})
+            if record == water:
+                return self.async_abort(reason="nothing_changed")
+            return await self._async_set([(Collection.WATER, WATER_ID, record)], WATER_SUMMARY)
+        return self.async_show_form(
+            step_id="water", data_schema=self.add_suggested_values_to_schema(WATER_SCHEMA, _filled(water))
+        )
+
+    async def async_step_products(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the products in use, and offer to add, change or remove one."""
+        return self._list_menu("products", Collection.PRODUCTS, "product")
+
+    async def async_step_add_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a product the tank gets."""
+        if user_input is None:
+            return self.async_show_form(step_id="add_product", data_schema=PRODUCT_OPTIONS_SCHEMA)
+        product, errors = _product_from(user_input)
+        if product is None:
+            return self._form_again("add_product", PRODUCT_OPTIONS_SCHEMA, user_input, errors)
+        target = (Collection.PRODUCTS, ulid_now(), product)
+        return await self._async_set([target], added_product_summary(product))
+
+    async def async_step_change_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick the product to change."""
+        if user_input is not None:
+            self._record_id = user_input[CONF_PRODUCT_ID]
+            return await self.async_step_edit_product()
+        return self.async_show_form(step_id="change_product", data_schema=self._pick(Collection.PRODUCTS))
+
+    async def async_step_edit_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Change the picked product. A field left empty is cleared."""
+        product_id = self._record_id
+        assert product_id is not None
+        current = self._service().state.require(Collection.PRODUCTS, product_id)
+        if user_input is None:
+            return self.async_show_form(
+                step_id="edit_product",
+                data_schema=self.add_suggested_values_to_schema(PRODUCT_OPTIONS_SCHEMA, _product_values(current)),
+            )
+        fresh, errors = _product_from(user_input)
+        if fresh is None:
+            return self._form_again("edit_product", PRODUCT_OPTIONS_SCHEMA, user_input, errors)
+        product = merge_record(current, {key: fresh[key] for key in PRODUCT_VALUES})
+        return await self._async_set([(Collection.PRODUCTS, product_id, product)], changed_product_summary(product))
+
+    async def async_step_remove_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Mark a product as no longer used. It stays in the records with the date."""
+        if user_input is not None:
+            target, summary = removal(self._service(), Collection.PRODUCTS, user_input[CONF_PRODUCT_ID], {})
+            return await self._async_set([target], summary)
+        return self.async_show_form(step_id="remove_product", data_schema=self._pick(Collection.PRODUCTS))
+
+    async def async_step_contents(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show what is in the tank, and offer to add, change or remove an item."""
+        return self._list_menu("contents", Collection.CONTENTS, "content")
+
+    async def async_step_add_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a plant, fish, rock or anything else in the tank."""
+        if user_input is None:
+            return self.async_show_form(step_id="add_content", data_schema=CONTENT_OPTIONS_SCHEMA)
+        if not str(user_input["name"]).strip():
+            return self._form_again("add_content", CONTENT_OPTIONS_SCHEMA, user_input, {"name": "name_required"})
+        await record_content(self._service(), _content_data(user_input), _panel())
+        return self.async_create_entry(data={})
+
+    async def async_step_change_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Pick the contents item to change."""
+        if user_input is not None:
+            self._record_id = user_input[CONF_CONTENT_ID]
+            return await self.async_step_edit_content()
+        return self.async_show_form(step_id="change_content", data_schema=self._pick(Collection.CONTENTS))
+
+    async def async_step_edit_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Change the picked contents item. A field left empty is cleared, except the date it went in, which stays."""
+        content_id = self._record_id
+        assert content_id is not None
+        current = self._service().state.require(Collection.CONTENTS, content_id)
+        if user_input is None:
+            values = _filled({key: current.get(key) for key in ("type", "name", "count", "where", "added", CONF_NOTES)})
+            return self.async_show_form(
+                step_id="edit_content", data_schema=self.add_suggested_values_to_schema(CONTENT_OPTIONS_SCHEMA, values)
+            )
+        if not str(user_input["name"]).strip():
+            return self._form_again("edit_content", CONTENT_OPTIONS_SCHEMA, user_input, {"name": "name_required"})
+        fresh = new_content({"added": current.get("added"), **_content_data(user_input)})
+        content = merge_record(fresh, {"removed": current.get("removed")})
+        return await self._async_set([(Collection.CONTENTS, content_id, content)], changed_content_summary(content))
+
+    async def async_step_remove_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Take an item out of the tank. It stays in the records with the date it went."""
+        if user_input is not None:
+            target, summary = removal(self._service(), Collection.CONTENTS, user_input[CONF_CONTENT_ID], {})
+            return await self._async_set([target], summary)
+        return self.async_show_form(step_id="remove_content", data_schema=self._pick(Collection.CONTENTS))
+
+    def _list_menu(self, step_id: str, collection: Collection, kind: str) -> ConfigFlowResult:
+        """A menu that lists the active records and offers to add one, and to change or remove one if any."""
+        names = [str(record.get("name")) for record in self._active(collection).values()]
+        options = [f"add_{kind}", *([f"change_{kind}", f"remove_{kind}"] if names else [])]
+        return self.async_show_menu(
+            step_id=step_id, menu_options=options, description_placeholders={"listed": ", ".join(names) or NONE_ADDED}
+        )
+
+    def _active(self, collection: Collection) -> dict[str, Record]:
+        return {
+            record_id: record
+            for record_id, record in self._service().records(collection).items()
+            if record.get("removed") is None
+        }
+
+    def _pick(self, collection: Collection) -> p.Schema:
+        field = CONF_PRODUCT_ID if collection is Collection.PRODUCTS else CONF_CONTENT_ID
+        options = [
+            SelectOptionDict(value=record_id, label=str(record.get("name")))
+            for record_id, record in self._active(collection).items()
+        ]
+        return p.Schema({p.Required(field): SelectSelector(SelectSelectorConfig(options=options))})
+
+    def _form_again(
+        self, step_id: str, schema: p.Schema, user_input: dict[str, Any], errors: dict[str, str]
+    ) -> ConfigFlowResult:
+        return self.async_show_form(
+            step_id=step_id, data_schema=self.add_suggested_values_to_schema(schema, user_input), errors=errors
+        )
+
+    async def _async_set(self, targets: list[Target], summary: str) -> ConfigFlowResult:
+        """Store the change through the service layer."""
+        try:
+            await self._service().async_set(targets, _panel(), summary)
+        except NothingToChangeError:
+            return self.async_abort(reason="nothing_changed")
+        return self.async_create_entry(data={})
+
+    def _rename(self, user_input: dict[str, Any]) -> None:
+        """Keep the entry's title and data the same as the tank, and reload for a new name, as reconfigure does."""
+        entry = self.config_entry
+        renamed = entry.title != user_input[CONF_TANK_NAME]
+        self.hass.config_entries.async_update_entry(
+            entry,
+            title=user_input[CONF_TANK_NAME],
+            data={**entry.data, **{key: user_input[key] for key in (CONF_TANK_NAME, CONF_VOLUME, CONF_DOSING_VOLUME)}},
+        )
+        if renamed:
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
 
     async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Show the reminder settings, and store them through the service layer."""
@@ -756,6 +961,36 @@ def _light_data(user_input: dict[str, Any]) -> Record:
         "ramp_minutes": _optional_int(user_input.get(CONF_RAMP)) or 0,
         "rgb_color": None if rgb is None else [int(part) for part in rgb],
     }
+
+
+def _filled(values: Mapping[str, Any]) -> dict[str, Any]:
+    """The values that are set, as form values. Values not set are left out, so their fields show empty."""
+    return {key: value for key, value in values.items() if value not in (None, "", [])}
+
+
+def _product_from(user_input: dict[str, Any]) -> tuple[Record | None, dict[str, str]]:
+    """A product from the form, or the form errors."""
+    if not str(user_input["name"]).strip():
+        return None, {"name": "name_required"}
+    try:
+        return new_product(dict(user_input)), {}
+    except TankkeeperError:
+        return None, {"base": "label_dose_incomplete"}
+
+
+def _product_values(product: Record) -> dict[str, Any]:
+    """A product as form values."""
+    label = product.get("label_dose")
+    label_values = {f"label_{key}": value for key, value in label.items()} if isinstance(label, dict) else {}
+    return _filled({key: product.get(key) for key in PRODUCT_VALUES if key != "label_dose"} | label_values)
+
+
+def _content_data(user_input: dict[str, Any]) -> Record:
+    """The add_content arguments from the contents form. The count is a whole number."""
+    data: Record = dict(user_input)
+    if "count" in data:
+        data["count"] = int(cast(float, data["count"]))
+    return data
 
 
 def _errors(user_input: dict[str, Any] | None) -> dict[str, str]:
