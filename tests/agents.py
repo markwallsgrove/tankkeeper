@@ -145,7 +145,7 @@ class FakeAITask(ai_task.AITaskEntity):
 
 
 class FakeCamera(camera.Camera):
-    """A camera that returns a fixed photo, or fails like a camera that is offline."""
+    """A camera that returns a fixed photo, or fails like a camera that is offline, and may name a stream."""
 
     _attr_name = "Tank camera"
 
@@ -155,6 +155,11 @@ class FakeCamera(camera.Camera):
         self._attr_unique_id = "tank_camera"
         self.photo: bytes | None = PHOTO
         self.error: HomeAssistantError | None = None
+        self.stream_url: str | None = None
+
+    @override
+    async def stream_source(self) -> str | None:
+        return self.stream_url
 
     @override
     async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:

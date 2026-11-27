@@ -1,6 +1,7 @@
 aiohttp_sse==2.2.0
 anyio==4.14.2
 gazetteer-matcher==1.1.0
+ha-ffmpeg==3.2.2
 hassil==3.12.1
 hegeltest==0.5.3
 home-assistant-frontend==20260930.5
