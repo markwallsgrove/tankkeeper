@@ -104,7 +104,7 @@
           "task_time": "When tasks are due. Open tasks from the last week are followed up at this time.",
           "dose_time": "When doses are due when no light is set. With a light, doses are due when the light turns on.",
           "resend_time": "When tasks still open today are sent again.",
-          "status_notify": "Notify services that get a message when the status changes to Watch or Act, and once when it is back on course."
+          "status_notify": "Notify services that get a message when the status changes to Watch or Act, once when it is back on course, and when a proposal is still waiting."
         }
       },
       "rules": {

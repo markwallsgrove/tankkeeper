@@ -8,6 +8,7 @@ from homeassistant.helpers.llm import async_register_api
 from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME
 from .light_control import LightRunner
 from .llm import TankkeeperAPI
+from .proposal_notify import ProposalNotifier
 from .reminders import ReminderSender
 from .service import TankkeeperService
 from .status import StatusRunner
@@ -35,6 +36,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(ReminderSender(hass, service).start())
     entry.async_on_unload(LightRunner(hass, service).start())
     entry.async_on_unload(StatusRunner(hass, service).start())
+    entry.async_on_unload(ProposalNotifier(hass, service).start())
     return True
 
 

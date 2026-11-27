@@ -19,6 +19,8 @@ CODE_LIFETIME = timedelta(minutes=15)
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 CODE_LENGTH = 6
 MAX_CODE_ATTEMPTS = 5
+BATCH_IDLE = CODE_LIFETIME
+BATCH_MAX_AGE = timedelta(hours=2)
 MAX_CONVERSATION_MESSAGES = 200
 TANK_ID = "tank"
 WATER_ID = "water"
@@ -39,6 +41,15 @@ class Collection(StrEnum):
     DECISIONS = "decisions"
 
 
+SETUP_COLLECTIONS = (
+    Collection.PRODUCTS,
+    Collection.CONTENTS,
+    Collection.TASKS,
+    Collection.LIGHTS,
+    Collection.DECISIONS,
+)
+
+
 class Source(StrEnum):
     """Who made a change."""
 
@@ -46,6 +57,7 @@ class Source(StrEnum):
     ASSIST = "assist"
     MCP = "mcp"
     RULE = "rule"
+    NOTIFICATION = "notification"
 
 
 class ProposalState(StrEnum):
@@ -127,6 +139,24 @@ class TooManyAttemptsError(TankkeeperError):
     key = "too_many_attempts"
 
 
+class BatchExpiredError(TankkeeperError):
+    """The conversation's batch can take no more changes: its code expired or is locked."""
+
+    key = "batch_expired"
+
+
+class BatchOpenError(TankkeeperError):
+    """The conversation already has an open batch of another kind."""
+
+    key = "batch_open"
+
+
+class TankNotEmptyError(TankkeeperError):
+    """Setup is only for a new or empty tank."""
+
+    key = "tank_not_empty"
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Change:
     """One record before and after. None means the record does not exist."""
@@ -199,8 +229,44 @@ class HistoryEntry:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class Step:
+    """One change tool call that added to a batch."""
+
+    time: datetime
+    tool: str
+    summary: str
+    reason: str
+    evidence: str | None
+
+    def to_json(self) -> Record:
+        """Serialise for storage."""
+        return {
+            "time": self.time.isoformat(),
+            "tool": self.tool,
+            "summary": self.summary,
+            "reason": self.reason,
+            "evidence": self.evidence,
+        }
+
+    @classmethod
+    def from_json(cls, data: Record) -> Step:
+        """Read from storage."""
+        return cls(
+            time=datetime.fromisoformat(_str(data["time"])),
+            tool=_str(data["tool"]),
+            summary=_str(data["summary"]),
+            reason=_str(data["reason"]),
+            evidence=_optional_str(data["evidence"]),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class Proposal:
-    """A change waiting for a yes, with a one-use confirm code."""
+    """Changes waiting for a yes, with a one-use confirm code.
+
+    A batch stays open to more changes from the same person and conversation
+    while its code is valid.
+    """
 
     id: str
     created: datetime
@@ -217,10 +283,34 @@ class Proposal:
     failed_attempts: int = 0
     decided: datetime | None = None
     history_id: str | None = None
+    batch: bool = False
+    setup: bool = False
+    updated: datetime | None = None
+    steps: tuple[Step, ...] = ()
+    notified: bool = False
+    decided_by: str | None = None
+
+    def last_change(self) -> datetime:
+        """When a change was last added."""
+        return self.created if self.updated is None else self.updated
 
     def code_expires(self) -> datetime:
-        """When the confirm code stops working."""
-        return self.created + CODE_LIFETIME
+        """When the confirm code stops working.
+
+        A batch's code lasts BATCH_IDLE after its last change, and never past BATCH_MAX_AGE.
+        """
+        if not self.batch:
+            return self.created + CODE_LIFETIME
+        return min(self.last_change() + BATCH_IDLE, self.created + BATCH_MAX_AGE)
+
+    def is_open(self, now: datetime) -> bool:
+        """Whether the batch can still take changes."""
+        return (
+            self.batch
+            and self.state is ProposalState.PENDING
+            and self.failed_attempts < MAX_CODE_ATTEMPTS
+            and now < self.code_expires()
+        )
 
     def to_json(self) -> Record:
         """Serialise for storage."""
@@ -240,12 +330,19 @@ class Proposal:
             "failed_attempts": self.failed_attempts,
             "decided": None if self.decided is None else self.decided.isoformat(),
             "history_id": self.history_id,
+            "batch": self.batch,
+            "setup": self.setup,
+            "updated": None if self.updated is None else self.updated.isoformat(),
+            "steps": [step.to_json() for step in self.steps],
+            "notified": self.notified,
+            "decided_by": self.decided_by,
         }
 
     @classmethod
     def from_json(cls, data: Record) -> Proposal:
         """Read from storage."""
         decided = _optional_str(data["decided"])
+        updated = _optional_str(data.get("updated"))
         return cls(
             id=_str(data["id"]),
             created=datetime.fromisoformat(_str(data["created"])),
@@ -262,6 +359,12 @@ class Proposal:
             failed_attempts=_int(data["failed_attempts"]),
             decided=None if decided is None else datetime.fromisoformat(decided),
             history_id=_optional_str(data["history_id"]),
+            batch=_bool(data.get("batch", False)),
+            setup=_bool(data.get("setup", False)),
+            updated=None if updated is None else datetime.fromisoformat(updated),
+            steps=tuple(Step.from_json(_record(item)) for item in _list(data.get("steps", []))),
+            notified=_bool(data.get("notified", False)),
+            decided_by=_optional_str(data.get("decided_by")),
         )
 
 
@@ -533,6 +636,26 @@ def apply_proposal(
     except CodeWrongError:
         state.proposals[proposal.id] = replace(proposal, failed_attempts=proposal.failed_attempts + 1)
         raise
+    return _apply(state, proposal, history_id=history_id, now=now, source=source, user_id=user_id)
+
+
+def accept_proposal(
+    state: TankState, proposal_id: str, *, history_id: str, now: datetime, user_id: str | None
+) -> HistoryEntry:
+    """Apply a pending proposal from its notification. No code: the person must be known."""
+    proposal = state.proposal(proposal_id)
+    if proposal.state is not ProposalState.PENDING:
+        raise ProposalClosedError(f"The proposal was already {proposal.state.value}")
+    if user_id is None:
+        raise InvalidInputError("Accepting from a notification needs a known person")
+    return _apply(state, proposal, history_id=history_id, now=now, source=Source.NOTIFICATION, user_id=user_id)
+
+
+def _apply(
+    state: TankState, proposal: Proposal, *, history_id: str, now: datetime, source: Source, user_id: str | None
+) -> HistoryEntry:
+    if not proposal.changes:
+        raise NothingToChangeError("The batch has no changes yet")
     entry = apply_changes(
         state,
         proposal.changes,
@@ -543,20 +666,162 @@ def apply_proposal(
         summary=proposal.summary,
         proposal_id=proposal.id,
     )
-    state.proposals[proposal.id] = replace(proposal, state=ProposalState.APPLIED, decided=now, history_id=entry.id)
+    state.proposals[proposal.id] = replace(
+        proposal, state=ProposalState.APPLIED, decided=now, decided_by=user_id, history_id=entry.id
+    )
     return entry
 
 
-def reject_proposal(state: TankState, proposal_id: str, *, now: datetime, user_id: str | None) -> Proposal:
-    """Close a pending proposal without applying it. Only the person who made it can."""
+def reject_proposal(
+    state: TankState, proposal_id: str, *, now: datetime, user_id: str | None, any_user: bool = False
+) -> Proposal:
+    """Close a pending proposal without applying it.
+
+    Only the person who made it can, unless any_user, as from a notification.
+    """
     proposal = state.proposal(proposal_id)
     if proposal.state is not ProposalState.PENDING:
         raise ProposalClosedError(f"The proposal was already {proposal.state.value}")
-    if proposal.user_id != user_id:
+    if not any_user and proposal.user_id != user_id:
         raise NotYourProposalError("The proposal was made by another person")
-    rejected = replace(proposal, state=ProposalState.REJECTED, decided=now)
+    rejected = replace(proposal, state=ProposalState.REJECTED, decided=now, decided_by=user_id)
     state.proposals[proposal.id] = rejected
     return rejected
+
+
+def tank_is_empty(state: TankState) -> bool:
+    """Whether the tank has nothing that setup fills in yet."""
+    return not any(state.records[collection] for collection in SETUP_COLLECTIONS)
+
+
+def find_batch(state: TankState, *, user_id: str | None, conversation_id: str | None) -> Proposal | None:
+    """The person's pending batch in the conversation, open or not."""
+    if conversation_id is None:
+        return None
+    for proposal in reversed(state.proposals.values()):
+        if (
+            proposal.batch
+            and proposal.state is ProposalState.PENDING
+            and proposal.user_id == user_id
+            and proposal.conversation_id == conversation_id
+        ):
+            return proposal
+    return None
+
+
+def batch_view(state: TankState, proposal: Proposal) -> TankState:
+    """The records as they would be with the batch applied. History and proposals are shared."""
+    records = {collection: dict(items) for collection, items in state.records.items()}
+    for change in proposal.changes:
+        if change.after is None:
+            records[change.collection].pop(change.record_id, None)
+        else:
+            records[change.collection][change.record_id] = change.after
+    return TankState(
+        records=records,
+        history=state.history,
+        proposals=state.proposals,
+        conversations=state.conversations,
+        light_log=state.light_log,
+    )
+
+
+def start_batch(
+    state: TankState,
+    *,
+    proposal_id: str,
+    code: str,
+    now: datetime,
+    source: Source,
+    user_id: str | None,
+    conversation_id: str | None,
+    summary: str,
+    reason: str,
+    setup: bool,
+) -> Proposal:
+    """Open a batch for the person in the conversation, or return the one already open.
+
+    An expired batch is rejected and its changes carry over to the new one.
+    """
+    if conversation_id is None:
+        raise InvalidInputError("A batch needs a conversation_id from tankkeeper__save_conversation")
+    existing = find_batch(state, user_id=user_id, conversation_id=conversation_id)
+    if existing is not None and existing.is_open(now):
+        if setup and not existing.setup:
+            raise BatchOpenError("This conversation already has an open batch. Apply or reject it first")
+        return existing
+    if setup and not tank_is_empty(state):
+        raise TankNotEmptyError("Setup is only for a new or empty tank. Use tankkeeper__start_batch")
+    changes: tuple[Change, ...] = ()
+    steps: tuple[Step, ...] = ()
+    if existing is not None:
+        reject_proposal(state, existing.id, now=now, user_id=user_id)
+        changes = _rebased(state, existing.changes)
+        steps = existing.steps
+    proposal = Proposal(
+        id=proposal_id,
+        created=now,
+        source=source,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        tool="start_setup" if setup else "start_batch",
+        summary=summary,
+        reason=reason,
+        evidence=None,
+        changes=changes,
+        code=code,
+        batch=True,
+        setup=setup,
+        updated=now,
+        steps=steps,
+    )
+    state.proposals[proposal.id] = proposal
+    return proposal
+
+
+def add_to_batch(
+    state: TankState,
+    proposal_id: str,
+    targets: Iterable[tuple[Collection, str, Record | None]],
+    *,
+    now: datetime,
+    tool: str,
+    summary: str,
+    reason: str,
+    evidence: str | None,
+) -> Proposal:
+    """Add changes to an open batch. A record changed twice keeps one change, from now to its newest value."""
+    proposal = state.proposal(proposal_id)
+    if proposal.state is not ProposalState.PENDING:
+        raise ProposalClosedError(f"The batch was already {proposal.state.value}")
+    if not proposal.is_open(now):
+        raise BatchExpiredError(
+            "The batch can take no more changes. Call tankkeeper__start_batch again to carry its changes on"
+        )
+    planned = plan_changes(batch_view(state, proposal), targets)
+    merged = {(change.collection, change.record_id): change for change in proposal.changes}
+    for change in planned:
+        key = (change.collection, change.record_id)
+        before = merged[key].before if key in merged else change.before
+        merged[key] = replace(change, before=before)
+    changes = tuple(change for change in merged.values() if change.before != change.after)
+    step = Step(time=now, tool=tool, summary=summary, reason=reason, evidence=evidence)
+    added = replace(proposal, changes=changes, updated=now, steps=(*proposal.steps, step))
+    state.proposals[proposal.id] = added
+    return added
+
+
+def _rebased(state: TankState, changes: tuple[Change, ...]) -> tuple[Change, ...]:
+    rebased = (
+        Change(
+            collection=change.collection,
+            record_id=change.record_id,
+            before=state.get(change.collection, change.record_id),
+            after=change.after,
+        )
+        for change in changes
+    )
+    return tuple(change for change in rebased if change.before != change.after)
 
 
 def save_conversation(
@@ -643,6 +908,12 @@ def _str(value: JsonValue) -> str:
 
 def _optional_str(value: JsonValue) -> str | None:
     return None if value is None else _str(value)
+
+
+def _bool(value: JsonValue) -> bool:
+    if not isinstance(value, bool):
+        raise TypeError(f"Expected true or false, got {value!r}")
+    return value
 
 
 def _int(value: JsonValue) -> int:
