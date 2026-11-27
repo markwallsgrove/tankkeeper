@@ -9,6 +9,9 @@
       },
       "last_test": {
         "default": "mdi:test-tube"
+      },
+      "next_light_change": {
+        "default": "mdi:lightbulb-auto-outline"
       }
     },
     "calendar": {
@@ -19,6 +22,14 @@
     "todo": {
       "today": {
         "default": "mdi:clipboard-list-outline"
+      }
+    },
+    "binary_sensor": {
+      "light_problem": {
+        "default": "mdi:lightbulb-alert-outline",
+        "state": {
+          "off": "mdi:lightbulb-on-outline"
+        }
       }
     }
   }

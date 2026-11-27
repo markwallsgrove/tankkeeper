@@ -78,13 +78,12 @@ class TankkeeperCalendar(CalendarEntity):
     async def async_create_event(self, **kwargs: Any) -> None:
         """Add a task. A Complete: or Skip: title adds it done."""
         _refuse_repeats(kwargs)
-        reminders = self._service.reminders()
         status, text = parse_summary(str(kwargs["summary"]))
         start: date = kwargs["dtstart"]
         task = Task(
             id=ulid_now(),
             day=_day(start),
-            slot=_slot(start, reminders, slot_for(text, self._service.product_names())),
+            slot=_slot(start, self._service.reminders_on(_day(start)), slot_for(text, self._service.product_names())),
             text=text,
             note=str(kwargs.get("description") or ""),
         ).edit(status=status, now=self._service.now())
@@ -109,7 +108,7 @@ class TankkeeperCalendar(CalendarEntity):
             now=self._service.now(),
             text=text,
             day=_day(start),
-            slot=_slot(start, self._service.reminders(), current.slot),
+            slot=_slot(start, self._service.reminders_on(_day(start)), current.slot),
             status=status,
             note=str(event.get("description") or ""),
         )
@@ -134,8 +133,8 @@ class TankkeeperCalendar(CalendarEntity):
             raise change_failed(err) from err
 
     def _events(self) -> list[CalendarEvent]:
-        reminders = self._service.reminders()
-        return [_event(task, reminders) for task in sort_tasks(self._service.tasks(), reminders)]
+        reminders_on = self._service.reminders_on
+        return [_event(task, reminders_on(task.day)) for task in sort_tasks(self._service.tasks(), reminders_on)]
 
 
 def _event(task: Task, reminders: Reminders) -> CalendarEvent:

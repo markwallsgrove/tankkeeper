@@ -247,20 +247,22 @@ def tasks_due(tasks: Iterable[Task], day: date, slot: Slot) -> list[Task]:
 
 def tasks_open_on(tasks: Iterable[Task], day: date, reminders: Reminders) -> list[Task]:
     """Open tasks for a day, in plan order."""
-    return sort_tasks((task for task in tasks if task.status is TaskStatus.OPEN and task.day == day), reminders)
-
-
-def tasks_overdue(tasks: Iterable[Task], day: date, reminders: Reminders) -> list[Task]:
-    """Open tasks from the days before, up to FOLLOW_UP_DAYS back, in plan order."""
-    oldest = day - timedelta(days=FOLLOW_UP_DAYS)
     return sort_tasks(
-        (task for task in tasks if task.status is TaskStatus.OPEN and oldest <= task.day < day), reminders
+        (task for task in tasks if task.status is TaskStatus.OPEN and task.day == day), lambda _: reminders
     )
 
 
-def sort_tasks(tasks: Iterable[Task], reminders: Reminders) -> list[Task]:
-    """Tasks by day, then slot time, then text."""
-    return sorted(tasks, key=lambda task: (task.day, reminders.slot_time(task.slot), task.text, task.id))
+def tasks_overdue(tasks: Iterable[Task], day: date, reminders_on: Callable[[date], Reminders]) -> list[Task]:
+    """Open tasks from the days before, up to FOLLOW_UP_DAYS back, in plan order."""
+    oldest = day - timedelta(days=FOLLOW_UP_DAYS)
+    return sort_tasks(
+        (task for task in tasks if task.status is TaskStatus.OPEN and oldest <= task.day < day), reminders_on
+    )
+
+
+def sort_tasks(tasks: Iterable[Task], reminders_on: Callable[[date], Reminders]) -> list[Task]:
+    """Tasks by day, then that day's slot time, then text."""
+    return sorted(tasks, key=lambda task: (task.day, reminders_on(task.day).slot_time(task.slot), task.text, task.id))
 
 
 def action_for(status: TaskStatus, task_id: str) -> str:

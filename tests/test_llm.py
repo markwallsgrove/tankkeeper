@@ -8,7 +8,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tankkeeper.const import API_ID, DOMAIN
 from custom_components.tankkeeper.llm import async_get_tools
-from custom_components.tankkeeper.tools import PROMPT, SPECS
+from custom_components.tankkeeper.tools import LIGHT_ONLY, PROMPT, SPECS
 
 from .common import Caller
 
@@ -24,7 +24,7 @@ async def test_own_api_has_every_tool_once(hass: HomeAssistant, loaded_entry: Mo
     api = await llm.async_get_api(hass, API_ID, Caller(hass).context())
 
     names = [tool.name for tool in api.tools]
-    assert sorted(names) == sorted(f"{PREFIX}{spec.name}" for spec in SPECS)
+    assert sorted(names) == sorted(f"{PREFIX}{spec.name}" for spec in SPECS if spec.name not in LIGHT_ONLY)
     assert api.api_prompt == PROMPT
 
 

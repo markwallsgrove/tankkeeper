@@ -45,7 +45,7 @@ class ReminderSender:
         """Keep what the sender needs. Nothing runs until start."""
         self._hass = hass
         self._service = service
-        self._reminders = service.reminders()
+        self._reminders = service.reminders_on(dt_util.now().date())
         self._timers: list[CALLBACK_TYPE] = []
         self._sent: set[str] = set()
 
@@ -55,11 +55,13 @@ class ReminderSender:
         self._schedule()
         stop_records = self._service.async_add_listener(self._records_changed)
         stop_actions = self._hass.bus.async_listen(ACTION_EVENT, self._async_action)
+        stop_midnight = async_track_time_change(self._hass, self._midnight, hour=0, minute=0, second=0)
 
         @callback
         def stop() -> None:
             stop_records()
             stop_actions()
+            stop_midnight()
             self._cancel_timers()
 
         return stop
@@ -85,7 +87,7 @@ class ReminderSender:
         today = dt_util.as_local(now).date()
         tasks = self._service.tasks()
         await self._async_send(tasks_due(tasks, today, Slot.TASK), None)
-        await self._async_send(tasks_overdue(tasks, today, self._reminders), NOT_CONFIRMED)
+        await self._async_send(tasks_overdue(tasks, today, self._service.reminders_on), NOT_CONFIRMED)
 
     async def _async_dose_time(self, now: datetime) -> None:
         await self._async_send(tasks_due(self._service.tasks(), dt_util.as_local(now).date(), Slot.DOSE), None)
@@ -127,11 +129,20 @@ class ReminderSender:
                 _LOGGER.warning("Could not notify %s: %s", device, err)
 
     @callback
-    def _records_changed(self) -> None:
-        reminders = self._service.reminders()
+    def _midnight(self, now: datetime) -> None:
+        self._reschedule()
+
+    @callback
+    def _reschedule(self) -> None:
+        """Move the timers when today's times differ, as when a light sets the dose time."""
+        reminders = self._service.reminders_on(dt_util.now().date())
         if reminders != self._reminders:
             self._reminders = reminders
             self._schedule()
+
+    @callback
+    def _records_changed(self) -> None:
+        self._reschedule()
         open_ids = {task.id for task in self._service.tasks() if task.status is TaskStatus.OPEN}
         for task_id in sorted(self._sent - open_ids):
             self._sent.discard(task_id)

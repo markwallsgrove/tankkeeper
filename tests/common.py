@@ -1,6 +1,8 @@
 """Helpers to call Tankkeeper's tools the way Assist and the MCP server do."""
 
-from homeassistant.core import Context, HomeAssistant
+from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.core import Context, HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.llm import LLMContext, ToolInput, ToolResult
 from homeassistant.util.json import JsonObjectType, JsonValueType
@@ -8,6 +10,44 @@ from homeassistant.util.json import JsonObjectType, JsonValueType
 from custom_components.tankkeeper.const import API_ID
 
 MCP = "mcp_server"
+PLUG = "switch.tank_light"
+LAMP = "light.tank_lamp"
+
+
+class Devices:
+    """Light and switch entities that follow turn_on and turn_off, as a smart plug or bulb does."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Answer turn_on and turn_off for lights and switches."""
+        self.hass = hass
+        self.calls: list[ServiceCall] = []
+        self.failing: set[str] = set()
+        for domain in ("light", "switch"):
+            for action in ("turn_on", "turn_off"):
+                hass.services.async_register(domain, action, self._async_handle)
+
+    def add(self, entity_id: str, state: str = STATE_OFF) -> None:
+        """Make an entity in a state."""
+        self.hass.states.async_set(entity_id, state)
+
+    def state(self, entity_id: str) -> str:
+        """The entity's state now."""
+        state = self.hass.states.get(entity_id)
+        assert state is not None
+        return state.state
+
+    def sent(self) -> list[tuple[str, dict[str, object]]]:
+        """Each call as its action and data."""
+        return [(f"{call.domain}.{call.service}", dict(call.data)) for call in self.calls]
+
+    async def _async_handle(self, call: ServiceCall) -> None:
+        self.calls.append(call)
+        targets = call.data["entity_id"]
+        for entity_id in [targets] if isinstance(targets, str) else targets:
+            if entity_id in self.failing:
+                raise HomeAssistantError(f"{entity_id} did not answer")
+            state = STATE_ON if call.service == "turn_on" else STATE_OFF
+            self.hass.states.async_set(entity_id, state, context=call.context)
 
 
 class Caller:

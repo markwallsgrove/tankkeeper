@@ -396,8 +396,16 @@ def test_state_json_round_trip() -> None:
         summary="s",
         messages=[Message(role="user", text="hi")],
     )
+    state.light_log.append({"time": "2026-11-26T12:00:00+00:00", "light_id": "l1", "kind": "on"})
 
     assert TankState.from_json(state.to_json()) == state
+
+
+def test_from_json_reads_a_store_from_before_the_light_log() -> None:
+    data = TankState().to_json()
+    del data["light_log"]
+
+    assert TankState.from_json(data).light_log == []
 
 
 def test_from_json_tolerates_a_missing_collection() -> None:

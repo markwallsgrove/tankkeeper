@@ -35,6 +35,7 @@ class Collection(StrEnum):
     NOTES = "notes"
     TASKS = "tasks"
     SETTINGS = "settings"
+    LIGHTS = "lights"
 
 
 class Source(StrEnum):
@@ -75,6 +76,12 @@ class NothingToChangeError(TankkeeperError):
     """The change leaves every record as it is."""
 
     key = "nothing_to_change"
+
+
+class InvalidInputError(TankkeeperError):
+    """An argument the schema accepts but the records can't use."""
+
+    key = "invalid_input"
 
 
 class RecordChangedError(TankkeeperError):
@@ -325,7 +332,7 @@ class Conversation:
 
 @dataclass(slots=True)
 class TankState:
-    """Every record, the history, proposals and conversations of one tank."""
+    """Every record, the history, proposals and conversations of one tank, and the lights' on/off log."""
 
     records: dict[Collection, dict[str, Record]] = field(
         default_factory=lambda: {collection: {} for collection in Collection}
@@ -333,6 +340,7 @@ class TankState:
     history: list[HistoryEntry] = field(default_factory=list)
     proposals: dict[str, Proposal] = field(default_factory=dict)
     conversations: dict[str, Conversation] = field(default_factory=dict)
+    light_log: list[Record] = field(default_factory=list)
 
     def get(self, collection: Collection, record_id: str) -> Record | None:
         """The record, or None when it does not exist."""
@@ -373,6 +381,7 @@ class TankState:
             "history": [entry.to_json() for entry in self.history],
             "proposals": [proposal.to_json() for proposal in self.proposals.values()],
             "conversations": [conversation.to_json() for conversation in self.conversations.values()],
+            "light_log": list(self.light_log),
         }
 
     @classmethod
@@ -392,6 +401,7 @@ class TankState:
             history=[HistoryEntry.from_json(_record(item)) for item in _list(data["history"])],
             proposals={proposal.id: proposal for proposal in proposals},
             conversations={conversation.id: conversation for conversation in conversations},
+            light_log=[_record(item) for item in _list(data.get("light_log", []))],
         )
 
 

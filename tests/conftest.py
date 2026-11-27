@@ -6,7 +6,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 
-from .common import Caller
+from .common import Caller, Devices
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
@@ -46,3 +46,9 @@ def call(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> Caller:
 async def london(hass: HomeAssistant) -> None:
     """Run in the owner's time zone, which is UTC in November."""
     await hass.config.async_set_time_zone("Europe/London")
+
+
+@pytest.fixture
+def plugs(hass: HomeAssistant) -> Devices:
+    """Fake light and switch entities."""
+    return Devices(hass)

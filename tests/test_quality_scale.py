@@ -9,7 +9,7 @@ from pathlib import Path
 from homeassistant.util.yaml import load_yaml_dict
 from PIL import Image
 
-from custom_components.tankkeeper import calendar, sensor, todo
+from custom_components.tankkeeper import binary_sensor, calendar, light_control, sensor, todo
 from custom_components.tankkeeper.config_flow import TankkeeperConfigFlow
 
 EXCEPTION_KEYS = {"change_failed", "repeat_not_supported"}
@@ -117,17 +117,22 @@ def test_manifest_backs_the_done_rules() -> None:
 def test_code_backs_the_done_rules() -> None:
     assert (INTEGRATION / "py.typed").is_file()
     assert sensor.PARALLEL_UPDATES == 0
+    assert binary_sensor.PARALLEL_UPDATES == 0
     assert calendar.PARALLEL_UPDATES == 0
     assert todo.PARALLEL_UPDATES == 0
     assert hasattr(TankkeeperConfigFlow, "async_step_reconfigure")
     assert all(description.translation_key for description in sensor.SENSORS)
     icons = json.loads((INTEGRATION / "icons.json").read_text())
-    assert set(icons["entity"]["sensor"]) == {description.key for description in sensor.SENSORS}
+    assert set(icons["entity"]["sensor"]) == {description.key for description in sensor.SENSORS} | {"next_light_change"}
+    assert set(icons["entity"]["binary_sensor"]) == {"light_problem"}
     assert set(icons["entity"]["calendar"]) == {calendar.TRANSLATION_KEY}
     assert set(icons["entity"]["todo"]) == {todo.TRANSLATION_KEY}
     strings = json.loads((INTEGRATION / "strings.json").read_text())
     assert set(strings["exceptions"]) == EXCEPTION_KEYS
-    assert json.loads((INTEGRATION / "translations" / "en.json").read_text())["exceptions"] == strings["exceptions"]
+    assert set(strings["issues"]) == {light_control.ISSUE_KEY}
+    translations = json.loads((INTEGRATION / "translations" / "en.json").read_text())
+    assert translations["exceptions"] == strings["exceptions"]
+    assert translations["issues"] == strings["issues"]
 
 
 def test_brand_icons_have_the_expected_sizes() -> None:

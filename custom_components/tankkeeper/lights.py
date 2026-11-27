@@ -230,6 +230,46 @@ class LightStatus:
         }
 
 
+def with_control(schedule: Schedule, control: Control) -> Schedule:
+    """The schedule without the settings the control can't use."""
+    if control is Control.ON_OFF:
+        return replace(schedule, brightness_pct=None, ramp_minutes=0, rgb_color=None)
+    if control is Control.DIMMABLE:
+        return replace(schedule, rgb_color=None)
+    return schedule
+
+
+def add_summary(light: Light) -> str:
+    """The summary of adding a light."""
+    return f"Add the light {_describe(light)}"
+
+
+def change_summary(light: Light) -> str:
+    """The summary of changing a light."""
+    return f"Change the light {_describe(light)}"
+
+
+def remove_summary(light: Light) -> str:
+    """The summary of removing a light."""
+    return f"Remove the light {light.model}"
+
+
+def one_day_summary(light: Light, change: OneDayChange) -> str:
+    """The summary of a one-day change."""
+    times = f"on {format_time(change.on)}, off {format_time(change.off)}"
+    return f"Light {light.model} on {change.day.isoformat()} only: {times}"
+
+
+def cancel_one_day_summary(light: Light) -> str:
+    """The summary of cancelling a one-day change."""
+    return f"Cancel the one-day change to {light.model}"
+
+
+def _describe(light: Light) -> str:
+    schedule = light.schedule
+    return f"{light.model} on {light.entity_id}, on {format_time(schedule.on)}, off {format_time(schedule.off)}"
+
+
 def wanted_on(light: Light, moment: datetime) -> bool:
     """Whether the schedule wants the light on at a moment, in the moment's time zone."""
     schedule = light.schedule_on(moment.date())

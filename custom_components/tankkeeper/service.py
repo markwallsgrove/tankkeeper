@@ -1,8 +1,8 @@
 """The one service layer that tools, flows and entities use to read and change records."""
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 import secrets
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -18,6 +18,7 @@ from .domain import (
     Collection,
     Conversation,
     HistoryEntry,
+    InvalidInputError,
     Message,
     NotFoundError,
     NothingToChangeError,
@@ -36,6 +37,7 @@ from .domain import (
     search_conversations,
     undo_changes,
 )
+from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
 from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
 
 type Target = tuple[Collection, str, Record | None]
@@ -72,6 +74,7 @@ class TankkeeperService:
         self._clock = clock
         self._code_factory = code_factory
         self._listeners: list[CALLBACK_TYPE] = []
+        self._light_status: dict[str, LightStatus] = {}
         self.state = TankState()
 
     async def async_load(self, tank: Record) -> None:
@@ -122,6 +125,79 @@ class TankkeeperService:
     def reminders(self) -> Reminders:
         """The reminder settings."""
         return Reminders.from_json(self.state.get(Collection.SETTINGS, REMINDERS_ID))
+
+    def reminders_on(self, day: date) -> Reminders:
+        """The reminder settings for a day, with doses due when the first light turns on."""
+        reminders = self.reminders()
+        return replace(reminders, dose_time=dose_time(self.active_lights(), day, reminders.dose_time))
+
+    def lights(self) -> list[Light]:
+        """Every light, removed ones included."""
+        return [
+            Light.from_record(light_id, record) for light_id, record in self.state.records[Collection.LIGHTS].items()
+        ]
+
+    def active_lights(self) -> list[Light]:
+        """The lights that have not been removed."""
+        return [light for light in self.lights() if light.active]
+
+    def has_lights(self) -> bool:
+        """Whether a light is set."""
+        return bool(self.active_lights())
+
+    def light(self, light_id: str) -> Light:
+        """One light that has not been removed, or NotFoundError."""
+        light = Light.from_record(light_id, self.state.require(Collection.LIGHTS, light_id))
+        if not light.active:
+            raise NotFoundError(f"The light {light_id} was removed")
+        return light
+
+    def light_targets(self, light: Light) -> list[Target]:
+        """The change that stores a light, after checking the integration can run it."""
+        light.check()
+        if light.active:
+            if self.hass.states.get(light.entity_id) is None:
+                raise InvalidInputError(f"No entity {light.entity_id}")
+            if any(other.id != light.id and other.entity_id == light.entity_id for other in self.active_lights()):
+                raise InvalidInputError(f"Another light already uses {light.entity_id}")
+        return [(Collection.LIGHTS, light.id, light.to_record())]
+
+    def reason_for(self, entry: HistoryEntry) -> str | None:
+        """The reason the proposal behind a history entry gave."""
+        proposal = None if entry.proposal_id is None else self.state.proposals.get(entry.proposal_id)
+        return None if proposal is None else proposal.reason
+
+    def light_log(self) -> list[LightEvent]:
+        """The on/off log of every light, oldest first."""
+        return [LightEvent.from_json(event) for event in self.state.light_log]
+
+    @callback
+    def log_light(self, *events: LightEvent) -> None:
+        """Add to the on/off log straight away, keeping only the last LOG_DAYS days, and save it."""
+        log = prune_log([*self.light_log(), *events], self._clock())
+        self.state.light_log = [event.to_json() for event in log]
+        self.hass.async_create_task(self._async_save(), eager_start=False)
+
+    def light_status(self, light_id: str) -> LightStatus:
+        """Whether a light is following its schedule. Kept in memory only."""
+        return self._light_status.get(light_id, LightStatus())
+
+    @callback
+    def set_light_status(self, light_id: str, status: LightStatus) -> None:
+        """Change a light's status and tell the listeners."""
+        if status == self.light_status(light_id):
+            return
+        if status.problem:
+            self._light_status[light_id] = status
+        else:
+            self._light_status.pop(light_id, None)
+        self.notify()
+
+    @callback
+    def notify(self) -> None:
+        """Tell the listeners that something changed."""
+        for listener in list(self._listeners):
+            listener()
 
     def product_names(self) -> list[str]:
         """The name of every product, to tell doses from other tasks."""
@@ -280,5 +356,4 @@ class TankkeeperService:
 
     async def _async_save(self) -> None:
         await self._store.async_save(self.state.to_json())
-        for listener in list(self._listeners):
-            listener()
+        self.notify()

@@ -233,7 +233,7 @@ def test_open_and_overdue_tasks_follow_the_plan_order() -> None:
     ]
 
     assert [task.id for task in tasks_open_on(tasks, DAY, reminders)] == ["dose", "a", "b"]
-    assert [task.id for task in tasks_overdue(tasks, DAY, reminders)] == ["old dose", "old a", "old b"]
+    assert [task.id for task in tasks_overdue(tasks, DAY, lambda _: reminders)] == ["old dose", "old a", "old b"]
 
 
 def test_overdue_tasks_are_open_tasks_from_the_last_week() -> None:
@@ -245,7 +245,7 @@ def test_overdue_tasks_are_open_tasks_from_the_last_week() -> None:
         _task("done", day=date(2026, 11, 25), status=TaskStatus.SKIP),
     ]
 
-    assert [task.id for task in tasks_overdue(tasks, DAY, Reminders())] == ["week", "yesterday"]
+    assert [task.id for task in tasks_overdue(tasks, DAY, lambda _: Reminders())] == ["week", "yesterday"]
 
 
 def test_sort_tasks_orders_by_day_then_slot_time_then_text() -> None:
@@ -257,7 +257,22 @@ def test_sort_tasks_orders_by_day_then_slot_time_then_text() -> None:
         _task("earlier", day=date(2026, 11, 25)),
     ]
 
-    assert [task.id for task in sort_tasks(tasks, reminders)] == ["earlier", "dose", "a", "b"]
+    assert [task.id for task in sort_tasks(tasks, lambda _: reminders)] == ["earlier", "dose", "a", "b"]
+
+
+def test_sort_tasks_uses_each_days_slot_times() -> None:
+    yesterday = date(2026, 11, 25)
+    tasks = [
+        _task("dose", slot=Slot.DOSE),
+        _task("task"),
+        _task("old dose", day=yesterday, slot=Slot.DOSE),
+        _task("old task", day=yesterday),
+    ]
+
+    def reminders_on(day: date) -> Reminders:
+        return Reminders(dose_time=time(8) if day == yesterday else time(10))
+
+    assert [task.id for task in sort_tasks(tasks, reminders_on)] == ["old dose", "old task", "task", "dose"]
 
 
 def test_actions_round_trip() -> None:

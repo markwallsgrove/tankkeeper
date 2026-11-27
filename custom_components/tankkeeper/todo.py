@@ -74,8 +74,8 @@ class TankkeeperTodo(TodoListEntity):
 
     def _items(self) -> list[TodoItem]:
         today = dt_util.now().date()
-        reminders = self._service.reminders()
-        tasks = sort_tasks((task for task in self._service.tasks() if task.day == today), reminders)
+        reminders = self._service.reminders_on(today)
+        tasks = sort_tasks((task for task in self._service.tasks() if task.day == today), lambda _: reminders)
         return [
             TodoItem(
                 uid=task.id,
