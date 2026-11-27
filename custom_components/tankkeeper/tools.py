@@ -655,17 +655,20 @@ async def get_light(service: TankkeeperService, data: Record, actor: Actor) -> J
 
 async def set_light(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose adding, changing or removing a light, or a change for one day."""
+    light, summary = planned_light(service, data)
+    return await _propose(service, data, actor, tool="set_light", summary=summary, targets=service.light_targets(light))
+
+
+def planned_light(service: TankkeeperService, data: Record) -> tuple[Light, str]:
+    """The light after a set_light action, and the summary of the change. The options flow uses it too."""
     action = _str(data, "action")
     if action == "add":
         light = _new_light(data)
-        summary = light_add_summary(light)
-    else:
-        light_id = _optional_str(data, "light_id")
-        if light_id is None:
-            raise InvalidInputError(f"{action} needs the light_id")
-        current = service.light(light_id)
-        light, summary = _changed_light(current, action, data)
-    return await _propose(service, data, actor, tool="set_light", summary=summary, targets=service.light_targets(light))
+        return light, light_add_summary(light)
+    light_id = _optional_str(data, "light_id")
+    if light_id is None:
+        raise InvalidInputError(f"{action} needs the light_id")
+    return _changed_light(service.light(light_id), action, data)
 
 
 def _new_light(data: Record) -> Light:

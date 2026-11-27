@@ -71,6 +71,16 @@
   "options": {
     "step": {
       "init": {
+        "title": "Options",
+        "menu_options": {
+          "reminders": "Reminders",
+          "add_light": "Add a light",
+          "change_light": "Change a light",
+          "one_day": "Change a light for one day",
+          "remove_light": "Remove a light"
+        }
+      },
+      "reminders": {
         "title": "Reminders",
         "description": "Which devices get reminders, and when. The old settings stay in the history.",
         "data": {
@@ -82,14 +92,90 @@
         "data_description": {
           "notify": "Notify services that get a reminder with Complete and Skip buttons. Use the Home Assistant app on a phone or tablet for the buttons.",
           "task_time": "When tasks are due. Open tasks from the last week are followed up at this time.",
-          "dose_time": "When doses are due.",
+          "dose_time": "When doses are due when no light is set. With a light, doses are due when the light turns on.",
           "resend_time": "When tasks still open today are sent again."
+        }
+      },
+      "add_light": {
+        "title": "Add a light",
+        "description": "Tankkeeper switches the light on its schedule. The change applies straight away.",
+        "data": {
+          "entity_id": "Entity",
+          "model": "Model",
+          "control": "Control",
+          "on": "On",
+          "off": "Off",
+          "brightness_pct": "Brightness",
+          "ramp_minutes": "Ramp",
+          "rgb_color": "Colour"
+        },
+        "data_description": {
+          "entity_id": "The light or switch that powers the tank light.",
+          "model": "The light's make and model.",
+          "control": "On/off works with a switch. Dimmable and colour need a light entity.",
+          "on": "When the light turns on each day.",
+          "off": "When the light turns off, on the same day.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
+          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+        }
+      },
+      "change_light": {
+        "title": "Change a light",
+        "description": "Pick the light to change.",
+        "data": {
+          "light_id": "Light"
+        }
+      },
+      "edit_light": {
+        "title": "Change a light",
+        "description": "The change applies straight away. The old settings stay in the history.",
+        "data": {
+          "entity_id": "Entity",
+          "model": "Model",
+          "control": "Control",
+          "on": "On",
+          "off": "Off",
+          "brightness_pct": "Brightness",
+          "ramp_minutes": "Ramp",
+          "rgb_color": "Colour"
+        },
+        "data_description": {
+          "entity_id": "The light or switch that powers the tank light.",
+          "model": "The light's make and model.",
+          "control": "On/off works with a switch. Dimmable and colour need a light entity.",
+          "on": "When the light turns on each day.",
+          "off": "When the light turns off, on the same day.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
+          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+        }
+      },
+      "one_day": {
+        "title": "Change a light for one day",
+        "description": "The light goes back to its schedule the next day. Leave the brightness empty to keep it.",
+        "data": {
+          "light_id": "Light",
+          "date": "Date",
+          "on": "On",
+          "off": "Off",
+          "brightness_pct": "Brightness"
+        }
+      },
+      "remove_light": {
+        "title": "Remove a light",
+        "description": "Tankkeeper stops switching the light. Its history stays.",
+        "data": {
+          "light_id": "Light"
         }
       }
     },
     "abort": {
       "not_loaded": "[%key:component::tankkeeper::config::abort::not_loaded%]",
       "nothing_changed": "[%key:component::tankkeeper::config::abort::nothing_changed%]"
+    },
+    "error": {
+      "invalid_light": "{error}"
     }
   },
   "exceptions": {
@@ -104,6 +190,15 @@
     "light_problem": {
       "title": "The light {model} is not following its schedule",
       "description": "Tankkeeper could not switch {entity_id}, or the entity is unavailable. Check that the light or plug has power and is connected to Home Assistant. The problem clears by itself when the light is back in the state its schedule wants."
+    }
+  },
+  "selector": {
+    "control": {
+      "options": {
+        "on_off": "On/off",
+        "dimmable": "Dimmable",
+        "colour": "Colour"
+      }
     }
   }
 }
