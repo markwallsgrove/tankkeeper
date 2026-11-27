@@ -94,6 +94,7 @@ Every tool name starts with `tankkeeper__`.
 | `check_now` | Take a photo now and have Claude look at it. Fails with `lights_off` when every light is off. Listed only when a camera is set. |
 | `get_photo` | Take a fresh photo for the chat and get what Claude saw in it. It never sends an alert. Listed only when a camera is set. |
 | `list_photos` | The photo checks kept, newest first, with what Claude saw. Listed only when a camera is set. |
+| `get_photo_check` | One photo check by its id, with a fresh `photo_url`. Listed only when a camera is set. |
 | `dismiss_finding` | Close an issue the camera found as not a problem. Listed only when a camera is set. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
 
@@ -102,7 +103,7 @@ Every tool name starts with `tankkeeper__`.
 The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phone width and uses your Home Assistant theme.
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle chart, a chart for each water parameter, the next 7 days, the tank, the tap water, the lights, the rule limits and the changes waiting for you.
-- **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Without a conversation agent in the Claude settings, the tab says where to choose one.
+- **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Replies can show photos and charts; see [Photos and charts in chat](#photos-and-charts-in-chat). Without a conversation agent in the Claude settings, the tab says where to choose one.
 - **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
 - **Contents** and **Products**: list them, with their history.
 - **Claude**: the Claude settings, with their history, and the latest reviews.
@@ -112,6 +113,19 @@ The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phon
 - Each record has its latest changes with Undo, settings too.
 - On the charts, hollow points are tap tests. Dashed lines are the Watch and Act limits, the tap water values you gave and the target temperature.
 - **Discuss**, on a waiting change, a camera issue or a notification, opens a new chat with a first message about it. The message is not sent until you send it, so you can change it first. A link only names the item, such as `/tankkeeper?proposal=<id>`; the panel reads its text from the records.
+
+#### Photos and charts in chat
+
+Claude puts a photo or chart in a panel chat reply as a markdown image with a `tankkeeper:` address:
+
+- `![The tank](tankkeeper:photo/<check id>)`: a photo check's photo. The photo tools return this string as `embed`.
+- `![Nitrate, 30 days](tankkeeper:chart/<chart>?days=<n>)`: a chart, where `<chart>` is `ammonia`, `nitrite`, `nitrate`, `phosphate`, `ph`, `kh`, `gh`, `temperature_c`, `cycle` or `light`. `days` is 1 to 365 (1 to 30 for `light`) and 30 when left out; other numbers are moved into that range.
+
+- The panel loads a photo with your own sign-in, through a link signed for you with `get_photo_check`, and draws a chart from the same data as the Overview. Click a photo to open it larger.
+- A reply shows at most 5 photos and charts; the rest show as text.
+- Every other image shows as text, with a web address as a link: the panel never loads an image from another site.
+- The Chat tab and the agent's messages in **Conversations** show them. Phone notifications don't change.
+- Only panel chats are told about charts. MCP and Assist clients get the `embed` string from the photo tools and can ignore it.
 
 ### Assist agent
 

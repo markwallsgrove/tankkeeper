@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import { NO_AGENT, NO_TANK_AGENT } from "../src/views/chat";
 import type { TkChat } from "../src/views/chat";
+import type { TkEmbed } from "../src/tk-embed";
 import type { ChatStart } from "../src/base";
 import type { Message, Proposal } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
@@ -231,6 +232,28 @@ describe("tk-chat", () => {
     expect(text(element)).toContain("<script>alert(1)</script>");
     expect(text(element)).toContain('<img src=x onerror="alert(1)">');
     expect(text(element)).toContain("<b>bold</b>");
+  });
+
+  it("shows photos and charts in replies and saved replies, but not in the owner's messages", async () => {
+    const photo = "![The tank](tankkeeper:photo/01JD0000000000000000000000)";
+    const conn = connection()
+      .on("conversation/process", reply(`Nitrate:\n![Nitrate](tankkeeper:chart/nitrate?days=7)`))
+      .on("get_conversation", {
+        id: "panel_old",
+        messages: [{ role: "assistant", text: photo }],
+        changes: [],
+      });
+    const element = await chat(conn, { kind: "resume", id: "panel_old" });
+
+    await say(element, photo);
+
+    const embeds = findAll(element, ".message.assistant tk-embed") as TkEmbed[];
+    expect(embeds.map((embed) => embed.address)).toEqual([
+      "tankkeeper:photo/01JD0000000000000000000000",
+      "tankkeeper:chart/nitrate?days=7",
+    ]);
+    expect(findAll(element, ".message.user tk-embed")).toEqual([]);
+    expect(text(find(element, ".message.user"))).toBe(photo);
   });
 
   it("shows an error answer and a failed request as errors", async () => {

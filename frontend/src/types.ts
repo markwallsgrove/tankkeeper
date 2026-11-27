@@ -257,6 +257,7 @@ export interface PhotoCheck {
   state: "open" | "dismissed" | "accepted" | "rejected" | null;
   proposal_ids: string[];
   photo_url: string | null;
+  embed: string | null;
 }
 
 export interface CameraInfo {

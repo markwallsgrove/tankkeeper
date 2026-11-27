@@ -20,6 +20,7 @@ const issue: PhotoCheck = {
   state: "open",
   proposal_ids: ["p1"],
   photo_url: "/api/tankkeeper/photos/c2?authSig=x",
+  embed: "![The tank](tankkeeper:photo/c2)",
 };
 
 const quiet: PhotoCheck = {
@@ -35,6 +36,7 @@ const quiet: PhotoCheck = {
   state: null,
   proposal_ids: [],
   photo_url: null,
+  embed: null,
 };
 
 const info: CameraInfo = {

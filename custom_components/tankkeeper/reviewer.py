@@ -64,7 +64,7 @@ EMPTY_NOTE = "Claude's answer had no comment."
 TIMEOUT_NOTE = "Claude took too long to comment."
 TOO_MANY_CALLS = "A review may call at most {limit} tools. Write the comment now."
 # Confirm codes, and signed photo links, which would open a photo for anyone who has them.
-HIDDEN_KEYS = CODE_KEYS | {"photo_url"}
+HIDDEN_KEYS = CODE_KEYS | {"photo_url", "embed"}
 
 
 @dataclass

@@ -3,6 +3,7 @@ import { TankkeeperApi } from "../src/api";
 import { CHAT } from "../src/base";
 import "../src/views/conversations";
 import type { TkConversations } from "../src/views/conversations";
+import type { TkEmbed } from "../src/tk-embed";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const summary = {
@@ -86,6 +87,30 @@ describe("tk-conversations", () => {
     find(element, "button.back").click();
     await settle(element);
     expect(findAll(element, "button.undo")).toEqual([]);
+  });
+
+  it("shows photos and charts in the agent's messages only, and markdown in them", async () => {
+    const chart = "![Nitrate](tankkeeper:chart/nitrate?days=7)";
+    const conn = connection().on("get_conversation", {
+      ...summary,
+      messages: [
+        { role: "user", text: chart },
+        { role: "tool", text: `get_photo {} → {"embed": "${chart}"}` },
+        { role: "assistant", text: `**Nitrate** is steady:\n${chart}` },
+      ],
+      changes: [],
+    });
+    const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
+    await settle(element);
+
+    find(element, "li[data-id=c1] button.open").click();
+    await settle(element);
+
+    const embeds = findAll(element, "tk-embed") as TkEmbed[];
+    expect(embeds.map((embed) => embed.address)).toEqual(["tankkeeper:chart/nitrate?days=7"]);
+    expect(find(element, "li.assistant strong").textContent).toBe("Nitrate");
+    expect(text(find(element, "li.user"))).toContain(chart);
+    expect(text(find(element, "li.tool"))).toContain(chart);
   });
 
   it("goes on with a chat from the panel in the chat, and only those", async () => {

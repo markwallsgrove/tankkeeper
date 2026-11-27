@@ -131,8 +131,9 @@ type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObject
 
 NON_EMPTY = p.All(str, p.Length(min=1))
 LIGHT_ONLY = frozenset({"get_light"})
-CAMERA_ONLY = frozenset({"get_photo", "check_now", "list_photos", "dismiss_finding"})
+CAMERA_ONLY = frozenset({"get_photo", "check_now", "list_photos", "get_photo_check", "dismiss_finding"})
 PHOTO_LINK_MINUTES = 10
+EMBED_NOTE = "embed shows the photo in TankKeeper's panel chat; other clients can ignore it."
 LIGHT_HISTORY = 20
 LIGHT_ACTIONS = ["add", "update", "remove", "one_day", "cancel_one_day"]
 PLAN_DAYS = 7
@@ -890,17 +891,30 @@ async def list_photos(service: TankkeeperService, data: Record, actor: Actor) ->
     return {"photos": [photo_json(service, check) for check in checks]}
 
 
+async def get_photo_check(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """One photo check, by its id."""
+    return photo_json(service, service.photo_check(_str(data, "check_id")))
+
+
 async def dismiss_finding(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Close an issue as not a problem, so Claude does not raise it again."""
     return photo_json(service, await service.async_dismiss(_str(data, "check_id"), actor.user_id))
 
 
 def photo_json(service: TankkeeperService, check: PhotoCheck) -> JsonObjectType:
-    """A photo check with a link to its photo that works without signing in for PHOTO_LINK_MINUTES, or None."""
-    photo_url = None
-    if service.photo_path(check) is not None:
-        photo_url = async_sign_path(service.hass, f"{PHOTO_PATH}/{check.id}", timedelta(minutes=PHOTO_LINK_MINUTES))
-    return {**check.to_json(), "photo_url": photo_url}
+    """A photo check with its photo, or None for both when it has none.
+
+    photo_url works without signing in for PHOTO_LINK_MINUTES. embed shows the photo in TankKeeper's panel chat.
+    """
+    if service.photo_path(check) is None:
+        return {**check.to_json(), "photo_url": None, "embed": None}
+    photo_url = async_sign_path(service.hass, f"{PHOTO_PATH}/{check.id}", timedelta(minutes=PHOTO_LINK_MINUTES))
+    return {**check.to_json(), "photo_url": photo_url, "embed": photo_embed(check.id)}
+
+
+def photo_embed(check_id: str) -> str:
+    """The text that shows a photo in TankKeeper's panel chat."""
+    return f"![The tank](tankkeeper:photo/{check_id})"
 
 
 async def list_decisions(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -2034,7 +2048,8 @@ SPECS: tuple[Spec, ...] = (
         annotations=RECORD,
         handler=check_now,
         description="Take a photo now and ask Claude to look at it. The check is stored with what Claude saw and "
-        "whether it is an issue. Counts toward the daily cap. Fails with lights_off when every light is off.",
+        f"whether it is an issue. {EMBED_NOTE} Counts toward the daily cap. Fails with lights_off when every light "
+        "is off.",
         schema={**CONVERSATION},
     ),
     Spec(
@@ -2043,7 +2058,8 @@ SPECS: tuple[Spec, ...] = (
         annotations=RECORD,
         handler=get_photo,
         description="Take a fresh photo when the owner asks how the tank looks, and get what Claude saw in it as "
-        "text, with photo_url to show the photo. MCP can't return the image itself. Counts toward the daily cap.",
+        f"text, with photo_url to show the photo. {EMBED_NOTE} MCP can't return the image itself. Counts toward the "
+        "daily cap.",
         schema={**CONVERSATION},
     ),
     Spec(
@@ -2051,9 +2067,18 @@ SPECS: tuple[Spec, ...] = (
         title="List photo checks",
         annotations=READ,
         handler=list_photos,
-        description="The photo checks kept, newest first, with what Claude saw. photo_url is null once the photo is "
-        "older than the camera keeps photos.",
+        description="The photo checks kept, newest first, with what Claude saw. photo_url and embed are null once "
+        f"the photo is older than the camera keeps photos. {EMBED_NOTE}",
         schema={**LIMIT},
+    ),
+    Spec(
+        name="get_photo_check",
+        title="Get a photo check",
+        annotations=READ,
+        handler=get_photo_check,
+        description="One photo check by its id, with what Claude saw, photo_url and embed, which are null once the "
+        f"photo is older than the camera keeps photos. {EMBED_NOTE}",
+        schema={p.Required("check_id"): NON_EMPTY},
     ),
     Spec(
         name="dismiss_finding",

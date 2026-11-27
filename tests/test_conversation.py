@@ -19,6 +19,7 @@ from custom_components.tankkeeper.claude import ASSIST_CONVERSATION
 from custom_components.tankkeeper.conversation import (
     EARLIER_MESSAGES,
     EARLIER_PROMPT,
+    EMBED_PROMPT,
     FAILED,
     MAX_TEXT,
     NO_AGENT,
@@ -383,3 +384,17 @@ async def test_a_live_conversation_gets_no_earlier_messages(
     await _say(hass, agent_id, "Again", first.conversation_id)
 
     assert all(EARLIER_PROMPT not in prompt for prompt in claude.prompts)
+
+
+async def test_a_panel_chat_is_told_how_to_show_photos_and_charts(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
+) -> None:
+    await _choose(call, CLAUDE)
+
+    await _say(hass, agent_id, "How does it look?", "panel_0123456789abcdef0123456789abcdef")
+    await _say(hass, agent_id, "How does it look?")
+
+    assert EMBED_PROMPT in claude.prompts[0]
+    assert EMBED_PROMPT not in claude.prompts[1]
+    for embed in ("tankkeeper:photo/", "tankkeeper:chart/nitrate?days=30", "cycle", "light"):
+        assert embed in EMBED_PROMPT

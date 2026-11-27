@@ -77,7 +77,7 @@ Saved. TankKeeper is live.
 
 **Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo. Chats started in the panel can be continued.
 
-**Use the panel.** The TankKeeper panel in the sidebar has a Chat tab to talk to Claude, and shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: the cog in the panel's header opens **Configure**, where they change.
+**Use the panel.** The TankKeeper panel in the sidebar has a Chat tab to talk to Claude, whose replies can show tank photos and charts, and shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: the cog in the panel's header opens **Configure**, where they change.
 
 **Optional extras:**
 

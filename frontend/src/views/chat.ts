@@ -275,7 +275,7 @@ export class TkChat extends TkView {
     return html`<div class="message ${message.role}">
       ${
         message.role === "assistant"
-          ? markdown(message.text)
+          ? markdown(message.text, this.api)
           : html`<div class="pre">${message.text}</div>`
       }
     </div>`;

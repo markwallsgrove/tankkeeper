@@ -94,6 +94,19 @@ async def test_a_link_from_the_panel_opens_without_signing_in(
     assert await response.read() == PHOTO
 
 
+async def test_a_photo_the_panel_looks_up_by_id_opens_without_signing_in(
+    hass_ws_client: WebSocketGenerator, hass_client_no_auth: ClientSessionGenerator, check_id: str
+) -> None:
+    panel = Panel(await hass_ws_client())
+    found = await panel.ok("get_photo_check", check_id=check_id)
+    anyone = await hass_client_no_auth()
+
+    response = await anyone.get(str_of(found["photo_url"]))
+
+    assert response.status == 200
+    assert await response.read() == PHOTO
+
+
 async def test_a_link_signed_with_no_owner_does_not_open(
     hass_client_no_auth: ClientSessionGenerator, call: Caller, check_id: str
 ) -> None:
