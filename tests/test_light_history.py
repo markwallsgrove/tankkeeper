@@ -15,11 +15,17 @@ from pytest_homeassistant_custom_component.components.recorder.common import (
     async_wait_recording_done,
 )
 
-from .common import PLUG, Caller, Devices, apply, dict_of, list_of
+from .common import PLUG, PLUG_HELPERS, Caller, Devices, apply, dict_of, list_of
 
 pytestmark = [pytest.mark.freeze_time("2026-11-25T20:00:00+00:00")]
 
-LED: dict[str, JsonValueType] = {"entity_id": PLUG, "model": "LED 10120", "on": "07:00", "off": "22:00"}
+LED: dict[str, JsonValueType] = {
+    "entity_id": PLUG,
+    "model": "LED 10120",
+    "on": "07:00",
+    "off": "22:00",
+    **PLUG_HELPERS,
+}
 
 
 @pytest.fixture(autouse=True)
@@ -50,6 +56,7 @@ async def _periods(call: Caller, days: int = 2) -> list[JsonValueType]:
     return list_of(dict_of(light)["on_periods"])
 
 
+@pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")
 async def test_a_light_added_while_on_shows_its_recorded_on_periods_from_the_day_it_was_added(
     recorder_mock: Recorder,
     hass: HomeAssistant,
@@ -74,7 +81,7 @@ async def test_a_light_added_while_on_shows_its_recorded_on_periods_from_the_day
     await _at(hass, freezer, "2026-11-26T18:00:00+00:00")
 
     assert await _periods(call) == [
-        ["2026-11-26T00:00:00+00:00", "2026-11-26T15:00:00+00:00"],
+        ["2026-11-26T08:00:00+00:00", "2026-11-26T15:00:00+00:00"],
         ["2026-11-26T16:00:00+00:00", "2026-11-26T18:00:00+00:00"],
     ]
 
@@ -123,6 +130,7 @@ async def test_a_light_the_recorder_leaves_out_uses_the_on_off_log(
     assert await _periods(call) == [["2026-11-26T07:00:00+00:00", "2026-11-26T09:00:00+00:00"]]
 
 
+@pytest.mark.freeze_time("2026-11-23T05:00:00+00:00")
 async def test_days_before_the_recorder_kept_history_come_from_the_on_off_log(
     recorder_mock: Recorder,
     hass: HomeAssistant,
@@ -134,6 +142,7 @@ async def test_days_before_the_recorder_kept_history_come_from_the_on_off_log(
     await _at(hass, freezer, "2026-11-23T06:00:00+00:00")
     plugs.add(PLUG)
     await apply(call, await call.ok("set_light", action="add", reason="The tank light", **LED))
+    await hass.async_block_till_done(wait_background_tasks=True)
     for moment in ("23T07", "23T22", "24T07", "24T22", "25T07", "25T22", "26T07"):
         await _at(hass, freezer, f"2026-11-{moment}:00:00+00:00")
         await async_wait_recording_done(hass)

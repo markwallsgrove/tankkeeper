@@ -6,7 +6,9 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from custom_components.tankkeeper.lights import (
+    AutomationProblem,
     Control,
+    Helpers,
     InvalidLightError,
     Light,
     LightEvent,
@@ -17,6 +19,7 @@ from custom_components.tankkeeper.lights import (
     dose_time,
     history_periods,
     next_change,
+    next_helper_change,
     on_periods,
     prune_log,
     state_periods,
@@ -64,6 +67,7 @@ def test_a_light_round_trips_through_its_record() -> None:
         "brightness_pct": 80,
         "ramp_minutes": 30,
         "rgb_color": [255, 200, 150],
+        "helpers": None,
         "one_day": {"date": "2026-11-26", "on": "11:00", "off": "22:00", "brightness_pct": 60},
         "added": "2026-11-26",
         "removed": "2026-12-01",
@@ -260,11 +264,23 @@ def test_a_status_is_a_problem_while_unavailable_or_a_change_was_missed() -> Non
     assert not LightStatus().problem
     assert LightStatus(unavailable_since=_at(11)).problem
     assert LightStatus(missed=missed).problem
+    assert LightStatus(needs_helpers=True).problem
+    assert LightStatus(automation=AutomationProblem.OFF).problem
+    assert LightStatus(helper_error="no helper input_datetime.on").problem
     assert LightStatus(unavailable_since=_at(11), missed=missed).to_json() == {
+        "needs_helpers": False,
+        "automation": None,
+        "helper_error": None,
         "unavailable_since": _at(11).isoformat(),
         "missed": missed.to_json(),
     }
-    assert LightStatus().to_json() == {"unavailable_since": None, "missed": None}
+    assert LightStatus(automation=AutomationProblem.MISSING, helper_error="x").to_json() == {
+        "needs_helpers": False,
+        "automation": "missing",
+        "helper_error": "x",
+        "unavailable_since": None,
+        "missed": None,
+    }
 
 
 def test_events_round_trip() -> None:
@@ -385,3 +401,44 @@ def test_history_periods_use_the_fallback_before_the_first_recorded_change() -> 
         (_at(10), _at(23)),
     ]
     assert history_periods([(_at(4), False)], fallback, _at(0), _at(23)) == [(_at(1), _at(3))]
+
+
+def test_helpers_round_trip_through_the_light_record() -> None:
+    helpers = Helpers(
+        automation="automation.tank", on="input_datetime.on", off="input_datetime.off", brightness="input_number.b"
+    )
+    light = _light(entity_id="light.tank", control=Control.DIMMABLE, helpers=helpers)
+
+    record = light.to_record()
+
+    assert record["helpers"] == {
+        "automation": "automation.tank",
+        "on": "input_datetime.on",
+        "off": "input_datetime.off",
+        "brightness": "input_number.b",
+        "ramp": None,
+    }
+    assert Light.from_record("l1", record) == light
+    assert Light.from_record("l1", {**record, "helpers": None}).helpers is None
+
+
+@pytest.mark.parametrize(
+    ("after", "expected"),
+    [
+        (_at(8), (_at(12), True)),
+        (_at(12), (_at(20), False)),
+        (_at(21), (_at(12, day=DAY + timedelta(days=1)), True)),
+    ],
+)
+def test_the_next_helper_change_is_the_first_helper_time_after(
+    after: datetime, expected: tuple[datetime, bool]
+) -> None:
+    assert next_helper_change(time(12), time(20), after) == expected
+
+
+def test_overnight_helpers_turn_off_the_next_morning() -> None:
+    assert next_helper_change(time(22), time(6), _at(23)) == (_at(6, day=DAY + timedelta(days=1)), False)
+
+
+def test_helpers_at_the_same_time_never_change_the_light() -> None:
+    assert next_helper_change(time(12), time(12), _at(8)) is None

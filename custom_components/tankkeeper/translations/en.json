@@ -110,7 +110,7 @@
       },
       "light": {
         "title": "Light",
-        "description": "Step 5 of 7. TankKeeper can switch the tank light on a schedule.",
+        "description": "Step 5 of 7. TankKeeper can set the helpers an automation runs the tank light from.",
         "menu_options": {
           "add_light": "Add the light",
           "reminders": "Skip: no light"
@@ -118,7 +118,7 @@
       },
       "add_light": {
         "title": "Add the light",
-        "description": "TankKeeper switches the light on its schedule.",
+        "description": "An automation runs the light from helpers. TankKeeper sets the helpers to the schedule.",
         "data": {
           "entity_id": "Entity",
           "model": "Model",
@@ -127,7 +127,11 @@
           "off": "Off",
           "brightness_pct": "Brightness",
           "ramp_minutes": "Ramp",
-          "rgb_color": "Colour"
+          "automation": "Automation",
+          "on_helper": "On time helper",
+          "off_helper": "Off time helper",
+          "brightness_helper": "Brightness helper",
+          "ramp_helper": "Ramp helper"
         },
         "data_description": {
           "entity_id": "The light or switch that powers the tank light.",
@@ -135,9 +139,13 @@
           "control": "On/off works with a switch. Dimmable and colour need a light entity.",
           "on": "When the light turns on each day.",
           "off": "When the light turns off, on the same day.",
-          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty to leave the brightness helper as it is.",
           "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
-          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+          "automation": "The automation that runs the light from the helpers. TankKeeper never switches the light itself.",
+          "on_helper": "A time-only input_datetime the automation turns the light on at. TankKeeper sets it to the on time.",
+          "off_helper": "A time-only input_datetime the automation turns the light off at. TankKeeper sets it to the off time.",
+          "brightness_helper": "An input_number the automation reads the brightness from. Needed for a brightness.",
+          "ramp_helper": "An input_number the automation reads the ramp in minutes from. Needed for a ramp."
         }
       },
       "reminders": {
@@ -515,7 +523,7 @@
       },
       "add_light": {
         "title": "Add a light",
-        "description": "TankKeeper switches the light on its schedule. The change applies straight away.",
+        "description": "An automation runs the light from helpers. TankKeeper sets the helpers to the schedule. The change applies straight away.",
         "data": {
           "entity_id": "Entity",
           "model": "Model",
@@ -524,7 +532,11 @@
           "off": "Off",
           "brightness_pct": "Brightness",
           "ramp_minutes": "Ramp",
-          "rgb_color": "Colour"
+          "automation": "Automation",
+          "on_helper": "On time helper",
+          "off_helper": "Off time helper",
+          "brightness_helper": "Brightness helper",
+          "ramp_helper": "Ramp helper"
         },
         "data_description": {
           "entity_id": "The light or switch that powers the tank light.",
@@ -532,9 +544,13 @@
           "control": "On/off works with a switch. Dimmable and colour need a light entity.",
           "on": "When the light turns on each day.",
           "off": "When the light turns off, on the same day.",
-          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty to leave the brightness helper as it is.",
           "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
-          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+          "automation": "The automation that runs the light from the helpers. TankKeeper never switches the light itself.",
+          "on_helper": "A time-only input_datetime the automation turns the light on at. TankKeeper sets it to the on time.",
+          "off_helper": "A time-only input_datetime the automation turns the light off at. TankKeeper sets it to the off time.",
+          "brightness_helper": "An input_number the automation reads the brightness from. Needed for a brightness.",
+          "ramp_helper": "An input_number the automation reads the ramp in minutes from. Needed for a ramp."
         }
       },
       "change_light": {
@@ -555,7 +571,11 @@
           "off": "Off",
           "brightness_pct": "Brightness",
           "ramp_minutes": "Ramp",
-          "rgb_color": "Colour"
+          "automation": "Automation",
+          "on_helper": "On time helper",
+          "off_helper": "Off time helper",
+          "brightness_helper": "Brightness helper",
+          "ramp_helper": "Ramp helper"
         },
         "data_description": {
           "entity_id": "The light or switch that powers the tank light.",
@@ -563,9 +583,13 @@
           "control": "On/off works with a switch. Dimmable and colour need a light entity.",
           "on": "When the light turns on each day.",
           "off": "When the light turns off, on the same day.",
-          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty to leave the brightness helper as it is.",
           "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
-          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+          "automation": "The automation that runs the light from the helpers. TankKeeper never switches the light itself.",
+          "on_helper": "A time-only input_datetime the automation turns the light on at. TankKeeper sets it to the on time.",
+          "off_helper": "A time-only input_datetime the automation turns the light off at. TankKeeper sets it to the off time.",
+          "brightness_helper": "An input_number the automation reads the brightness from. Needed for a brightness.",
+          "ramp_helper": "An input_number the automation reads the ramp in minutes from. Needed for a ramp."
         }
       },
       "one_day": {
@@ -611,8 +635,8 @@
   },
   "issues": {
     "light_problem": {
-      "title": "The light {model} is not following its schedule",
-      "description": "TankKeeper could not switch {entity_id}, or the entity is unavailable. Check that the light or plug has power and is connected to Home Assistant. The problem clears by itself when the light is back in the state its schedule wants."
+      "title": "The light {model} may not follow its schedule",
+      "description": "{problems} An automation runs the light from its helpers; TankKeeper only sets the helpers. The problem clears by itself when it is fixed."
     }
   },
   "selector": {

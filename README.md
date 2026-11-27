@@ -81,7 +81,7 @@ Saved. TankKeeper is live.
 
 **Optional extras:**
 
-- 💡 **Light:** tell it which lights the tank has. It runs the schedule, keeps a 30-day on/off history, and opens a repair issue when a light does not follow. Doses are due when the light turns on. Claude can suggest a better schedule; you decide.
+- 💡 **Light:** your own automation runs the light from helpers; TankKeeper sets the helpers to the schedule, keeps a 30-day on/off history, and opens a repair issue when the light, its automation or a helper has a problem. Doses are due when the light turns on. Claude can suggest a better schedule; you decide.
 - 📷 **Camera:** a cheap IP camera, such as a Tapo C100, on the side glass. Claude looks at a photo each day and flags things like algae, cloudy water or a plant melting, with a suggested fix. Photos stay in Home Assistant and go to Anthropic only when Claude looks at them. Each look uses paid Anthropic API calls and counts toward the same daily cap as review comments.
 
 ## 🎁 Why it's worth it
@@ -130,7 +130,65 @@ Then use it as you go:
 
 Claude saves doses, tests, notes and new contents straight away. A change to the tank, the water values or the products, like a new product or a new dose, it reads back first and saves only when you say yes. Any change made through Claude can be undone.
 
-To get reminders with Complete and Skip on your phone, open the integration, choose **Configure > Reminders** and pick your devices. To let TankKeeper run the tank light, tell Claude about it, or choose **Configure > Add a light**.
+To get reminders with Complete and Skip on your phone, open the integration, choose **Configure > Reminders** and pick your devices.
+
+### 💡 The tank light
+
+TankKeeper does not switch the light. A normal Home Assistant automation does, and it reads its times from helpers. TankKeeper only changes the helper values, so the light keeps working without TankKeeper and you can see and change the automation as usual. Copy this package into your configuration (for example `packages/tank_lamp.yaml`, with [packages](https://www.home-assistant.io/docs/configuration/packages/) turned on), change `light.tank_lamp` to your light and restart Home Assistant:
+
+<!-- example-package -->
+```yaml
+input_datetime:
+  tank_lamp_on:
+    name: Tank lamp on
+    has_time: true
+  tank_lamp_off:
+    name: Tank lamp off
+    has_time: true
+
+input_number:
+  tank_lamp_brightness:
+    name: Tank lamp brightness
+    min: 1
+    max: 100
+    unit_of_measurement: "%"
+  tank_lamp_ramp:
+    name: Tank lamp ramp
+    min: 0
+    max: 120
+    unit_of_measurement: min
+
+automation:
+  - id: tank_lamp
+    alias: Tank lamp
+    mode: restart
+    triggers:
+      - trigger: time
+        at: input_datetime.tank_lamp_on
+        id: "on"
+      - trigger: time
+        at: input_datetime.tank_lamp_off
+        id: "off"
+    actions:
+      - if:
+          - condition: trigger
+            id: "on"
+        then:
+          - action: light.turn_on
+            target:
+              entity_id: light.tank_lamp
+            data:
+              brightness_pct: "{{ states('input_number.tank_lamp_brightness') | int }}"
+              transition: "{{ states('input_number.tank_lamp_ramp') | int * 60 }}"
+        else:
+          - action: light.turn_off
+            target:
+              entity_id: light.tank_lamp
+            data:
+              transition: "{{ states('input_number.tank_lamp_ramp') | int * 60 }}"
+```
+
+For a plug, leave out the two `input_number` helpers and the `data`, and use `switch.turn_on` and `switch.turn_off`. Do not give the helpers an `initial` value: Home Assistant would put it back at each start. Then tell Claude about the light and its automation and helpers, or choose **Configure > Add a light**. TankKeeper sets the helpers to the schedule you agree, and back after a one-day change. It shows a problem when the automation is off or missing, a helper is wrong, or the light did not follow the helper times.
 
 To chat in Assist, set up the [Anthropic](https://www.home-assistant.io/integrations/anthropic/) integration with your API key and turn on the **TankKeeper** API in its conversation agent. Then choose that agent with **Configure > Claude**, and choose the tank's **Assist agent** in **Settings > Voice assistants**. TankKeeper records each Assist conversation; the key stays in the Anthropic integration. For Claude's comments on [reviews](docs/integration.md#reviews), choose its AI task entity and turn comments on in the same step. See [Assist agent](docs/integration.md#assist-agent) and [cost](docs/integration.md#cost).
 

@@ -123,6 +123,7 @@ class LightCheck:
 
     name: str
     entity_id: str
+    automation: str | None
     status: LightStatus
 
 
@@ -386,24 +387,26 @@ def _plan_ends(facts: Facts, settings: RuleSettings) -> Iterable[RuleResult]:
 def _light(facts: Facts, settings: RuleSettings) -> Iterable[RuleResult]:
     if not facts.lights:
         return
-    reasons: list[str] = []
-    for light in facts.lights:
-        missed = light.status.missed
-        if missed is not None:
-            turn = "on" if missed.wanted else "off"
-            reasons.append(f"{light.name} did not turn {turn} at {missed.time.astimezone(facts.tz):%H:%M}.")
-        if light.status.unavailable_since is not None:
-            reasons.append(f"{light.entity_id} for {light.name} is unavailable.")
+    reasons = [
+        message
+        for light in facts.lights
+        for message in light.status.messages(light.name, light.entity_id, light.automation, facts.tz)
+    ]
     unavailable = any(light.status.unavailable_since is not None for light in facts.lights)
-    level = _level(unavailable, bool(reasons))
+    broken = any(
+        status.needs_helpers or status.automation is not None or status.helper_error is not None
+        for status in (light.status for light in facts.lights)
+    )
+    level = _level(unavailable or broken, bool(reasons))
     if level is Level.ON_COURSE:
         yield _on_course(Rule.LIGHT, "The lights follow their schedule.")
         return
-    action = (
-        "Check the plug has power and is connected to Home Assistant."
-        if level is Level.ACT
-        else "Check the light and its plug."
-    )
+    if unavailable:
+        action = "Check the plug has power and is connected to Home Assistant."
+    elif broken:
+        action = "Check the light's automation and helpers in Home Assistant."
+    else:
+        action = "Check the light, its plug and its automation."
     yield RuleResult(rule=Rule.LIGHT, level=level, reason=" ".join(reasons), action=action)
 
 

@@ -1,8 +1,11 @@
-"""Lights: schedules, one-day changes, the next change, the dose time and the on/off log. No Home Assistant imports."""
+"""Lights: schedules, helpers, one-day changes, the next change, the dose time and the on/off log.
+
+No Home Assistant imports.
+"""
 
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 
 from .domain import JsonValue, Record, TankkeeperError
@@ -84,9 +87,50 @@ class OneDayChange:
         )
 
 
+class AutomationProblem(StrEnum):
+    """What is wrong with the automation that runs a light."""
+
+    MISSING = "missing"
+    OFF = "off"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class Helpers:
+    """The automation that runs a light, and the helpers it reads its schedule from."""
+
+    automation: str
+    on: str
+    off: str
+    brightness: str | None = None
+    ramp: str | None = None
+
+    def to_json(self) -> Record:
+        """Serialise for storage."""
+        return {
+            "automation": self.automation,
+            "on": self.on,
+            "off": self.off,
+            "brightness": self.brightness,
+            "ramp": self.ramp,
+        }
+
+    @classmethod
+    def from_json(cls, data: Record) -> Helpers:
+        """Read from storage."""
+        brightness = data["brightness"]
+        ramp = data["ramp"]
+        return cls(
+            automation=_str(data["automation"]),
+            on=_str(data["on"]),
+            off=_str(data["off"]),
+            brightness=None if brightness is None else _str(brightness),
+            ramp=None if ramp is None else _str(ramp),
+        )
+
+
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Light:
-    """A light the integration switches on a schedule."""
+    """A light an automation runs from helpers. TankKeeper sets the helpers to the schedule."""
 
     id: str
     entity_id: str
@@ -94,6 +138,7 @@ class Light:
     control: Control
     schedule: Schedule
     added: date
+    helpers: Helpers | None = None
     one_day: OneDayChange | None = None
     removed: date | None = None
 
@@ -122,6 +167,30 @@ class Light:
         _check_schedule(self.control, self.schedule)
         if self.one_day is not None:
             _check_schedule(self.control, self.schedule_on(self.one_day.day))
+        if self.helpers is not None:
+            self._check_helpers(self.helpers)
+
+    def _check_helpers(self, helpers: Helpers) -> None:
+        for field, entity_id, domain in (
+            ("automation", helpers.automation, "automation"),
+            ("on_helper", helpers.on, "input_datetime"),
+            ("off_helper", helpers.off, "input_datetime"),
+            ("brightness_helper", helpers.brightness, "input_number"),
+            ("ramp_helper", helpers.ramp, "input_number"),
+        ):
+            if entity_id is not None and entity_id.partition(".")[0] != domain:
+                raise InvalidLightError(
+                    field, f"The {field.replace('_', ' ')} must be an {domain} entity, not {entity_id}"
+                )
+        if helpers.on == helpers.off:
+            raise InvalidLightError("off_helper", "The on and off times need two helpers")
+        if helpers.brightness is not None and helpers.brightness == helpers.ramp:
+            raise InvalidLightError("ramp_helper", "The brightness and the ramp need two helpers")
+        days = [self.schedule] if self.one_day is None else [self.schedule, self.schedule_on(self.one_day.day)]
+        if helpers.brightness is None and any(day.brightness_pct is not None for day in days):
+            raise InvalidLightError("brightness_helper", "A brightness needs a brightness helper")
+        if helpers.ramp is None and self.schedule.ramp_minutes:
+            raise InvalidLightError("ramp_helper", "A ramp needs a ramp helper")
 
     def to_record(self) -> Record:
         """Serialise for storage."""
@@ -136,6 +205,7 @@ class Light:
             "brightness_pct": schedule.brightness_pct,
             "ramp_minutes": schedule.ramp_minutes,
             "rgb_color": rgb,
+            "helpers": None if self.helpers is None else self.helpers.to_json(),
             "one_day": None if self.one_day is None else self.one_day.to_json(),
             "added": self.added.isoformat(),
             "removed": None if self.removed is None else self.removed.isoformat(),
@@ -147,6 +217,7 @@ class Light:
         rgb = record["rgb_color"]
         one_day = record["one_day"]
         removed = record["removed"]
+        helpers = record.get("helpers")
         return cls(
             id=light_id,
             entity_id=_str(record["entity_id"]),
@@ -159,6 +230,7 @@ class Light:
                 ramp_minutes=_int(record["ramp_minutes"]),
                 rgb_color=None if rgb is None else _rgb(rgb),
             ),
+            helpers=None if helpers is None else Helpers.from_json(_record(helpers)),
             one_day=None if one_day is None else OneDayChange.from_json(_record(one_day)),
             added=date.fromisoformat(_str(record["added"])),
             removed=None if removed is None else date.fromisoformat(_str(removed)),
@@ -212,19 +284,50 @@ class LightEvent:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class LightStatus:
-    """Whether a light's entity is unavailable, and the last change the schedule missed."""
+    """What stops a light following its schedule: no helpers, a broken automation or helper, or the light itself."""
 
+    needs_helpers: bool = False
+    automation: AutomationProblem | None = None
+    helper_error: str | None = None
     unavailable_since: datetime | None = None
     missed: LightEvent | None = None
 
     @property
     def problem(self) -> bool:
-        """Whether the light is not following its schedule."""
-        return self.unavailable_since is not None or self.missed is not None
+        """Whether the light may not follow its schedule."""
+        return (
+            self.needs_helpers
+            or self.automation is not None
+            or self.helper_error is not None
+            or self.unavailable_since is not None
+            or self.missed is not None
+        )
+
+    def messages(self, model: str, entity_id: str, automation: str | None, tz: tzinfo) -> list[str]:
+        """Each problem in words, for people."""
+        messages: list[str] = []
+        if self.needs_helpers:
+            messages.append(
+                f"{model} needs helpers: give it an automation and its on and off time helpers, "
+                "then TankKeeper sets them."
+            )
+        if self.automation is not None:
+            messages.append(f"The automation {automation} for {model} is {self.automation.value}.")
+        if self.helper_error is not None:
+            messages.append(f"{model}: {self.helper_error}.")
+        if self.unavailable_since is not None:
+            messages.append(f"{entity_id} for {model} is unavailable.")
+        if self.missed is not None:
+            turn = "on" if self.missed.wanted else "off"
+            messages.append(f"{model} did not turn {turn} at {self.missed.time.astimezone(tz):%H:%M}.")
+        return messages
 
     def to_json(self) -> Record:
         """Serialise for tools and entity attributes."""
         return {
+            "needs_helpers": self.needs_helpers,
+            "automation": None if self.automation is None else self.automation.value,
+            "helper_error": self.helper_error,
             "unavailable_since": None if self.unavailable_since is None else self.unavailable_since.isoformat(),
             "missed": None if self.missed is None else self.missed.to_json(),
         }
@@ -301,6 +404,36 @@ def next_change(lights: Iterable[Light], now: datetime) -> LightChange | None:
         on=tuple(light for when, turn_on, light in changes if when == first and turn_on),
         off=tuple(light for when, turn_on, light in changes if when == first and not turn_on),
     )
+
+
+def next_helper_change(on: time, off: time, after: datetime) -> tuple[datetime, bool] | None:
+    """The first helper time after a moment, in the moment's time zone, and whether it turns the light on.
+
+    Helpers at the same time never change the light.
+    """
+    if on == off:
+        return None
+    changes = [
+        (datetime.combine(after.date() + timedelta(days=offset), moment, after.tzinfo), turn_on)
+        for offset in (0, 1)
+        for moment, turn_on in ((on, True), (off, False))
+    ]
+    return min((change for change in changes if change[0] > after), key=lambda change: change[0])
+
+
+def last_helper_change(on: time, off: time, before: datetime) -> tuple[datetime, bool] | None:
+    """The last helper time at or before a moment, in the moment's time zone, and whether it turned the light on.
+
+    Helpers at the same time never change the light.
+    """
+    if on == off:
+        return None
+    changes = [
+        (datetime.combine(before.date() - timedelta(days=offset), moment, before.tzinfo), turn_on)
+        for offset in (0, 1)
+        for moment, turn_on in ((on, True), (off, False))
+    ]
+    return max((change for change in changes if change[0] <= before), key=lambda change: change[0])
 
 
 def dose_time(lights: Iterable[Light], day: date, default: time) -> time:

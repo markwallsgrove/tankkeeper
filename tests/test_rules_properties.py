@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import hegel
 from hegel import generators as gs
 
-from custom_components.tankkeeper.lights import LightEvent, LightEventKind, LightStatus
+from custom_components.tankkeeper.lights import AutomationProblem, LightEvent, LightEventKind, LightStatus
 from custom_components.tankkeeper.plan import Slot, Task, TaskStatus
 from custom_components.tankkeeper.rules import (
     LEVEL_ORDER,
@@ -63,12 +63,24 @@ def tasks(tc: hegel.TestCase) -> tuple[Task, ...]:
 
 @hegel.composite
 def lights(tc: hegel.TestCase) -> tuple[LightCheck, ...]:
-    """A few lights, each fine, missing a change or unavailable."""
+    """A few lights, each fine, missing a change, unavailable, or with a broken automation or helper."""
     missed = LightEvent(time=NOW, light_id="l1", kind=LightEventKind.MISSED, wanted=True)
-    statuses = [LightStatus(), LightStatus(missed=missed), LightStatus(unavailable_since=NOW)]
+    statuses = [
+        LightStatus(),
+        LightStatus(missed=missed),
+        LightStatus(unavailable_since=NOW),
+        LightStatus(needs_helpers=True),
+        LightStatus(automation=AutomationProblem.OFF),
+        LightStatus(helper_error="could not set input_number.b: Out of range"),
+    ]
     count = tc.draw(gs.integers(min_value=0, max_value=3))
     return tuple(
-        LightCheck(name=f"Light {index}", entity_id=f"switch.l{index}", status=tc.draw(gs.sampled_from(statuses)))
+        LightCheck(
+            name=f"Light {index}",
+            entity_id=f"switch.l{index}",
+            automation=f"automation.l{index}",
+            status=tc.draw(gs.sampled_from(statuses)),
+        )
         for index in range(count)
     )
 

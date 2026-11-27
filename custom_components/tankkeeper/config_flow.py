@@ -18,7 +18,6 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers.selector import (
     BooleanSelector,
-    ColorRGBSelector,
     ConversationAgentSelector,
     DateSelector,
     EntitySelector,
@@ -95,7 +94,11 @@ CONF_ON = "on"
 CONF_OFF = "off"
 CONF_BRIGHTNESS = "brightness_pct"
 CONF_RAMP = "ramp_minutes"
-CONF_RGB = "rgb_color"
+CONF_AUTOMATION = "automation"
+CONF_ON_HELPER = "on_helper"
+CONF_OFF_HELPER = "off_helper"
+CONF_BRIGHTNESS_HELPER = "brightness_helper"
+CONF_RAMP_HELPER = "ramp_helper"
 CONF_DATE = "date"
 CONF_TEMPERATURE = "temperature_c"
 CONF_NOTES = "notes"
@@ -159,7 +162,11 @@ LIGHT_SCHEMA = p.Schema(
         p.Optional(CONF_RAMP): NumberSelector(
             NumberSelectorConfig(min=0, max=1440, step=1, unit_of_measurement="min", mode=NumberSelectorMode.BOX)
         ),
-        p.Optional(CONF_RGB): ColorRGBSelector(),
+        p.Required(CONF_AUTOMATION): EntitySelector(EntitySelectorConfig(domain="automation")),
+        p.Required(CONF_ON_HELPER): EntitySelector(EntitySelectorConfig(domain="input_datetime")),
+        p.Required(CONF_OFF_HELPER): EntitySelector(EntitySelectorConfig(domain="input_datetime")),
+        p.Optional(CONF_BRIGHTNESS_HELPER): EntitySelector(EntitySelectorConfig(domain="input_number")),
+        p.Optional(CONF_RAMP_HELPER): EntitySelector(EntitySelectorConfig(domain="input_number")),
     }
 )
 SCHEMA = p.Schema(
@@ -702,8 +709,16 @@ class TankkeeperOptionsFlow(OptionsFlow):
         }
         if light.schedule.brightness_pct is not None:
             suggested[CONF_BRIGHTNESS] = light.schedule.brightness_pct
-        if light.schedule.rgb_color is not None:
-            suggested[CONF_RGB] = list(light.schedule.rgb_color)
+        if (helpers := light.helpers) is not None:
+            suggested |= _filled(
+                {
+                    CONF_AUTOMATION: helpers.automation,
+                    CONF_ON_HELPER: helpers.on,
+                    CONF_OFF_HELPER: helpers.off,
+                    CONF_BRIGHTNESS_HELPER: helpers.brightness,
+                    CONF_RAMP_HELPER: helpers.ramp,
+                }
+            )
         return self.async_show_form(
             step_id="edit_light", data_schema=self.add_suggested_values_to_schema(LIGHT_SCHEMA, suggested)
         )
@@ -950,7 +965,6 @@ def _optional_int(value: object) -> int | None:
 
 def _light_data(user_input: dict[str, Any]) -> Record:
     """The set_light arguments from the light form. A field left empty clears it."""
-    rgb = user_input.get(CONF_RGB)
     return {
         "entity_id": user_input[CONF_ENTITY_ID],
         "model": user_input[CONF_MODEL],
@@ -959,7 +973,11 @@ def _light_data(user_input: dict[str, Any]) -> Record:
         "off": user_input[CONF_OFF],
         "brightness_pct": _optional_int(user_input.get(CONF_BRIGHTNESS)),
         "ramp_minutes": _optional_int(user_input.get(CONF_RAMP)) or 0,
-        "rgb_color": None if rgb is None else [int(part) for part in rgb],
+        "automation": user_input[CONF_AUTOMATION],
+        "on_helper": user_input[CONF_ON_HELPER],
+        "off_helper": user_input[CONF_OFF_HELPER],
+        "brightness_helper": user_input.get(CONF_BRIGHTNESS_HELPER) or None,
+        "ramp_helper": user_input.get(CONF_RAMP_HELPER) or None,
     }
 
 

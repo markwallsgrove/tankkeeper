@@ -14,10 +14,17 @@ from custom_components.tankkeeper.domain import TANK_ID, WATER_ID, Collection, S
 from custom_components.tankkeeper.plan import REMINDERS_ID
 from custom_components.tankkeeper.service import Actor, TankkeeperService
 
-from .common import Devices
+from .common import PLUG_HELPERS, Devices
 
 TANK = {CONF_TANK_NAME: "Office", CONF_VOLUME: 80, CONF_DOSING_VOLUME: 72}
-LIGHT = {"entity_id": "switch.tank_light", "model": "Chihiros C2", "control": "on_off", "on": "10:00", "off": "18:00"}
+LIGHT = {
+    "entity_id": "switch.tank_light",
+    "model": "Chihiros C2",
+    "control": "on_off",
+    "on": "10:00",
+    "off": "18:00",
+    **PLUG_HELPERS,
+}
 
 
 async def _start(hass: HomeAssistant, tank: Mapping[str, object]) -> ConfigFlowResult:

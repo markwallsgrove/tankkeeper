@@ -9,7 +9,7 @@ from homeassistant.components.http.auth import async_sign_path
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.llm import LLMContext, Tool, ToolAnnotations, ToolInput, ToolResult
 from homeassistant.util import dt as dt_util
-from homeassistant.util.json import JsonObjectType
+from homeassistant.util.json import JsonObjectType, JsonValueType
 from homeassistant.util.ulid import ulid_now
 import probatio as p
 
@@ -40,8 +40,10 @@ from .domain import (
     dosing_within_tank,
     merge_record,
 )
+from .light_control import helper_number, helper_time
 from .lights import (
     Control,
+    Helpers,
     Light,
     LightEvent,
     LightEventKind,
@@ -92,8 +94,9 @@ again with the code only after the owner says yes. The changes made in it stay.
 - The plan is a list of tasks, each on a day in the task slot or the dose slot. When the owner says \
 a task is done or skipped, call tankkeeper__complete_task or tankkeeper__skip_task straight away. Adding, \
 changing and removing tasks, reminder settings and importing a plan are proposals.
-- The integration switches the tank lights on their schedule. Adding, changing and removing a light, \
-and a one-day change, are proposals made with tankkeeper__set_light. No tool switches a light directly.
+- A Home Assistant automation runs each tank light from helpers: on and off time helpers, and maybe brightness \
+and ramp helpers. TankKeeper only sets the helpers to the schedule. Adding, changing and removing a light, and a \
+one-day change, are proposals made with tankkeeper__set_light. No tool switches a light directly.
 - The status is the worst rule result: on course, watch or act. Each rule gives its reason and what to \
 do. Read it with tankkeeper__get_status; tankkeeper__record_test returns it too. Change the limits with \
 tankkeeper__set_rules and whether the tank is cycling with tankkeeper__set_tank.
@@ -143,6 +146,7 @@ PHOTO_LINK_MINUTES = 10
 EMBED_NOTE = "embed shows the photo in TankKeeper's panel chat; other clients can ignore it."
 LIGHT_HISTORY = 20
 LIGHT_ACTIONS = ["add", "update", "remove", "one_day", "cancel_one_day"]
+HELPERS_NEEDED = ("automation", "on_helper", "off_helper")
 PLAN_DAYS = 7
 IMPORT_DAYS_BEFORE = 7
 IMPORT_DAYS_AFTER = 30
@@ -1190,7 +1194,7 @@ def planned_light(service: TankkeeperService, data: Record) -> tuple[Light, str]
 
 def new_light(data: Record) -> Light:
     """A light from set_light add arguments, or InvalidInputError. Setup uses it too."""
-    missing = [key for key in ("entity_id", "model", "on", "off") if key not in data]
+    missing = [key for key in ("entity_id", "model", "on", "off", *HELPERS_NEEDED) if key not in data]
     if missing:
         raise InvalidInputError(f"A new light needs {', '.join(missing)}")
     control = Control(_optional_str(data, "control") or Control.ON_OFF)
@@ -1202,6 +1206,29 @@ def new_light(data: Record) -> Light:
         control=control,
         schedule=_schedule_with(schedule, data),
         added=dt_util.now().date(),
+        helpers=_helpers_with(None, data),
+    )
+
+
+def _helpers_with(current: Helpers | None, data: Record) -> Helpers | None:
+    """The helpers after set_light arguments. A null brightness or ramp helper clears it."""
+    if not any(key in data for key in (*HELPERS_NEEDED, "brightness_helper", "ramp_helper")):
+        return current
+
+    def pick(key: str, old: str | None) -> str | None:
+        return _optional_str(data, key) if key in data else old
+
+    automation = pick("automation", None if current is None else current.automation)
+    on = pick("on_helper", None if current is None else current.on)
+    off = pick("off_helper", None if current is None else current.off)
+    if automation is None or on is None or off is None:
+        raise InvalidInputError("Helpers need the automation, on_helper and off_helper")
+    return Helpers(
+        automation=automation,
+        on=on,
+        off=off,
+        brightness=pick("brightness_helper", None if current is None else current.brightness),
+        ramp=pick("ramp_helper", None if current is None else current.ramp),
     )
 
 
@@ -1226,12 +1253,15 @@ def _changed_light(current: Light, action: str, data: Record) -> tuple[Light, st
         )
         return replace(current, one_day=change), one_day_summary(current, change)
     control = Control(_optional_str(data, "control") or current.control)
+    helpers = _helpers_with(current.helpers, data)
+    schedule = _schedule_with(with_control(current.schedule, control), data)
     light = replace(
         current,
         entity_id=_optional_str(data, "entity_id") or current.entity_id,
         model=_optional_str(data, "model") or current.model,
         control=control,
-        schedule=_schedule_with(with_control(current.schedule, control), data),
+        schedule=schedule if helpers is None else replace(schedule, rgb_color=None),
+        helpers=helpers,
     )
     return light, light_change_summary(light)
 
@@ -1244,15 +1274,7 @@ def _schedule_with(schedule: Schedule, data: Record) -> Schedule:
         off=_time(data, "off", schedule.off),
         brightness_pct=brightness if isinstance(brightness, int) else None,
         ramp_minutes=_int(data, "ramp_minutes") if "ramp_minutes" in data else schedule.ramp_minutes,
-        rgb_color=_rgb(data["rgb_color"]) if "rgb_color" in data else schedule.rgb_color,
     )
-
-
-def _rgb(value: JsonValue) -> tuple[int, int, int] | None:
-    if not isinstance(value, list):
-        return None
-    red, green, blue = (cast(int, part) for part in value)
-    return red, green, blue
 
 
 def _light_json(
@@ -1264,17 +1286,37 @@ def _light_json(
 ) -> JsonObjectType:
     today = dt_util.now().date()
     schedule = light.schedule_on(today)
-    state = service.hass.states.get(light.entity_id)
+    hass = service.hass
+    state = hass.states.get(light.entity_id)
     status = service.light_status(light.id)
     events = [event for event in log if event.light_id == light.id and event.time >= since]
+    helpers = light.helpers
+    automation = None if helpers is None else hass.states.get(helpers.automation)
     return {
         "id": light.id,
         **light.to_record(),
+        "needs_helpers": helpers is None,
+        "schedule": None if helpers is None else _helper_schedule(hass, helpers),
+        "automation": None
+        if helpers is None
+        else {
+            "entity_id": helpers.automation,
+            "state": None if automation is None else automation.state,
+            "id": None if automation is None else _optional_json_str(automation.attributes.get("id")),
+        },
         "today": OneDayChange(
             day=today, on=schedule.on, off=schedule.off, brightness_pct=schedule.brightness_pct
         ).to_json(),
         "state": None if state is None else state.state,
         "problem": status.problem,
+        "problems": list[JsonValueType](
+            status.messages(
+                light.model,
+                light.entity_id,
+                None if helpers is None else helpers.automation,
+                dt_util.get_default_time_zone(),
+            )
+        ),
         "status": status.to_json(),
         "history": [
             {**_history_json(entry), "reason": service.reason_for(entry)}
@@ -1286,6 +1328,24 @@ def _light_json(
         ],
         "on_periods": [[start.isoformat(), end.isoformat()] for start, end in periods],
     }
+
+
+def _helper_schedule(hass: HomeAssistant, helpers: Helpers) -> JsonObjectType:
+    """The schedule as the helpers hold it. A value is null when its helper is missing or holds none."""
+    on = helper_time(hass.states.get(helpers.on))
+    off = helper_time(hass.states.get(helpers.off))
+    brightness = None if helpers.brightness is None else helper_number(hass.states.get(helpers.brightness))
+    ramp = None if helpers.ramp is None else helper_number(hass.states.get(helpers.ramp))
+    return {
+        "on": None if on is None else format_time(on),
+        "off": None if off is None else format_time(off),
+        "brightness_pct": None if brightness is None else round(brightness),
+        "ramp_minutes": None if ramp is None else round(ramp),
+    }
+
+
+def _optional_json_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
 
 
 async def _propose(
@@ -2284,9 +2344,10 @@ SPECS: tuple[Spec, ...] = (
         title="Get the lights",
         annotations=READ,
         handler=get_light,
-        description="Each light with its schedule, today's schedule after any one-day change, its state, whether it "
-        "follows the schedule, the changes to it with their reasons, the on/off log, the changes missed or made "
-        "late, and when it was on, for the last days (default 7). Also the next change and today's dose time.",
+        description="Each light with its schedule as its helpers hold it, the schedule TankKeeper keeps, today's "
+        "schedule after any one-day change, its automation and helpers, its state, its problems in words, the "
+        "changes to it with their reasons, the on/off log, the changes missed or made late, and when it was on, for "
+        "the last days (default 7). Also the next change and today's dose time.",
         schema={
             p.Optional("light_id"): NON_EMPTY,
             p.Optional("days", default=7): p.All(int, p.Range(min=1, max=30)),
@@ -2297,12 +2358,15 @@ SPECS: tuple[Spec, ...] = (
         title="Propose a light change",
         annotations=PROPOSE,
         handler=set_light,
-        description="Propose a light the integration switches on a schedule: add one, update or remove it, or make "
-        "a one_day change that reverts by itself the next day, or cancel_one_day. add needs entity_id (a light or "
-        "switch entity), model, on and off. A dimmable or colour light needs a light entity and can have "
-        "brightness_pct and ramp_minutes; only a colour light has rgb_color. Times are HH:MM, and the light turns "
-        "off after it turns on on the same day. Doses are due when the first light turns on. No tool switches the "
-        "light directly. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        description="Propose a light whose schedule TankKeeper sets in helpers that a Home Assistant automation "
+        "reads: add one, update or remove it, or make a one_day change that the helpers hold on that day only, or "
+        "cancel_one_day. add needs entity_id (a light or switch entity), model, on, off, automation (the "
+        "automation.* that runs the light), on_helper and off_helper (input_datetime helpers with a time only). A "
+        "dimmable or colour light needs a light entity and can have brightness_pct, which needs brightness_helper, "
+        "and ramp_minutes, which needs ramp_helper (input_number helpers). TankKeeper sets no colour. Times are "
+        "HH:MM, and the light turns off after it turns on on the same day. A light without helpers needs them: "
+        "update it with them. Doses are due when the first light turns on. No tool switches the light directly. "
+        "Returns a confirm code; nothing changes until tankkeeper__apply_change.",
         schema={
             p.Required("action"): p.In(LIGHT_ACTIONS),
             p.Optional("light_id", description="The light to change. Not for add"): NON_EMPTY,
@@ -2311,13 +2375,21 @@ SPECS: tuple[Spec, ...] = (
             p.Optional("control"): p.In(list(Control)),
             p.Optional("on", description="HH:MM"): NON_EMPTY,
             p.Optional("off", description="HH:MM"): NON_EMPTY,
-            p.Optional("brightness_pct", description="1 to 100, or null for none"): p.Maybe(int),
+            p.Optional(
+                "brightness_pct", description="1 to 100, or null to leave the brightness helper as it is"
+            ): p.Maybe(int),
             p.Optional("ramp_minutes", description="Minutes to fade in at on and out at off"): p.All(
                 int, p.Range(min=0)
             ),
-            p.Optional("rgb_color", description="Red, green and blue, each 0 to 255, or null for none"): p.Maybe(
-                p.All([int], p.Length(min=3, max=3))
+            p.Optional("automation", description="The automation.* entity that runs the light"): NON_EMPTY,
+            p.Optional("on_helper", description="The input_datetime that holds the on time"): NON_EMPTY,
+            p.Optional("off_helper", description="The input_datetime that holds the off time"): NON_EMPTY,
+            p.Optional("brightness_helper", description="The input_number for brightness, or null for none"): p.Maybe(
+                NON_EMPTY
             ),
+            p.Optional(
+                "ramp_helper", description="The input_number for the ramp in minutes, or null for none"
+            ): p.Maybe(NON_EMPTY),
             p.Optional("date", description="ISO date of a one_day change. Defaults to today"): NON_EMPTY,
             **REASON,
             **CONVERSATION,

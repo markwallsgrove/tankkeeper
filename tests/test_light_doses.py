@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 import pytest
 from pytest_homeassistant_custom_component.common import async_fire_time_changed, async_mock_service
 
-from .common import PLUG, Caller, Devices, apply, dict_of, list_of, str_of
+from .common import PLUG, PLUG_HELPERS, Caller, Devices, apply, dict_of, list_of, str_of
 
 pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 
@@ -16,7 +16,14 @@ PHONE = "mobile_app_phone"
 
 async def _light(call: Caller) -> str:
     proposal = await call.ok(
-        "set_light", action="add", entity_id=PLUG, model="LED 10120", on="11:00", off="20:00", reason="Light"
+        "set_light",
+        action="add",
+        entity_id=PLUG,
+        model="LED 10120",
+        on="11:00",
+        off="20:00",
+        reason="Light",
+        **PLUG_HELPERS,
     )
     applied = await apply(call, proposal)
     await call.hass.async_block_till_done(wait_background_tasks=True)
