@@ -1,6 +1,6 @@
 """Setting up a tank and changing its details."""
 
-from homeassistant.config_entries import SOURCE_USER
+from homeassistant.config_entries import SOURCE_USER, ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
@@ -11,6 +11,12 @@ from custom_components.tankkeeper.plan import REMINDERS_ID
 from custom_components.tankkeeper.service import TankkeeperService
 
 NEW_DETAILS = {CONF_TANK_NAME: "Office", CONF_VOLUME: 80, CONF_DOSING_VOLUME: 72}
+
+
+async def _reminders_form(hass: HomeAssistant, entry: MockConfigEntry) -> ConfigFlowResult:
+    menu = await hass.config_entries.options.async_init(entry.entry_id)
+    assert menu["type"] is FlowResultType.MENU
+    return await hass.config_entries.options.async_configure(menu["flow_id"], {"next_step_id": "reminders"})
 
 
 async def test_user_step_creates_the_tank(hass: HomeAssistant) -> None:
@@ -118,10 +124,10 @@ async def test_options_suggest_the_reminder_settings(hass: HomeAssistant, loaded
     async_mock_service(hass, "notify", "mobile_app_phone")
     async_mock_service(hass, "notify", "mobile_app_tablet")
 
-    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    form = await _reminders_form(hass, loaded_entry)
 
     assert form["type"] is FlowResultType.FORM
-    assert form["step_id"] == "init"
+    assert form["step_id"] == "reminders"
     schema = form["data_schema"]
     assert schema is not None
     suggested = {str(key): key.description["suggested_value"] for key in schema.schema}
@@ -132,7 +138,7 @@ async def test_options_suggest_the_reminder_settings(hass: HomeAssistant, loaded
 
 async def test_options_save_the_reminder_settings(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> None:
     async_mock_service(hass, "notify", "mobile_app_phone")
-    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    form = await _reminders_form(hass, loaded_entry)
 
     result = await hass.config_entries.options.async_configure(
         form["flow_id"],
@@ -155,7 +161,7 @@ async def test_options_save_the_reminder_settings(hass: HomeAssistant, loaded_en
 async def test_options_with_the_same_settings_change_nothing(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:
-    form = await hass.config_entries.options.async_init(loaded_entry.entry_id)
+    form = await _reminders_form(hass, loaded_entry)
 
     result = await hass.config_entries.options.async_configure(
         form["flow_id"], {"notify": [], "task_time": "09:00:00", "dose_time": "12:00:00", "resend_time": "21:00:00"}
