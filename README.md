@@ -17,7 +17,7 @@ Tankkeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, and batch proposals and setup work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, batch proposals and setup, the panel and the Assist agent work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
@@ -106,7 +106,7 @@ Tankkeeper installs through [HACS][hacs] as a custom repository:
 
 1. In HACS, open the menu, choose **Custom repositories**, and add `https://github.com/markwallsgrove/tankkeeper` as an **Integration**.
 2. Download **Tankkeeper**, then restart Home Assistant.
-3. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**. The dialog asks for the tank, then the tap water, products, contents, light and reminders. Skip any step after the tank: Claude can fill it in later.
+3. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**. The dialog asks for the tank, then the tap water, products, contents, light, reminders and Claude. Skip any step after the tank: Claude can fill it in later.
 
 See [the integration docs](docs/integration.md) for the tools.
 
@@ -131,6 +131,8 @@ Then use it as you go:
 Claude saves doses, tests, notes and new contents straight away. A change to the tank, the water values or the products, like a new product or a new dose, it reads back first and saves only when you say yes. Any change made through Claude can be undone.
 
 To get reminders with Complete and Skip on your phone, open the integration, choose **Configure > Reminders** and pick your devices. To let Tankkeeper run the tank light, tell Claude about it, or choose **Configure > Add a light**.
+
+To chat in Assist, set up the [Anthropic](https://www.home-assistant.io/integrations/anthropic/) integration with your API key and turn on the **Tankkeeper** API in its conversation agent. Then choose that agent with **Configure > Claude**, and choose the tank's **Assist agent** in **Settings > Voice assistants**. Tankkeeper records each Assist conversation; the key stays in the Anthropic integration. See [Assist agent](docs/integration.md#assist-agent) and [cost](docs/integration.md#cost).
 
 If Claude still can't see the tools, see [troubleshooting](docs/integration.md#troubleshooting).
 

@@ -184,6 +184,23 @@
       "test_watch_days"
     ]
   },
+  "get_claude": {
+    "required": [],
+    "optional": []
+  },
+  "set_claude": {
+    "required": [],
+    "optional": [
+      "agent",
+      "ai_task",
+      "comments",
+      "daily_cap",
+      "daily_time",
+      "evidence",
+      "reason",
+      "review_on"
+    ]
+  },
   "list_decisions": {
     "required": [],
     "optional": ["status"]

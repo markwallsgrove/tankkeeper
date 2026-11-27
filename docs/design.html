@@ -458,21 +458,18 @@ Saved. Tankkeeper is live.</div>
         <span class="step">Step 7 of 7 · Claude</span>
         <h4>Talk to your tank</h4>
         <div class="field"><label>Conversation agent</label><span>Claude (Anthropic)</span></div>
-        <div class="row" style="gap:0.5rem; flex-wrap:nowrap">
-          <div class="field" style="flex:1"><label>Chat model</label><span>Claude Haiku 5.5 ▼</span></div>
-          <div class="field" style="flex:1"><label>Review model</label><span>Claude Sonnet 5.5 ▼</span></div>
-        </div>
+        <div class="field"><label>AI task entity for review comments</label><span>Claude AI Task (Anthropic)</span></div>
         <div class="combo"><label>Review after (choose any)</label><div class="chips"><span class="mchip">New tests</span><span class="mchip">Status changes</span><span class="mchip">Completed or skipped tasks</span><span class="caret">▼</span></div></div>
         <div class="toggle">Add Claude's comments to reviews <span class="sw"></span></div>
         <div class="row" style="gap:0.5rem; flex-wrap:nowrap; align-items:center">
           <div class="toggle" style="flex:1">Also review daily <span class="sw off"></span></div>
           <div class="field" style="width:6.5rem"><label>At</label><span>08:30</span></div>
         </div>
-        <div class="toggle">Share tools with the MCP server <span class="sw"></span></div>
+        <div class="field"><label>Claude comments a day, at most</label><span>5</span></div>
         <p class="sub">Claude records what you tell it. Other changes need your yes, in the conversation or the panel.</p>
         <div class="actions"><span class="textbtn">BACK</span><span class="textbtn">SUBMIT</span></div>
       </div>
-      <p class="cap"><b>Claude.</b> Pick the agent, a model for chat and a model for review comments (a cheaper one for chat is an option), choose any mix of events that start a review, set the daily review time if you want one, and share the tools with Claude Code. Sensor events join the list when hardware is added.</p>
+      <p class="cap"><b>Claude.</b> Pick the conversation agent Tankkeeper chats through and the AI task entity that writes review comments, choose any mix of events that start a review, set the daily review time and the daily cap on comments. The models stay in the Anthropic integration: the chat model on its conversation agent, the review model on its AI task entity (a cheaper one for chat is an option). The tools are shared with Claude Code through Home Assistant's MCP server settings. Sensor events join the list when hardware is added.</p>
     </div>
   </div>
 </section>
@@ -689,7 +686,7 @@ Saved. Tankkeeper is live.</div>
     <div class="box">
       <h3>How they're recorded</h3>
       <ul>
-        <li><b>Assist:</b> Tankkeeper registers its own conversation agent, which calls the Anthropic API and stores every turn: your words, Claude's answer and each tool call.</li>
+        <li><b>Assist:</b> Tankkeeper registers its own conversation agent, which passes each message to the Anthropic integration's agent and stores every turn: your words, Claude's answer and each tool call.</li>
         <li><b>Claude Code and Claude Desktop:</b> the MCP server only sees tool calls, not the chat. Tankkeeper groups the tool calls by MCP session, and its instructions ask Claude to call <code>save_conversation</code> with a title, a summary and the key messages before it finishes. An optional Claude Code hook can send the full transcript.</li>
         <li>Every record change points to the conversation that made it.</li>
       </ul>

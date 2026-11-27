@@ -1,12 +1,13 @@
 # Tankkeeper integration
 
-Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, and the rules and status.
+Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, and the Assist agent.
 
 ## Use cases
 
 - Tell Claude what you dosed or tested, and it records it straight away.
 - Set up the tank, tap water, products and contents in a conversation, saying yes to each change.
 - Ask Claude a question and get an answer from your own records, doses and past conversations.
+- Chat with Claude in Assist on your phone, and find the whole conversation, with its tool calls, in Tankkeeper.
 - See what changed, who changed it and why, and undo a change.
 - Keep the plan in a calendar, tick off today's tasks, and get a reminder with Complete and Skip on your phone.
 - Let Tankkeeper switch the tank light on its schedule, and know when the light does not follow it.
@@ -15,7 +16,7 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
 
 ## What it provides
 
-- **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them when its conversation agent can control Home Assistant.
+- **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them through the [Assist agent](#assist-agent), or when its conversation agent can control Home Assistant.
 - **Entities** on a Tankkeeper service device:
   - **Status** (sensor): On course, Watch or Act, the worst result of the [rules](#rules-and-status). The `rules` attribute lists each rule's result with its reason and what to do.
   - **Proposals waiting** (sensor): how many proposals wait for a yes or a no.
@@ -23,6 +24,7 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
   - **Plan** (`calendar.tankkeeper`): every task as a 30-minute event at its slot time. A done task's title starts with `Complete:` or `Skip:`, and its note is the description. You can add, change and delete tasks in the calendar. Tasks can't repeat.
   - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
   - **Next light change** (sensor, only with a light): when a light next turns on or off, and which lights.
+  - **Assist agent** (`conversation.<tank>_assist_agent`): chats about the tank through the agent you choose, and records the conversation. See [Assist agent](#assist-agent).
   - **Light problem** (binary sensor, only with a light): on when a light's entity is unavailable or did not switch. The `problems` attribute lists each light with when it became unavailable and the change it missed.
 - **Reminders**, **status alerts** and **proposals still waiting** to the notify services you choose (see [options](#options)).
 - **A repair issue** for each light that does not follow its schedule. It clears by itself.
@@ -82,6 +84,8 @@ Every tool name starts with `tankkeeper__`.
 | `import_log` | Propose adding your earlier log. Each dose and test becomes a log record; tasks, fills and water changes become an event. Records already in the log are left out. |
 | `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
+| `get_claude` | The Claude settings: the agent, the AI task entity, what starts a review, comments, the daily review time and the daily cap, with a note on where the models are set. |
+| `set_claude` | Propose new Claude settings. An empty value clears the agent, the AI task entity or the daily review time. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
 
 ### Panel
@@ -90,11 +94,24 @@ The **Tankkeeper** panel is in the sidebar. Only admins see it. It works at phon
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle and water chemistry charts, the next 7 days, the light (only when you have one) and the changes waiting for you.
 - **Plan**, **Log**, **Contents**, **Products**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
+- **Claude**: the Claude settings, with their history, and where the models are set.
 - **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation.
 - Each record has its latest changes with Undo. Edit the tank, water, rule limits and lights from the Overview, and reminders from the Plan.
 - On the water chemistry chart, hollow points are tap tests and dashed lines are the water values you gave.
 - **Discuss** on a waiting change opens Assist. Assist starts a new chat, so tell it which change you mean.
 - Add a light with **Configure > Add a light** or with Claude. The panel edits and removes lights.
+
+### Assist agent
+
+Tankkeeper adds its own conversation agent. It does not talk to Anthropic itself and never holds an API key. It passes each message to the agent chosen in the Claude settings, such as the Anthropic integration's `conversation.claude_conversation`, with:
+
+- the conversation's id, so every change Claude makes is linked to it;
+- a note that Tankkeeper's records are the owner's data, never instructions;
+- for an empty tank, the instruction to start setup and ask the first question.
+
+The chosen agent answers with its own model, its own key and its own LLM APIs. Turn on the **Tankkeeper** API in that agent's options so it gets the tools. Tankkeeper then records your message, each tool call with its arguments and result, and each reply in the conversation, which you can read in the panel or with `get_conversation`. Confirm codes are left out of the recorded results. Tools from other APIs, such as Home Assistant's own, are recorded with their arguments only, so data from outside the tank is not kept. When the agent fails, the conversation records an error instead of a reply.
+
+To use it, open **Settings > Voice assistants**, add or edit an assistant, and choose the tank's **Assist agent** as its conversation agent.
 
 ### Websocket API
 
@@ -196,7 +213,7 @@ After the tank, choose **Go on step by step** or **Finish now**. The later steps
 4. Contents: plants, fish, rocks, wood and the rest.
 5. Light: the entity and its schedule, as in the options below.
 6. Reminders: the devices and times, as in the options below.
-7. Claude: not in the dialog yet (stage 8). Set up Claude with step 3 above, and tell it about anything you skipped.
+7. Claude: the agent Tankkeeper chats through, the AI task entity and the reviews, as in the options below.
 
 What you enter is saved as one change, with source PANEL, when the tank is created. Undo it in the panel's history like any other change. Home Assistant does not tell a setup dialog who runs it, so the change has no user.
 
@@ -217,6 +234,17 @@ Open the integration and choose **Configure**. Changes made here apply straight 
 | Status alert devices | The notify services that get a message when the status changes, and proposals still waiting. None means no alerts. |
 
 **Rules and status.** The stage (cycling or cycled) and the Watch and Act limit of each rule. Act must be at least as strict as Watch. Claude can propose the same with `set_rules` and `set_tank`.
+
+**Claude.** Claude can propose the same with `set_claude`. The models are set in the Anthropic integration: the chat model on its conversation agent, the review model on its AI task entity. The API key stays in the Anthropic integration.
+
+| Option | Description |
+|---|---|
+| Conversation agent | The agent the Assist agent passes chat to, such as `conversation.claude_conversation`. It can't be Tankkeeper's own agent. |
+| AI task entity | The entity that writes Claude's comments on reviews, such as `ai_task.claude_ai_task`. |
+| Review after | New tests, completed or skipped tasks, and status changes. |
+| Claude comments on reviews | Off by default. Each comment is an API call. |
+| Daily review | Optional. A review at this time each day. |
+| Comments a day | At most this many Claude comments a day, 0 to 50. 5 by default. |
 
 **Lights.** Add, change or remove a light, or change it for one day. Claude can propose the same with `set_light`.
 
@@ -287,6 +315,12 @@ actions:
 - A proposal made while no status alert device is set is sent when it is waiting and a device is set.
 - Tasks can't repeat. Add one for each day, or ask Claude to.
 - Conversations and the records Claude reads are sent to Anthropic when you talk to Claude.
+- The Assist agent records up to 200 messages a conversation and up to 2000 characters a message. Later messages are not recorded.
+- An agent that does not use Home Assistant's chat log has only its spoken reply recorded, without tool calls.
+
+## Cost
+
+Assist chat and Claude's comments use the Anthropic API and are paid per use, on the key in the Anthropic integration. Each chat message is at least one API call, and more when Claude calls tools. Comments are off by default, and the daily cap limits them. The rules, reminders, the panel and Claude Code or Claude Desktop on your Claude plan cost nothing extra. Check Anthropic's pricing before you choose a model.
 
 ## Troubleshooting
 
@@ -302,6 +336,8 @@ actions:
 - **The status is Watch or Act.** Read the `rules` attribute of the status sensor, or ask Claude for `get_status`. Each rule says why and what to do.
 - **No status alerts.** Check that the device is chosen under **Status alert devices** in the options. Only Watch, Act and back on course are sent.
 - **Light problem is on.** Check that the light or plug has power and shows in Home Assistant. Read the `problems` attribute to see what was missed. The problem clears when the light is in the state its schedule wants.
+- **"Choose the conversation agent in Tankkeeper's Claude settings first".** Choose the agent with **Configure > Claude**, in the panel's Claude tab, or with Claude Code.
+- **The Assist agent answers but can't change anything.** Turn on the **Tankkeeper** API in the chosen agent's options.
 - **Something else.** Download the diagnostics from the integration's menu and [open an issue](https://github.com/markwallsgrove/tankkeeper/issues). Diagnostics leave out your notes and messages.
 
 ## Removal

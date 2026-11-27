@@ -12,10 +12,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.ulid import ulid_now
 
+from .claude import CLAUDE_ID, ClaudeSettings, check_settings
 from .const import DOMAIN, STORAGE_VERSION
 from .domain import (
     CODE_ALPHABET,
     CODE_LENGTH,
+    MAX_CONVERSATION_MESSAGES,
     TANK_ID,
     Collection,
     Conversation,
@@ -296,6 +298,17 @@ class TankkeeperService:
             raise NothingToChangeError("The reminders already look like that")
         return [(Collection.SETTINGS, REMINDERS_ID, reminders.to_json())]
 
+    def claude(self) -> ClaudeSettings:
+        """The Claude settings."""
+        return ClaudeSettings.from_json(self.state.get(Collection.SETTINGS, CLAUDE_ID))
+
+    def claude_targets(self, settings: ClaudeSettings) -> list[Target]:
+        """The change that stores new Claude settings. Raises InvalidInputError or NothingToChangeError."""
+        check_settings(self.hass, settings)
+        if settings == self.claude():
+            raise NothingToChangeError("The Claude settings already look like that")
+        return [(Collection.SETTINGS, CLAUDE_ID, settings.to_json())]
+
     async def async_finish_task(self, task_id: str, status: TaskStatus, note: str | None, actor: Actor) -> HistoryEntry:
         """Complete or skip a task straight away."""
         finished = self.task(task_id).finish(status, note, self._clock())
@@ -517,6 +530,22 @@ class TankkeeperService:
         )
         await self._async_save()
         return conversation
+
+    async def async_record_turn(self, conversation_id: str, actor: Actor, messages: Iterable[Message]) -> None:
+        """Add messages to the conversation with this id, starting it if needed. Messages past the limit are dropped."""
+        current = self._state.conversations.get(conversation_id)
+        room = MAX_CONVERSATION_MESSAGES - (0 if current is None else len(current.messages))
+        save_conversation(
+            self._state,
+            conversation_id=conversation_id,
+            now=self._clock(),
+            source=actor.source,
+            user_id=actor.user_id,
+            title=None,
+            summary=None,
+            messages=tuple(messages)[:room],
+        )
+        await self._async_save()
 
     async def async_delete_conversation(self, conversation_id: str) -> None:
         """Delete a conversation. The changes it made stay in the history."""

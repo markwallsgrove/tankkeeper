@@ -27,6 +27,11 @@
         "default": "mdi:calendar-check"
       }
     },
+    "conversation": {
+      "agent": {
+        "default": "mdi:fishbowl-outline"
+      }
+    },
     "todo": {
       "today": {
         "default": "mdi:clipboard-list-outline"

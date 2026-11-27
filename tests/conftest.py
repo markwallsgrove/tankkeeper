@@ -1,11 +1,15 @@
 """Shared fixtures."""
 
+from collections.abc import AsyncIterator
+
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 import pytest
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_config_flow
 
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 
+from .agents import AnthropicFlow, FakeClaude, async_add_claude
 from .common import Caller, Devices
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
@@ -14,6 +18,12 @@ pytest_plugins = ["pytest_homeassistant_custom_component"]
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load Tankkeeper from custom_components."""
+
+
+@pytest.fixture(autouse=True)
+async def core(hass: HomeAssistant) -> None:
+    """Set up Home Assistant's core integration, which the conversation integration needs for exposed entities."""
+    assert await async_setup_component(hass, "homeassistant", {})
 
 
 @pytest.fixture
@@ -52,3 +62,10 @@ async def london(hass: HomeAssistant) -> None:
 def plugs(hass: HomeAssistant) -> Devices:
     """Fake light and switch entities."""
     return Devices(hass)
+
+
+@pytest.fixture
+async def claude(hass: HomeAssistant, loaded_entry: MockConfigEntry) -> AsyncIterator[FakeClaude]:
+    """The stand-in Anthropic agent and AI task entity, loaded after the tank."""
+    with mock_config_flow("test", AnthropicFlow):
+        yield await async_add_claude(hass)

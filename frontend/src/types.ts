@@ -19,7 +19,7 @@ export type Values = Record<string, unknown>;
 export interface Field {
   name: string;
   label: string;
-  type: "text" | "textarea" | "number" | "date" | "time" | "select" | "list";
+  type: "text" | "textarea" | "number" | "date" | "time" | "select" | "list" | "checkbox";
   options?: string[];
   required?: boolean;
   step?: string;
@@ -95,6 +95,16 @@ export interface Reminders {
   task_time: string;
   dose_time: string;
   resend_time: string;
+}
+
+export interface ClaudeSettings {
+  agent: string | null;
+  ai_task: string | null;
+  review_on: string[];
+  comments: boolean;
+  daily_time: string | null;
+  daily_cap: number;
+  model_note: string;
 }
 
 export interface Plan {

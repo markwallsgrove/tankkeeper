@@ -1,12 +1,14 @@
-"""Setting up a new tank step by step: tank, water, products, contents, light and reminders."""
+"""Setting up a new tank step by step: tank, water, products, contents, light, reminders and Claude."""
 
 from collections.abc import Mapping
 
 from homeassistant.config_entries import SOURCE_USER, ConfigFlowContext, ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_mock_service
 
+from custom_components.tankkeeper.claude import ClaudeSettings, Trigger
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from custom_components.tankkeeper.domain import TANK_ID, WATER_ID, Collection, Source
 from custom_components.tankkeeper.plan import REMINDERS_ID
@@ -78,7 +80,7 @@ async def test_every_step_is_saved_as_one_panel_change(hass: HomeAssistant, plug
     assert result["menu_options"] == ["add_light", "reminders"]
     result = await _fill(hass, await _pick(hass, result, "add_light"), LIGHT)
     assert result["step_id"] == "reminders"
-    assert result["menu_options"] == ["set_reminders", "finish"]
+    assert result["menu_options"] == ["set_reminders", "claude"]
     form = await _pick(hass, result, "set_reminders")
     schema = form["data_schema"]
     assert schema is not None
@@ -88,6 +90,11 @@ async def test_every_step_is_saved_as_one_panel_change(hass: HomeAssistant, plug
         hass,
         form,
         {"notify": ["mobile_app_phone"], "task_time": "08:00:00", "dose_time": "12:00:00", "resend_time": "21:00:00"},
+    )
+    assert result["step_id"] == "claude"
+    assert result["menu_options"] == ["set_claude", "finish"]
+    result = await _fill(
+        hass, await _pick(hass, result, "set_claude"), {"review_on": ["status"], "comments": True, "daily_cap": 2}
     )
     await hass.async_block_till_done()
 
@@ -130,7 +137,8 @@ async def test_every_step_is_saved_as_one_panel_change(hass: HomeAssistant, plug
     assert service.records(Collection.SETTINGS)[REMINDERS_ID]["task_time"] == "08:00"
     [entry] = service.history(None, None, 10)
     assert (entry.source, entry.user_id, entry.summary) == (Source.PANEL, None, "Set up Office")
-    assert len(entry.changes) == 7
+    assert service.claude() == ClaudeSettings(review_on=(Trigger.STATUS,), comments=True, daily_cap=2)
+    assert len(entry.changes) == 8
 
 
 async def test_every_step_can_be_skipped(hass: HomeAssistant) -> None:
@@ -138,7 +146,7 @@ async def test_every_step_can_be_skipped(hass: HomeAssistant) -> None:
     result = await _fill(hass, await _pick(hass, result, "water"), {})
     result = await _pick(hass, result, "contents")
     result = await _pick(hass, result, "light")
-    result = await _pick(hass, result, "reminders")
+    result = await _pick(hass, await _pick(hass, result, "reminders"), "claude")
     result = await _pick(hass, result, "finish")
     await hass.async_block_till_done()
 
@@ -154,7 +162,7 @@ async def test_the_setup_change_can_be_undone(hass: HomeAssistant) -> None:
     result = await _fill(hass, await _pick(hass, result, "water"), {"source": "tap_test", "gh": 8})
     result = await _pick(hass, result, "contents")
     result = await _pick(hass, result, "light")
-    result = await _pick(hass, result, "reminders")
+    result = await _pick(hass, await _pick(hass, result, "reminders"), "claude")
     await _pick(hass, result, "finish")
     await hass.async_block_till_done()
     service = _service(hass)
@@ -196,7 +204,9 @@ async def test_a_content_can_have_no_count(hass: HomeAssistant) -> None:
     result = await _fill(hass, await _pick(hass, result, "water"), {})
     result = await _pick(hass, result, "contents")
     result = await _fill(hass, await _pick(hass, result, "add_content"), {"type": "rock", "name": "Seiryu stone"})
-    result = await _pick(hass, await _pick(hass, await _pick(hass, result, "light"), "reminders"), "finish")
+    result = await _pick(
+        hass, await _pick(hass, await _pick(hass, await _pick(hass, result, "light"), "reminders"), "claude"), "finish"
+    )
     await hass.async_block_till_done()
 
     [content] = _service(hass).records(Collection.CONTENTS).values()
@@ -232,3 +242,27 @@ async def test_a_product_and_a_content_need_a_name(hass: HomeAssistant) -> None:
     content = await _fill(hass, await _pick(hass, contents, "add_content"), {"type": "rock", "name": ""})
     assert content["step_id"] == "add_content"
     assert content["errors"] == {"name": "name_required"}
+
+
+@pytest.mark.parametrize(
+    ("values", "error"),
+    [
+        ({"agent": "conversation.gone"}, "No conversation agent conversation.gone"),
+        ({"daily_time": "08:30:15"}, "'08:30:15' is not a time in HH:MM"),
+    ],
+)
+async def test_the_claude_step_says_why_its_settings_cannot_be_stored(
+    hass: HomeAssistant, values: dict[str, str], error: str
+) -> None:
+    result = await _start(hass, TANK)
+    result = await _fill(hass, await _pick(hass, result, "water"), {})
+    result = await _pick(hass, await _pick(hass, await _pick(hass, result, "contents"), "light"), "reminders")
+    form = await _pick(hass, await _pick(hass, result, "claude"), "set_claude")
+    assert form["step_id"] == "set_claude"
+
+    result = await _fill(hass, form, {**values, "review_on": ["test"], "comments": False, "daily_cap": 5})
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "set_claude"
+    assert result["errors"] == {"base": "invalid_claude"}
+    assert result["description_placeholders"] == {"error": error}
