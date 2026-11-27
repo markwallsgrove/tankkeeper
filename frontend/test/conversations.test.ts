@@ -4,6 +4,8 @@ import { CHAT } from "../src/base";
 import "../src/views/conversations";
 import type { TkConversations } from "../src/views/conversations";
 import type { TkEmbed } from "../src/tk-embed";
+import type { TkDeleteConversation } from "../src/tk-delete-conversation";
+import type { Message } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const summary = {
@@ -12,6 +14,7 @@ const summary = {
   started: "2026-11-26T12:00:00+00:00",
   updated: "2026-11-26T12:30:00+00:00",
   title: "Algae",
+  name: "Algae",
   summary: "Green spots",
 };
 const change = {
@@ -37,8 +40,7 @@ function connection(): FakeConnection {
       ],
       changes: [change],
     })
-    .on("undo_change", { applied: true })
-    .on("delete_conversation", { deleted: true });
+    .on("undo_change", { applied: true });
 }
 
 describe("tk-conversations", () => {
@@ -145,39 +147,75 @@ describe("tk-conversations", () => {
     await settle(element);
     expect(text(element)).toContain("No changes");
 
-    vi.stubGlobal("confirm", () => true);
-    conn.fail("delete_conversation", "not_found", "No conversation c1");
-    find(element, "button.delete").click();
-    await settle(element);
-    expect(find(element, ".error").textContent).toBe("No conversation c1");
-    expect(findAll(element, "button.delete").length).toBe(1);
-
     find(element, "button.back").click();
     conn.fail("list_conversations", "not_loaded", "TankKeeper is not loaded");
     await settle(element);
     expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
-  it("deletes a conversation only after the Member confirms", async () => {
-    const conn = connection();
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+  it("deletes a conversation after the owner confirms in the panel, then lists again", async () => {
+    const conn = connection().on("delete_conversation", (message: Message) => {
+      const args = message.args as { code?: string };
+      return args.code === undefined
+        ? { conversation_id: "c1", name: "Algae", messages: 2, changes: 1, code: "K7Q2ZP" }
+        : { deleted: true, conversation_id: "c1" };
+    });
+    const confirm = vi.fn(() => true);
     vi.stubGlobal("confirm", confirm);
     const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
     await settle(element);
     find(element, "li[data-id=c1] button.open").click();
     await settle(element);
 
-    find(element, "button.delete").click();
+    const remove = find(element, "tk-delete-conversation") as TkDeleteConversation;
+    expect(remove.conversationId).toBe("c1");
+    find(remove, "button.delete").click();
+    await settle(remove);
+    find(remove, "button.confirm").click();
     await settle(element);
-    expect(conn.types()).not.toContain("tankkeeper/delete_conversation");
 
-    find(element, "button.delete").click();
-    await settle(element);
-    expect(confirm).toHaveBeenCalledTimes(2);
-    expect(conn.sent).toContainEqual({
-      type: "tankkeeper/delete_conversation",
-      conversation_id: "c1",
+    expect(confirm).not.toHaveBeenCalled();
+    expect(conn.last("delete_conversation").args).toEqual({ id: "c1", code: "K7Q2ZP" });
+    expect(findAll(element, "tk-delete-conversation")).toEqual([]);
+    expect(conn.types().at(-1)).toBe("tankkeeper/list_conversations");
+  });
+
+  it("shows where a search matched, marked, as text", async () => {
+    const conn = connection().on("search_conversations", {
+      conversations: [
+        {
+          ...summary,
+          name: "Algae",
+          match: {
+            field: "message",
+            index: 0,
+            role: "user",
+            snippet: "<i>shrimp</i> moult",
+            start: 3,
+            end: 9,
+          },
+        },
+      ],
     });
-    expect(findAll(element, "button.delete")).toEqual([]);
+    const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
+    await settle(element);
+
+    (find(element, "input.search") as HTMLInputElement).value = "shrimp";
+    find(element, "form.search").dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(element);
+
+    expect(findAll(element, "i")).toEqual([]);
+    expect(find(element, ".snippet").textContent).toBe("<i>shrimp</i> moult");
+    expect(find(element, ".snippet mark").textContent).toBe("shrimp");
+  });
+
+  it("names an untitled conversation by what was first said", async () => {
+    const conn = connection().on("list_conversations", {
+      conversations: [{ ...summary, title: "", name: "How warm…" }],
+    });
+    const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
+    await settle(element);
+
+    expect(find(element, "li[data-id=c1] strong").textContent).toBe("How warm…");
   });
 });

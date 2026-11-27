@@ -48,6 +48,22 @@ export function shortTime(time: string): string {
   return `${isoDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/** How long ago a time was, in words for a list: up to a week, then the local date. */
+export function relativeTime(time: string, now: Date = new Date()): string {
+  const date = new Date(time);
+  const ago = now.getTime() - date.getTime();
+  if (ago < MINUTE) return "just now";
+  if (ago < HOUR) return `${String(Math.floor(ago / MINUTE))} min ago`;
+  if (ago < DAY) return `${String(Math.floor(ago / HOUR))} h ago`;
+  if (ago < 2 * DAY) return "yesterday";
+  if (ago < 7 * DAY) return `${String(Math.floor(ago / DAY))} days ago`;
+  return isoDate(date);
+}
+
 export function sourceText(source: string): string {
   return SOURCES[source] ?? source;
 }

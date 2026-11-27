@@ -1,5 +1,5 @@
 import { css, html, nothing, type TemplateResult } from "lit";
-import type { TankkeeperApi } from "./api";
+import { isNotFound, type TankkeeperApi } from "./api";
 import { TkView, shared } from "./base";
 import {
   LABELS,
@@ -71,11 +71,6 @@ async function tests(api: TankkeeperApi, since: string): Promise<LogEntry[]> {
     }
     if (page.length < LOG_LIMIT || fresh.length === 0) return entries;
   }
-}
-
-/** Whether a command failed because its record is gone, such as a photo check past the ones kept. */
-function isNotFound(error: unknown): boolean {
-  return (Object(error) as { code?: unknown }).code === "not_found";
 }
 
 const NAMES: Record<ChartName, string> = { ...LABELS, cycle: "Cycle", light: "Light" };

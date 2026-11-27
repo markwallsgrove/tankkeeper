@@ -23,21 +23,30 @@ describe("TankkeeperApi", () => {
     await expect(api.call("add_task", {})).rejects.toThrow("add_task: unknown -, missing text");
   });
 
+  it("deletes a conversation through its tool, with the code the first call gives", async () => {
+    const api = new TankkeeperApi(new FakeConnection().on("delete_conversation", {}));
+
+    await expect(api.call("delete_conversation", { conversation_id: "c1" })).rejects.toThrow(
+      "delete_conversation: unknown conversation_id, missing id",
+    );
+    await expect(api.call("delete_conversation", { id: "c1", code: "ABC123" })).resolves.toEqual(
+      {},
+    );
+    expect("deleteConversation" in api).toBe(false);
+  });
+
   it("sends the panel-only commands with their ids", async () => {
     const connection = new FakeConnection()
       .on("accept_proposal", { state: "applied" })
-      .on("reject_proposal", { state: "rejected" })
-      .on("delete_conversation", { deleted: true });
+      .on("reject_proposal", { state: "rejected" });
     const api = new TankkeeperApi(connection);
 
     await api.accept("p1");
     await api.reject("p2");
-    await api.deleteConversation("c1");
 
     expect(connection.sent).toEqual([
       { type: "tankkeeper/accept_proposal", proposal_id: "p1" },
       { type: "tankkeeper/reject_proposal", proposal_id: "p2" },
-      { type: "tankkeeper/delete_conversation", conversation_id: "c1" },
     ]);
   });
 });

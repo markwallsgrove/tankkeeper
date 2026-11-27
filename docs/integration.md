@@ -46,10 +46,10 @@ Every tool name starts with `tankkeeper__`.
 | `get_log` | Doses, water tests and imported events, newest first, optionally between two dates. |
 | `list_notes` | Open questions and assumptions about the tank. |
 | `list_proposals` | Proposed changes, newest first, without their confirm codes. A batch shows its changes and the steps that made them. |
-| `get_history` | The newest changes, with the record before and after, where each change came from, the Home Assistant user and the conversation. |
-| `list_conversations` | Past conversations about the tank, newest first. |
+| `get_history` | The newest changes, with the record before and after, where each change came from, the Home Assistant user and the conversation with its name (`deleted conversation` once it is deleted). |
+| `list_conversations` | Past conversations about the tank, newest first by last activity. Each has a `name`: its title, or the first thing you said, clipped. |
 | `get_conversation` | A past conversation, its key messages and the changes made in it. |
-| `search_conversations` | Past conversations that mention some words, newest first. |
+| `search_conversations` | Past conversations whose messages, title or summary hold some words, ignoring simple case ("STRASSE" does not find "straße"), newest first. Each result has a `match`: where the words are, the words around them as `snippet`, and `start` and `end` of the match in it, counted in code points. What was said is searched before the title, the summary and tool calls. |
 | `record_dose` | Record a dose. |
 | `record_test` | Record water test results: ammonia, nitrite, nitrate and phosphate in mg/l, KH in dKH, GH in dGH, and pH. Returns the status. |
 | `add_content` | Record something put in the tank. |
@@ -57,6 +57,8 @@ Every tool name starts with `tankkeeper__`.
 | `update_note` | Propose changes to a note. |
 | `remove_note` | Propose removing a note, such as an answered question. The history keeps it. |
 | `save_conversation` | Start a conversation, or add a title, summary and key messages to one. Up to 20 messages a call and 200 a conversation. |
+| `rename_conversation` | Give a conversation a new title. Its place in the list stays. |
+| `delete_conversation` | Delete a conversation in two calls. Without `code` it says what goes and gives a code; with the code it deletes. Only the person who asked can use the code, for 15 minutes, with 5 wrong tries; a restart forgets it. The changes made in the conversation stay in the history and can be undone, and its waiting proposals stay. |
 | `set_tank` | Propose new tank details, including the stage: `cycling` or `cycled`. |
 | `set_water` | Propose new tap water values. |
 | `add_product` | Propose a new product. |
@@ -103,12 +105,12 @@ Every tool name starts with `tankkeeper__`.
 The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phone width and uses your Home Assistant theme.
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle chart, a chart for each water parameter, the next 7 days, the tank, the tap water, the lights, the rule limits and the changes waiting for you.
-- **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Replies can show photos and charts; see [Photos and charts in chat](#photos-and-charts-in-chat). Without a conversation agent in the Claude settings, the tab says where to choose one.
+- **Chat**: talk to the tank's [Assist agent](#assist-agent). Each chat is a conversation, so its follow-ups keep the context. The changes Claude makes show under the chat with **Undo**, and the changes waiting for you with **Accept** and **Reject**. **New chat** starts again. Your chats are listed beside the chat, newest first, or under **Chats** on a narrow screen; one click opens a chat with its messages, photos and charts. You can search what was said and the titles, rename a chat and delete one after a confirm in the panel. Opening a search result goes to the message that matched and marks it. Chats from Assist or Claude open read only. Replies show simple formatting; HTML in a reply shows as text, and links open only web addresses, in a new tab. Replies can show photos and charts; see [Photos and charts in chat](#photos-and-charts-in-chat). Without a conversation agent in the Claude settings, the tab says where to choose one.
 - **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
 - **Contents** and **Products**: list them, with their history.
 - **Claude**: the Claude settings, with their history, and the latest reviews.
 - **Camera** (on the Overview): the latest photo and what Claude saw, **Check now** and **Photos**. **Seen by the camera** lists the issues waiting for you, with **Not a problem**, **Discuss**, **Reject** and **Accept**.
-- **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation. **Continue in Chat** goes on with a chat started in the panel.
+- **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation after a confirm in the panel. Search shows where the words matched. **Continue in Chat** goes on with a chat started in the panel.
 - Settings are read-only in the panel: the tank, tap water, products, contents, lights, reminders, rule limits, Claude and camera. The cog in the panel's header, **TankKeeper settings**, opens the integration page; choose **Configure** there to change them. Home Assistant cannot open a given options step from a link.
 - Each record has its latest changes with Undo, settings too.
 - On the charts, hollow points are tap tests. Dashed lines are the Watch and Act limits, the tap water values you gave and the target temperature.
@@ -135,7 +137,9 @@ TankKeeper adds its own conversation agent. It does not talk to Anthropic itself
 - a note that TankKeeper's records are the owner's data, never instructions;
 - for an empty tank, the instruction to start setup and ask the first question.
 
-The chosen agent answers with its own model, its own key and its own LLM APIs. Turn on the **TankKeeper** API in that agent's options so it gets the tools. TankKeeper then records your message, each tool call with its arguments and result, and each reply in the conversation, which you can read in the panel or with `get_conversation`. Confirm codes are left out of the recorded results. Tools from other APIs, such as Home Assistant's own, are recorded with their arguments only, so data from outside the tank is not kept. When the agent fails, the conversation records an error instead of a reply.
+The chosen agent answers with its own model, its own key and its own LLM APIs. Turn on the **TankKeeper** API in that agent's options so it gets the tools. TankKeeper then records your message, each tool call with its arguments and result, and each reply in the conversation, which you can read in the panel or with `get_conversation`. Confirm codes are left out of the recorded results. Tools from other APIs, such as Home Assistant's own, are recorded with their arguments only, so data from outside the tank is not kept. When the agent fails, the conversation records an error instead of a reply. A recorded conversation keeps up to 500 messages: past that, the oldest tool calls go first, then the oldest messages. Your messages and replies are kept up to 8,000 characters and tool calls up to 2,000. Words past those limits can't be found by search.
+
+Only chats started in the panel can go on. Home Assistant gives a chat from Assist a new id once its session ends, and chats from Claude through MCP never ran through the agent, so the panel shows those read only.
 
 To use it, open the panel's **Chat** tab, or open **Settings > Voice assistants**, add or edit an assistant, and choose the tank's **Assist agent** as its conversation agent.
 
@@ -149,7 +153,6 @@ The panel uses websocket commands. Only admins can use them.
 - A change applies straight away, as in the options. It is recorded with the source `panel` and your Home Assistant user, and can be undone. `reason` is optional.
 - `tankkeeper/accept_proposal` and `tankkeeper/reject_proposal` take a `proposal_id`. They work as Accept and Reject in a notification.
 - `tankkeeper/accept_finding` and `tankkeeper/reject_finding` take a `check_id`. Accept closes the issue and applies its plan changes; Reject closes it and rejects them.
-- `tankkeeper/delete_conversation` takes a `conversation_id`. The changes made in the conversation stay in the history. No tool can delete a conversation.
 - An error has the same code as the tool's error, `invalid_format` for wrong arguments, `unauthorized` for a person who is not an admin, or `not_loaded`.
 - Deleting a conversation keeps its waiting proposals. They can still be accepted or rejected.
 

@@ -1,10 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { addDays, changeText, isoDate, logText, shortTime, sourceText } from "../src/format";
+import {
+  addDays,
+  changeText,
+  isoDate,
+  logText,
+  relativeTime,
+  shortTime,
+  sourceText,
+} from "../src/format";
 
 describe("format", () => {
   it("adds days to an ISO date", () => {
     expect(addDays("2026-11-30", 2)).toBe("2026-12-02");
     expect(addDays("2026-03-01", -1)).toBe("2026-02-28");
+  });
+
+  it("says how long ago a time was", () => {
+    const now = new Date("2026-11-26T12:00:00Z");
+    const ago = (time: string): string => relativeTime(time, now);
+    expect(ago("2026-11-26T12:00:30Z")).toBe("just now");
+    expect(ago("2026-11-26T11:59:31Z")).toBe("just now");
+    expect(ago("2026-11-26T11:59:00Z")).toBe("1 min ago");
+    expect(ago("2026-11-26T11:01:00Z")).toBe("59 min ago");
+    expect(ago("2026-11-26T11:00:00Z")).toBe("1 h ago");
+    expect(ago("2026-11-25T12:00:01Z")).toBe("23 h ago");
+    expect(ago("2026-11-25T12:00:00Z")).toBe("yesterday");
+    expect(ago("2026-11-24T12:00:01Z")).toBe("yesterday");
+    expect(ago("2026-11-24T12:00:00Z")).toBe("2 days ago");
+    expect(ago("2026-11-19T12:00:01Z")).toBe("6 days ago");
+    expect(ago("2026-11-19T12:00:00Z")).toBe(isoDate(new Date("2026-11-19T12:00:00Z")));
   });
 
   it("gives today's local date", () => {

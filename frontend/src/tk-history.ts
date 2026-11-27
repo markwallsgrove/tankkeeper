@@ -81,7 +81,14 @@ export class TkHistory extends TkView {
             html`<li class="row">
               <div class="grow">
                 <div>${entry.summary}</div>
-                <div class="muted">${shortTime(entry.time)} · ${sourceText(entry.source)}</div>
+                <div class="muted when">
+                  ${shortTime(entry.time)} ·
+                  ${sourceText(entry.source)}${
+                    typeof entry.conversation_name === "string"
+                      ? ` · in ${entry.conversation_name}`
+                      : nothing
+                  }
+                </div>
                 ${entry.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
               </div>
               <button class="undo" ?disabled=${this.busy} @click=${() => this.undo(entry)}>

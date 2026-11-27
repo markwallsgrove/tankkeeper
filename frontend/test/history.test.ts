@@ -100,6 +100,33 @@ describe("tk-history", () => {
     expect(connection.types()).toEqual(["tankkeeper/get_history"]);
   });
 
+  it("names the conversation a change was made in, even once it is deleted", async () => {
+    const connection = new FakeConnection().on("get_history", {
+      history: [
+        { ...entry, id: "h1", conversation_id: "panel_a", conversation_name: "Algae" },
+        {
+          ...entry,
+          id: "h2",
+          conversation_id: "panel_b",
+          conversation_name: "deleted conversation",
+        },
+        { ...entry, id: "h3", conversation_name: null },
+      ],
+    });
+    const element = mount<TkHistory>("tk-history", {
+      api: new TankkeeperApi(connection),
+      collection: "tank",
+    });
+    await settle(element);
+
+    const lines = findAll(element, "li .when").map((item) =>
+      item.textContent.replace(/\s+/g, " ").trim(),
+    );
+    expect(lines[0]).toMatch(/ · Panel · in Algae$/);
+    expect(lines[1]).toMatch(/ · Panel · in deleted conversation$/);
+    expect(lines[2]).toMatch(/ · Panel$/);
+  });
+
   it("waits for the API", async () => {
     const element = mount<TkHistory>("tk-history", { collection: "tank" });
     await settle(element);
