@@ -37,12 +37,12 @@ Every tool name starts with `tankkeeper__`.
 | Tool | What it does |
 |---|---|
 | `get_tank` | The tank's details, the water values, how many records there are, how many proposals wait, and whether the tank is empty. |
-| `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the volume of water in the tank. |
+| `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the volume of water in the tank. Removed products only with `include_removed`. |
 | `list_contents` | Plants, rocks, wood, substrate, decorations and fish in the tank. |
 | `get_log` | Doses, water tests and imported events, newest first, optionally between two dates. |
 | `list_notes` | Open questions and assumptions about the tank. |
 | `list_proposals` | Proposed changes, newest first, without their confirm codes. A batch shows its changes and the steps that made them. |
-| `get_history` | The newest changes, with the record before and after, who made each change and in which conversation. |
+| `get_history` | The newest changes, with the record before and after, where each change came from, the Home Assistant user and the conversation. |
 | `list_conversations` | Past conversations about the tank, newest first. |
 | `get_conversation` | A past conversation, its key messages and the changes made in it. |
 | `search_conversations` | Past conversations that mention some words, newest first. |
@@ -50,11 +50,14 @@ Every tool name starts with `tankkeeper__`.
 | `record_test` | Record water test results: ammonia, nitrite, nitrate and phosphate in mg/l, KH in dKH, GH in dGH, and pH. Returns the status. |
 | `add_content` | Record something put in the tank. |
 | `add_note` | Record an open question or an assumption. |
+| `update_note` | Propose changes to a note. |
+| `remove_note` | Propose removing a note, such as an answered question. The history keeps it. |
 | `save_conversation` | Start a conversation, or add a title, summary and key messages to one. Up to 20 messages a call and 200 a conversation. |
 | `set_tank` | Propose new tank details, including the stage: `cycling` or `cycled`. |
 | `set_water` | Propose new tap water values. |
 | `add_product` | Propose a new product. |
 | `update_product` | Propose changes to a product. |
+| `remove_product` | Propose that you stopped using a product. It stays in the records with the date. |
 | `update_content` | Propose changes to a contents item, such as a new count. |
 | `remove_content` | Propose taking an item out. It stays in the records with the date it came out. |
 | `undo_change` | Propose putting back what an earlier change did. |
@@ -74,12 +77,23 @@ Every tool name starts with `tankkeeper__`.
 | `set_rules` | Propose new rule limits. |
 | `list_decisions` | Every decision by number, with its title, date and status. |
 | `get_decision` | One decision in full, with what replaced it and what it replaced. |
-| `set_decision` | Propose adding a decision (it gets the next number), accepting a proposed one, or replacing one with another. |
+| `set_decision` | Propose adding a decision (it gets the next number), changing its text, accepting a proposed one, or replacing one with another. |
 | `import_decisions` | Propose adding or updating decisions given in full, such as your decision files. |
 | `import_log` | Propose adding your earlier log. Each dose and test becomes a log record; tasks, fills and water changes become an event. Records already in the log are left out. |
 | `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
+
+### Websocket API
+
+The panel uses websocket commands. Only admins can use them.
+
+- `tankkeeper/<tool>` runs a tool, with its arguments in `args`. It has every tool except the ones that belong to a conversation: `save_conversation`, `start_batch`, `start_setup`, `get_batch`, `apply_change` and `reject_change`.
+- A change applies straight away, as in the options. It is recorded with the source `panel` and your Home Assistant user, and can be undone. `reason` is optional.
+- `tankkeeper/accept_proposal` and `tankkeeper/reject_proposal` take a `proposal_id`. They work as Accept and Reject in a notification.
+- `tankkeeper/delete_conversation` takes a `conversation_id`. The changes made in the conversation stay in the history. No tool can delete a conversation.
+- An error has the same code as the tool's error, `invalid_format` for wrong arguments, `unauthorized` for a person who is not an admin, or `not_loaded`.
+- Deleting a conversation keeps its waiting proposals. They can still be accepted or rejected.
 
 ### Batches and setup
 

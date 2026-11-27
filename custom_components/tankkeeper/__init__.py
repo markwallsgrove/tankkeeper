@@ -3,9 +3,12 @@
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.llm import async_register_api
+from homeassistant.helpers.typing import ConfigType
 
-from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME
+from . import websocket
+from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .light_control import LightRunner
 from .llm import TankkeeperAPI
 from .proposal_notify import ProposalNotifier
@@ -15,7 +18,15 @@ from .status import StatusRunner
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 type TankkeeperConfigEntry = ConfigEntry[TankkeeperService]
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the panel's websocket commands."""
+    websocket.async_register(hass)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -> bool:

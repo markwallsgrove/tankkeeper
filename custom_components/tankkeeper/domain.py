@@ -201,11 +201,13 @@ class HistoryEntry:
     summary: str
     changes: tuple[Change, ...]
     proposal_id: str | None = None
+    user_id: str | None = None
 
     def to_json(self) -> Record:
         """Serialise for storage."""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "time": self.time.isoformat(),
             "source": self.source.value,
             "conversation_id": self.conversation_id,
@@ -225,6 +227,7 @@ class HistoryEntry:
             summary=_str(data["summary"]),
             changes=tuple(Change.from_json(_record(item)) for item in _list(data["changes"])),
             proposal_id=_optional_str(data["proposal_id"]),
+            user_id=_optional_str(data.get("user_id")),
         )
 
 
@@ -531,6 +534,7 @@ def apply_changes(
     conversation_id: str | None,
     summary: str,
     proposal_id: str | None = None,
+    user_id: str | None = None,
 ) -> HistoryEntry:
     """Apply every change, or none if any record no longer matches its before."""
     for change in changes:
@@ -552,6 +556,7 @@ def apply_changes(
         summary=summary,
         changes=changes,
         proposal_id=proposal_id,
+        user_id=user_id,
     )
     state.history.append(entry)
     return entry
@@ -640,15 +645,15 @@ def apply_proposal(
 
 
 def accept_proposal(
-    state: TankState, proposal_id: str, *, history_id: str, now: datetime, user_id: str | None
+    state: TankState, proposal_id: str, *, history_id: str, now: datetime, source: Source, user_id: str | None
 ) -> HistoryEntry:
-    """Apply a pending proposal from its notification. No code: the person must be known."""
+    """Apply a pending proposal from a notification or the panel. No code: the person must be known."""
     proposal = state.proposal(proposal_id)
     if proposal.state is not ProposalState.PENDING:
         raise ProposalClosedError(f"The proposal was already {proposal.state.value}")
     if user_id is None:
-        raise InvalidInputError("Accepting from a notification needs a known person")
-    return _apply(state, proposal, history_id=history_id, now=now, source=Source.NOTIFICATION, user_id=user_id)
+        raise InvalidInputError("Accepting without a code needs a known person")
+    return _apply(state, proposal, history_id=history_id, now=now, source=source, user_id=user_id)
 
 
 def _apply(
@@ -665,6 +670,7 @@ def _apply(
         conversation_id=proposal.conversation_id,
         summary=proposal.summary,
         proposal_id=proposal.id,
+        user_id=user_id,
     )
     state.proposals[proposal.id] = replace(
         proposal, state=ProposalState.APPLIED, decided=now, decided_by=user_id, history_id=entry.id
@@ -822,6 +828,12 @@ def _rebased(state: TankState, changes: tuple[Change, ...]) -> tuple[Change, ...
         for change in changes
     )
     return tuple(change for change in rebased if change.before != change.after)
+
+
+def delete_conversation(state: TankState, conversation_id: str) -> None:
+    """Delete a conversation. The changes it made stay in the history."""
+    state.conversation(conversation_id)
+    del state.conversations[conversation_id]
 
 
 def save_conversation(

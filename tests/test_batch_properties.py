@@ -245,7 +245,7 @@ def test_accept_applies_without_a_code_and_records_who() -> None:
     state = TankState()
     batch = _add(state, _start(state), [(Collection.NOTES, "a", {"x": 1})], START)
     later = START + timedelta(days=1)
-    entry = accept_proposal(state, batch.id, history_id="h", now=later, user_id="u2")
+    entry = accept_proposal(state, batch.id, history_id="h", now=later, source=Source.NOTIFICATION, user_id="u2")
     assert entry.source is Source.NOTIFICATION
     assert entry.proposal_id == batch.id
     accepted = state.proposal(batch.id)
@@ -254,17 +254,17 @@ def test_accept_applies_without_a_code_and_records_who() -> None:
     assert accepted.history_id == "h"
     assert state.get(Collection.NOTES, "a") == {"x": 1}
     with pytest.raises(ProposalClosedError):
-        accept_proposal(state, batch.id, history_id="h2", now=later, user_id="u2")
+        accept_proposal(state, batch.id, history_id="h2", now=later, source=Source.NOTIFICATION, user_id="u2")
 
 
 def test_accept_needs_a_person_and_a_change() -> None:
     state = TankState()
     batch = _start(state)
     with pytest.raises(NothingToChangeError):
-        accept_proposal(state, batch.id, history_id="h", now=START, user_id="u1")
+        accept_proposal(state, batch.id, history_id="h", now=START, source=Source.NOTIFICATION, user_id="u1")
     batch = _add(state, batch, [(Collection.NOTES, "a", {"x": 1})], START)
     with pytest.raises(InvalidInputError):
-        accept_proposal(state, batch.id, history_id="h", now=START, user_id=None)
+        accept_proposal(state, batch.id, history_id="h", now=START, source=Source.NOTIFICATION, user_id=None)
     assert state.proposal(batch.id).state is ProposalState.PENDING
 
 

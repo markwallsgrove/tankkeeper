@@ -8,7 +8,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DOMAIN
-from .domain import Proposal, TankkeeperError
+from .domain import Proposal, Source, TankkeeperError
 from .reminders import ACTION_EVENT, CLEAR_MESSAGE
 from .service import TankkeeperService
 
@@ -118,7 +118,7 @@ class ProposalNotifier:
             return
         try:
             if kind == ACCEPT:
-                await self._service.async_accept(proposal_id, user_id)
+                await self._service.async_accept(proposal_id, user_id, Source.NOTIFICATION)
             else:
                 await self._service.async_decline(proposal_id, user_id)
         except TankkeeperError as err:
