@@ -15,6 +15,7 @@ from homeassistant.util.json import JsonObjectType
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+from custom_components.tankkeeper import conversation as tankkeeper_conversation
 from custom_components.tankkeeper.claude import ASSIST_CONVERSATION
 from custom_components.tankkeeper.conversation import (
     EARLIER_MESSAGES,
@@ -300,17 +301,63 @@ async def test_a_conversation_id_that_is_not_plain_is_kept_out_of_the_prompt(
     assert "TankKeeper records this conversation and links" in claude.prompts[0]
 
 
-async def test_the_title_is_asked_for_only_until_it_is_set(
+async def test_the_prompt_stays_the_same_for_a_live_conversation(
     hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
 ) -> None:
+    # The Anthropic API rejects earlier thinking blocks once the system prompt changes.
     await _choose(call, CLAUDE)
     claude.turns = [Turn(tools=[("save_conversation", {"title": "Snails"})])]
 
     first = await _say(hass, agent_id, "Hello")
+    await _set_up(call)
     await _say(hass, agent_id, "Again", first.conversation_id)
 
     assert TITLE_PROMPT in claude.prompts[0]
+    assert SETUP_PROMPT in claude.prompts[0]
+    assert claude.prompts[1] == claude.prompts[0]
+
+
+async def test_a_resumed_conversation_is_not_asked_for_a_title_it_has(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str, freezer: FrozenDateTimeFactory
+) -> None:
+    await _choose(call, CLAUDE)
+    claude.turns = [Turn(tools=[("save_conversation", {"title": "Snails"})])]
+    await _say(hass, agent_id, "Hello", "panel_titled")
+    _expire(hass, freezer)
+    await hass.async_block_till_done()
+
+    await _say(hass, agent_id, "Again", "panel_titled")
+
+    assert TITLE_PROMPT in claude.prompts[0]
     assert TITLE_PROMPT not in claude.prompts[1]
+
+
+async def test_only_the_latest_prompts_are_kept(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(tankkeeper_conversation, "KEPT_PROMPTS", 1)
+    await _choose(call, CLAUDE)
+    claude.turns = [Turn(tools=[("save_conversation", {"title": "Snails"})])]
+
+    await _say(hass, agent_id, "Hello", "first")
+    await _say(hass, agent_id, "Hello", "second")
+    await _say(hass, agent_id, "Again", "first")
+
+    assert TITLE_PROMPT in claude.prompts[0]
+    assert TITLE_PROMPT not in claude.prompts[2]
+
+
+async def test_a_new_extra_prompt_from_the_caller_is_used(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
+) -> None:
+    await _choose(call, CLAUDE)
+
+    for extra in ("Speak briefly.", "Speak slowly."):
+        await conversation.async_converse(
+            hass, "Hi", "same", Context(), language="en", agent_id=agent_id, extra_system_prompt=extra
+        )
+
+    assert claude.prompts[1].endswith("Speak slowly.")
 
 
 async def test_messages_saved_in_the_recorded_conversation_are_not_added_twice(
