@@ -1,6 +1,14 @@
 {
   "entity": {
     "sensor": {
+      "status": {
+        "default": "mdi:fishbowl-outline",
+        "state": {
+          "on_course": "mdi:check-circle-outline",
+          "watch": "mdi:eye-outline",
+          "act": "mdi:alert-circle-outline"
+        }
+      },
       "proposals_waiting": {
         "default": "mdi:clipboard-check-outline",
         "state": {

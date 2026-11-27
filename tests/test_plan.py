@@ -64,6 +64,7 @@ def test_reminders_round_trip_through_storage() -> None:
         task_time=time(8, 15),
         dose_time=time(13),
         resend_time=time(20, 45),
+        status_notify=("mobile_app_tablet",),
     )
 
     stored = reminders.to_json()
@@ -73,6 +74,7 @@ def test_reminders_round_trip_through_storage() -> None:
         "task_time": "08:15",
         "dose_time": "13:00",
         "resend_time": "20:45",
+        "status_notify": ["mobile_app_tablet"],
     }
     assert Reminders.from_json(stored) == reminders
 

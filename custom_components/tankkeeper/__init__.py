@@ -10,6 +10,7 @@ from .light_control import LightRunner
 from .llm import TankkeeperAPI
 from .reminders import ReminderSender
 from .service import TankkeeperService
+from .status import StatusRunner
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.CALENDAR, Platform.SENSOR, Platform.TODO]
 
@@ -33,6 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(ReminderSender(hass, service).start())
     entry.async_on_unload(LightRunner(hass, service).start())
+    entry.async_on_unload(StatusRunner(hass, service).start())
     return True
 
 

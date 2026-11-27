@@ -42,6 +42,14 @@
   },
   "entity": {
     "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "on_course": "On course",
+          "watch": "Watch",
+          "act": "Act"
+        }
+      },
       "proposals_waiting": {
         "name": "Proposals waiting"
       },
@@ -74,6 +82,7 @@
         "title": "Options",
         "menu_options": {
           "reminders": "Reminders",
+          "rules": "Rules and status",
           "add_light": "Add a light",
           "change_light": "Change a light",
           "one_day": "Change a light for one day",
@@ -87,13 +96,49 @@
           "notify": "Devices",
           "task_time": "Task time",
           "dose_time": "Dose time",
-          "resend_time": "Resend time"
+          "resend_time": "Resend time",
+          "status_notify": "Status alert devices"
         },
         "data_description": {
           "notify": "Notify services that get a reminder with Complete and Skip buttons. Use the Home Assistant app on a phone or tablet for the buttons.",
           "task_time": "When tasks are due. Open tasks from the last week are followed up at this time.",
           "dose_time": "When doses are due when no light is set. With a light, doses are due when the light turns on.",
-          "resend_time": "When tasks still open today are sent again."
+          "resend_time": "When tasks still open today are sent again.",
+          "status_notify": "Notify services that get a message when the status changes to Watch or Act, and once when it is back on course."
+        }
+      },
+      "rules": {
+        "title": "Rules and status",
+        "description": "The limits the rules use to set the status, and whether the tank is cycling. The old settings stay in the history.",
+        "data": {
+          "stage": "Stage",
+          "nitrogen_watch": "Ammonia or nitrite Watch limit",
+          "nitrogen_act": "Ammonia or nitrite Act limit",
+          "ph_watch": "pH Watch limit",
+          "ph_act": "pH Act limit",
+          "stall_watch_days": "Cycle stalled Watch days",
+          "stall_act_days": "Cycle stalled Act days",
+          "test_watch_days": "Test overdue Watch days",
+          "test_act_days": "Test overdue Act days",
+          "skip_watch": "Doses skipped for Watch",
+          "skip_act": "Doses skipped for Act",
+          "plan_watch_days": "Plan ends Watch days",
+          "plan_act_days": "Plan ends Act days"
+        },
+        "data_description": {
+          "stage": "Cycling turns on the pH and cycle stalled rules. Leave empty when not known.",
+          "nitrogen_watch": "A tank reading above this, in ppm, is Watch.",
+          "nitrogen_act": "A tank reading above this, in ppm, is Act.",
+          "ph_watch": "A pH under this while cycling is Watch.",
+          "ph_act": "A pH under this while cycling is Act.",
+          "stall_watch_days": "Days of the same ammonia reading with no nitrite that are Watch.",
+          "stall_act_days": "Days of the same ammonia reading with no nitrite that are Act.",
+          "test_watch_days": "Days a planned test is late for Watch.",
+          "test_act_days": "Days a planned test is late for Act.",
+          "skip_watch": "Doses of one product skipped in a row for Watch.",
+          "skip_act": "Doses of one product skipped in a row for Act.",
+          "plan_watch_days": "Days left in the plan for Watch.",
+          "plan_act_days": "Days left in the plan for Act."
         }
       },
       "add_light": {
@@ -175,7 +220,8 @@
       "nothing_changed": "Nothing was changed."
     },
     "error": {
-      "invalid_light": "{error}"
+      "invalid_light": "{error}",
+      "invalid_rules": "{error}"
     }
   },
   "exceptions": {
@@ -198,6 +244,12 @@
         "on_off": "On/off",
         "dimmable": "Dimmable",
         "colour": "Colour"
+      }
+    },
+    "stage": {
+      "options": {
+        "cycling": "Cycling",
+        "cycled": "Cycled"
       }
     }
   }
