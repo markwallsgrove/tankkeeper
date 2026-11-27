@@ -20,7 +20,12 @@ pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 PHONE = "mobile_app_phone"
 TABLET = "mobile_app_tablet"
 STATUS = "sensor.nano_status"
-BACK = {"title": "Nano: On course", "message": "Back on course.", "data": {"tag": "tankkeeper-status"}}
+DISCUSS = [{"action": "URI", "title": "Discuss", "uri": "/tankkeeper?status=now"}]
+BACK = {
+    "title": "Nano: On course",
+    "message": "Back on course.",
+    "data": {"tag": "tankkeeper-status", "actions": DISCUSS},
+}
 
 
 @pytest.fixture
@@ -41,7 +46,7 @@ async def alerts(call: Caller, phone: list[ServiceCall], tablet: list[ServiceCal
 
 
 def _alert(level: str, message: str) -> dict[str, object]:
-    return {"title": f"Nano: {level}", "message": message, "data": {"tag": "tankkeeper-status"}}
+    return {"title": f"Nano: {level}", "message": message, "data": {"tag": "tankkeeper-status", "actions": DISCUSS}}
 
 
 def _sent(calls: list[ServiceCall]) -> list[dict[str, object]]:

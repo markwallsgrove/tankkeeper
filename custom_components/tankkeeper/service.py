@@ -103,6 +103,7 @@ class TankkeeperService:
     ) -> None:
         """Set up storage for the config entry."""
         self.hass = hass
+        self.entry_id = entry_id
         self._store: Store[Record] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self._clock = clock
         self._code_factory = code_factory

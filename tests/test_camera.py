@@ -486,7 +486,7 @@ async def test_the_daily_check_runs_at_its_time_and_sends_an_issue(
                 "clickAction": "/tankkeeper",
                 "image": f"/api/tankkeeper/photos/{check_id}",
                 "actions": [
-                    {"action": "URI", "title": "Discuss", "uri": "/tankkeeper"},
+                    {"action": "URI", "title": "Discuss", "uri": f"/tankkeeper?photo={check_id}"},
                     {"action": "URI", "title": "Open in panel", "uri": "/tankkeeper"},
                     {"action": f"{DISMISS}|{check_id}", "title": "Not a problem"},
                 ],

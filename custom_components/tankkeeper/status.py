@@ -7,7 +7,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_change
 
-from .const import DOMAIN
+from .const import DOMAIN, discuss_action
 from .rules import LEVEL_TITLES, Level, alert
 from .service import TankkeeperService
 
@@ -62,7 +62,7 @@ class StatusRunner:
         data = {
             "title": f"{self._service.tank_name()}: {LEVEL_TITLES[level]}",
             "message": message,
-            "data": {"tag": TAG},
+            "data": {"tag": TAG, "actions": [discuss_action("status", "now")]},
         }
         for device in self._service.reminders().status_notify:
             try:

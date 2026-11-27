@@ -13,7 +13,7 @@ from pytest_homeassistant_custom_component.common import (
     async_mock_service,
 )
 
-from custom_components.tankkeeper.proposal_notify import DISCUSS_URI, NOTIFY_AFTER
+from custom_components.tankkeeper.proposal_notify import NOTIFY_AFTER
 
 from .common import Caller, apply, dict_of, list_of, str_of
 
@@ -63,18 +63,14 @@ def _message(proposal: JsonObjectType, text: str) -> dict[str, object]:
         "message": text,
         "data": {
             "tag": f"tankkeeper-proposal-{proposal_id}",
-            "url": DISCUSS_URI,
+            "url": "/tankkeeper",
             "actions": [
                 {"action": f"TANKKEEPER_ACCEPT|{proposal_id}", "title": "Accept"},
                 {"action": f"TANKKEEPER_REJECT|{proposal_id}", "title": "Reject"},
-                {"action": "URI", "title": "Discuss", "uri": DISCUSS_URI},
+                {"action": "URI", "title": "Discuss", "uri": f"/tankkeeper?proposal={proposal_id}"},
             ],
         },
     }
-
-
-def test_discuss_opens_the_panel() -> None:
-    assert DISCUSS_URI == "/tankkeeper"
 
 
 async def test_a_proposal_still_waiting_is_sent_once(

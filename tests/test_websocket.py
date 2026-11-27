@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util.json import JsonObjectType
 import probatio as p
 import pytest
@@ -13,7 +14,8 @@ from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 from custom_components.tankkeeper.tools import SPECS
 from custom_components.tankkeeper.websocket import CONVERSATION_ONLY, PANEL_COMMANDS, panel_args
 
-from .common import Caller, Panel, dict_of, list_of, str_of
+from .agents import CLAUDE, FakeClaude
+from .common import Caller, Panel, apply, dict_of, list_of, str_of
 
 pytestmark = pytest.mark.freeze_time("2026-11-26T12:00:00+00:00")
 COMMAND_ARGS = Path(__file__).parent.parent / "frontend" / "test" / "commands.json"
@@ -176,3 +178,26 @@ async def test_commands_need_a_loaded_tank(hass: HomeAssistant, panel: Panel, lo
     assert await hass.config_entries.async_setup(loaded_entry.entry_id)
     await hass.async_block_till_done()
     assert dict_of((await panel.ok("get_tank"))["tank"])["name"] == "Nano"
+
+
+async def test_chat_agent_names_the_tanks_agent_and_whether_it_can_answer(
+    hass: HomeAssistant, claude: FakeClaude, panel: Panel, call: Caller
+) -> None:
+    agent_id = er.async_get(hass).async_get_entity_id("conversation", "tankkeeper", "entry1_agent")
+
+    assert await panel.ok_message("chat_agent", {}) == {"agent_id": agent_id, "ready": False}
+
+    await apply(call, await call.ok("set_claude", agent=CLAUDE, reason="Chat through Claude"))
+
+    assert await panel.ok_message("chat_agent", {}) == {"agent_id": agent_id, "ready": True}
+    assert "tankkeeper/chat_agent" in PANEL_COMMANDS
+
+
+async def test_chat_agent_is_not_ready_when_the_chosen_agent_is_gone(
+    hass: HomeAssistant, claude: FakeClaude, panel: Panel, call: Caller
+) -> None:
+    await apply(call, await call.ok("set_claude", agent=CLAUDE, reason="Chat through Claude"))
+    er.async_get(hass).async_remove(CLAUDE)
+    await hass.async_block_till_done()
+
+    assert (await panel.ok_message("chat_agent", {}))["ready"] is False

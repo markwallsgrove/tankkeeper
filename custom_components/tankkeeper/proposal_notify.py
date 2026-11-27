@@ -7,7 +7,7 @@ from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import DOMAIN
+from .const import DOMAIN, PANEL_URI, discuss_action
 from .domain import Proposal, Source, TankkeeperError
 from .reminders import ACTION_EVENT, CLEAR_MESSAGE
 from .service import TankkeeperService
@@ -17,7 +17,6 @@ _LOGGER = logging.getLogger(__name__)
 NOTIFY_DOMAIN = "notify"
 NOTIFY_AFTER = timedelta(minutes=10)
 CHECK_EVERY = timedelta(minutes=1)
-DISCUSS_URI = "/tankkeeper"
 ACCEPT = "TANKKEEPER_ACCEPT"
 REJECT = "TANKKEEPER_REJECT"
 
@@ -91,11 +90,11 @@ class ProposalNotifier:
                     "message": message_for(proposal),
                     "data": {
                         "tag": tag_for(proposal.id),
-                        "url": DISCUSS_URI,
+                        "url": PANEL_URI,
                         "actions": [
                             {"action": f"{ACCEPT}|{proposal.id}", "title": "Accept"},
                             {"action": f"{REJECT}|{proposal.id}", "title": "Reject"},
-                            {"action": "URI", "title": "Discuss", "uri": DISCUSS_URI},
+                            discuss_action("proposal", proposal.id),
                         ],
                     },
                 }

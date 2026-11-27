@@ -22,7 +22,7 @@ from homeassistant.util.ulid import ulid_now
 import probatio as p
 
 from .claude import Trigger
-from .const import DOMAIN
+from .const import DOMAIN, PANEL_URI, discuss_action
 from .domain import CODE_KEYS, Record, Source, without_keys
 from .reviews import MAX_COMMENT, Review, event_triggers, message, ordered, result_text
 from .rules import LEVEL_TITLES, Status
@@ -35,7 +35,6 @@ _LOGGER = logging.getLogger(__name__)
 DELAY_SECONDS = 120
 COMMENT_TIMEOUT = 180.0
 MAX_TOOL_CALLS = 20
-PANEL_URI = "/tankkeeper"
 REVIEW_API_ID = f"{DOMAIN}_review"
 PLAN_TOOLS = frozenset({"add_task", "update_task", "remove_task"})
 REVIEW_TOOLS = tuple(spec for spec in SPECS if spec.annotations is READ or spec.name in PLAN_TOOLS)
@@ -279,7 +278,12 @@ class ReviewRunner:
         data = {
             "title": f"{self._service.tank_name()}: {LEVEL_TITLES[review.level]}",
             "message": message(review),
-            "data": {"tag": TAG, "url": PANEL_URI, "clickAction": PANEL_URI},
+            "data": {
+                "tag": TAG,
+                "url": PANEL_URI,
+                "clickAction": PANEL_URI,
+                "actions": [discuss_action("review", review.id)],
+            },
         }
         for device in self._service.reminders().status_notify:
             try:

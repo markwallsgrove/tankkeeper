@@ -6,12 +6,14 @@ A tool command takes the tool's arguments under args, as some are called id or t
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
+from homeassistant.components import conversation
 from homeassistant.components.websocket_api import async_register_command
 from homeassistant.components.websocket_api.connection import ActiveConnection
 from homeassistant.components.websocket_api.const import WebSocketCommandHandler
 from homeassistant.components.websocket_api.decorators import async_response, require_admin, websocket_command
 from homeassistant.components.websocket_api.messages import BASE_COMMAND_MESSAGE_SCHEMA
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util.json import JsonObjectType
 import probatio as p
 
@@ -27,7 +29,14 @@ CONVERSATION_ONLY = frozenset(
     {"save_conversation", "start_batch", "start_setup", "get_batch", "apply_change", "reject_change"}
 )
 PANEL_REASON = "Changed in the TankKeeper panel"
-PANEL_ONLY = ("accept_proposal", "reject_proposal", "delete_conversation", "accept_finding", "reject_finding")
+PANEL_ONLY = (
+    "accept_proposal",
+    "reject_proposal",
+    "delete_conversation",
+    "accept_finding",
+    "reject_finding",
+    "chat_agent",
+)
 PANEL_COMMANDS = frozenset(
     f"{DOMAIN}/{name}" for name in (*(spec.name for spec in SPECS if spec.name not in CONVERSATION_ONLY), *PANEL_ONLY)
 )
@@ -45,6 +54,7 @@ def async_register(hass: HomeAssistant) -> None:
     async_register_command(hass, delete_conversation)
     async_register_command(hass, accept_finding)
     async_register_command(hass, reject_finding)
+    async_register_command(hass, chat_agent)
 
 
 def panel_args(spec: Spec) -> dict[p.Marker, object]:
@@ -92,6 +102,15 @@ def _command(run: Command) -> WebSocketCommandHandler:
     return handle
 
 
+async def _chat_agent(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
+    """The tank's Assist agent, which the panel's chat talks to, and whether it has an agent to pass chat to."""
+    hass = service.hass
+    agent_id = er.async_get(hass).async_get_entity_id("conversation", DOMAIN, f"{service.entry_id}_agent")
+    chosen = service.claude().agent
+    ready = chosen is not None and conversation.async_get_agent_info(hass, chosen) is not None
+    return {"agent_id": agent_id, "ready": ready}
+
+
 async def _accept(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
     await service.async_accept(msg["proposal_id"], actor.user_id, Source.PANEL)
     return proposal_json(service.state.proposal(msg["proposal_id"]))
@@ -126,6 +145,7 @@ delete_conversation = websocket_command(
 accept_finding = websocket_command({p.Required("type"): f"{DOMAIN}/accept_finding", p.Required("check_id"): NON_EMPTY})(
     _command(_accept_finding)
 )
+chat_agent = websocket_command({p.Required("type"): f"{DOMAIN}/chat_agent"})(_command(_chat_agent))
 reject_finding = websocket_command({p.Required("type"): f"{DOMAIN}/reject_finding", p.Required("check_id"): NON_EMPTY})(
     _command(_reject_finding)
 )
