@@ -35,6 +35,7 @@ from .domain import (
     apply_proposal,
     batch_view,
     changes_in_conversation,
+    delete_conversation,
     find_batch,
     plan_changes,
     propose,
@@ -366,9 +367,25 @@ class TankkeeperService:
             source=actor.source,
             conversation_id=actor.conversation_id,
             summary=summary,
+            user_id=actor.user_id,
         )
         await self._async_save()
         return entry
+
+    async def async_change(
+        self,
+        targets: Iterable[Target],
+        actor: Actor,
+        *,
+        tool: str,
+        summary: str,
+        reason: str,
+        evidence: str | None,
+    ) -> Proposal | HistoryEntry:
+        """Apply a change from the panel straight away, as the options flow does. Anyone else gets a proposal."""
+        if actor.source is Source.PANEL:
+            return await self.async_set(targets, actor, summary)
+        return await self.async_propose(targets, actor, tool=tool, summary=summary, reason=reason, evidence=evidence)
 
     async def async_propose(
         self,
@@ -413,11 +430,11 @@ class TankkeeperService:
         await self._async_save()
         return proposal
 
-    async def async_propose_undo(self, history_id: str, actor: Actor, reason: str) -> Proposal:
-        """Propose putting back what a history entry changed."""
+    async def async_undo(self, history_id: str, actor: Actor, reason: str) -> Proposal | HistoryEntry:
+        """Put back what a history entry changed: straight away from the panel, otherwise as a proposal."""
         entry = self._state.history_entry(history_id)
         targets = [(change.collection, change.record_id, change.after) for change in undo_changes(entry)]
-        return await self.async_propose(
+        return await self.async_change(
             targets, actor, tool="undo_change", summary=f"Undo: {entry.summary}", reason=reason, evidence=None
         )
 
@@ -456,14 +473,16 @@ class TankkeeperService:
         await self._async_save()
         return batch
 
-    async def async_accept(self, proposal_id: str, user_id: str | None) -> HistoryEntry:
-        """Apply a proposal from its notification, recording who accepted it."""
-        entry = accept_proposal(self._state, proposal_id, history_id=ulid_now(), now=self._clock(), user_id=user_id)
+    async def async_accept(self, proposal_id: str, user_id: str | None, source: Source) -> HistoryEntry:
+        """Apply a proposal from its notification or the panel, recording who accepted it."""
+        entry = accept_proposal(
+            self._state, proposal_id, history_id=ulid_now(), now=self._clock(), source=source, user_id=user_id
+        )
         await self._async_save()
         return entry
 
     async def async_decline(self, proposal_id: str, user_id: str | None) -> Proposal:
-        """Reject a proposal from its notification, recording who rejected it."""
+        """Reject a proposal from its notification or the panel, recording who rejected it."""
         proposal = reject_proposal(self._state, proposal_id, now=self._clock(), user_id=user_id, any_user=True)
         await self._async_save()
         return proposal
@@ -504,6 +523,11 @@ class TankkeeperService:
         )
         await self._async_save()
         return conversation
+
+    async def async_delete_conversation(self, conversation_id: str) -> None:
+        """Delete a conversation. The changes it made stay in the history."""
+        delete_conversation(self._state, conversation_id)
+        await self._async_save()
 
     def _check_conversation(self, actor: Actor) -> None:
         if actor.conversation_id is not None:

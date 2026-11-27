@@ -238,3 +238,25 @@ async def test_decisions_keep_their_history(call: Caller) -> None:
         "Accept decision 0002: Fishless cycle",
         "Import 1 decision",
     ]
+
+
+async def test_update_a_decision_text(call: Caller) -> None:
+    await _import(call, CYCLING, OLD_DOSE, NEW_DOSE)
+
+    proposal = await call.ok(
+        "set_decision", action="update", number=2, why="Ammonia burns gills.", open=[], reason="Clearer"
+    )
+
+    assert proposal["summary"] == "Change decision 0002: Fishless cycle"
+    await apply(call, proposal)
+    decision = await call.ok("get_decision", number=2)
+    assert (decision["why"], decision["open"], decision["status"]) == ("Ammonia burns gills.", [], "accepted")
+    title = await call.ok("set_decision", action="update", number=9, title="Old dose", reason="Name")
+    await apply(call, title)
+    assert dict_of(await call.ok("get_decision", number=9))["status"] == "replaced"
+    assert await call.error("set_decision", action="update", number=2, date="soon", reason="x") == "invalid_input"
+    assert await call.error("set_decision", action="update", number=7, title="x", reason="x") == "not_found"
+    for links in ({"replaces": [1]}, {"replaced_by": 1}):
+        assert await call.error("set_decision", action="update", number=2, title="x", reason="x", **links) == (
+            "invalid_input"
+        )

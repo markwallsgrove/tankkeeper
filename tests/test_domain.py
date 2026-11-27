@@ -32,6 +32,7 @@ from custom_components.tankkeeper.domain import (
     apply_proposal,
     changes_in_conversation,
     check_code,
+    delete_conversation,
     dose_for_volume,
     merge_record,
     plan_changes,
@@ -406,6 +407,40 @@ def test_from_json_reads_a_store_from_before_the_light_log() -> None:
     del data["light_log"]
 
     assert TankState.from_json(data).light_log == []
+
+
+def test_from_json_reads_history_from_before_the_user() -> None:
+    state = _state_with_proposal()
+    _apply(state)
+    data = state.to_json()
+    for entry in cast(list[Record], data["history"]):
+        del entry["user_id"]
+
+    assert TankState.from_json(data).history[0].user_id is None
+
+
+def test_delete_conversation_keeps_its_changes() -> None:
+    state = TankState()
+    save_conversation(
+        state, conversation_id="c1", now=NOW, source=Source.MCP, user_id="u1", title="t", summary=None, messages=[]
+    )
+    apply_changes(
+        state,
+        plan_changes(state, [(Collection.NOTES, "n1", {"topic": "x"})]),
+        history_id="h1",
+        now=NOW,
+        source=Source.MCP,
+        user_id="u1",
+        conversation_id="c1",
+        summary="Note",
+    )
+
+    delete_conversation(state, "c1")
+
+    assert state.conversations == {}
+    assert state.history[0].conversation_id == "c1"
+    with pytest.raises(NotFoundError):
+        delete_conversation(state, "c1")
 
 
 def test_from_json_tolerates_a_missing_collection() -> None:

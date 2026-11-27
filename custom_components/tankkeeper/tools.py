@@ -141,6 +141,12 @@ REASON: dict[p.Marker, object] = {
     p.Required("reason", description="Why this change, in a sentence the owner will read"): NON_EMPTY,
     p.Optional("evidence", description="The test, decision or note the change rests on"): NON_EMPTY,
 }
+NOTE_FIELDS: dict[p.Marker, object] = {
+    p.Optional("kind"): p.In(["question", "assumption"]),
+    p.Optional("topic"): NON_EMPTY,
+    p.Optional("text"): NON_EMPTY,
+    p.Optional("how_to_resolve"): str,
+}
 LIMIT: dict[p.Marker, object] = {p.Optional("limit", default=20): p.All(int, p.Range(min=1, max=200))}
 CONTENT_TYPES = ["plant", "rock", "wood", "substrate", "decoration", "fish", "other"]
 DAYS = p.All(int, p.Range(min=0, max=365))
@@ -274,8 +280,11 @@ async def list_products(service: TankkeeperService, data: Record, actor: Actor) 
     """Every product, with the label dose worked out for the tank."""
     tank = service.records(Collection.TANK).get(TANK_ID, {})
     volume = tank.get("dosing_volume_litres") or tank.get("volume_litres")
+    include_removed = data["include_removed"] is True
     products: list[JsonValue] = []
     for product_id, product in service.records(Collection.PRODUCTS).items():
+        if not include_removed and product.get("removed") is not None:
+            continue
         item: Record = {"id": product_id, **product}
         label = product.get("label_dose")
         if (
@@ -334,7 +343,7 @@ async def list_proposals(service: TankkeeperService, data: Record, actor: Actor)
     state = data["state"]
     proposals = [proposal for proposal in service.state.proposals.values() if state in ("all", proposal.state.value)]
     proposals.sort(key=lambda proposal: proposal.created, reverse=True)
-    return {"proposals": [_proposal_json(proposal) for proposal in proposals[: _int(data, "limit")]]}
+    return {"proposals": [proposal_json(proposal) for proposal in proposals[: _int(data, "limit")]]}
 
 
 async def get_history(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -535,10 +544,53 @@ async def remove_content(service: TankkeeperService, data: Record, actor: Actor)
     )
 
 
+async def remove_product(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose that the owner stopped using a product. It stays in the records with the date."""
+    product_id = _str(data, "product_id")
+    current = service.state.require(Collection.PRODUCTS, product_id)
+    product = merge_record(current, {"removed": _date_or_today(data, "removed")})
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="remove_product",
+        summary=f"Remove the product {current.get('name')}",
+        targets=[(Collection.PRODUCTS, product_id, product)],
+    )
+
+
+async def update_note(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose changes to a note."""
+    note_id = _str(data, "note_id")
+    current = service.state.require(Collection.NOTES, note_id)
+    note = merge_record(current, _fields(data, NOTE_FIELDS))
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="update_note",
+        summary=f"Change the note {note.get('topic')}",
+        targets=[(Collection.NOTES, note_id, note)],
+    )
+
+
+async def remove_note(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose removing a note, such as an answered question. The history keeps it."""
+    note_id = _str(data, "note_id")
+    current = service.state.require(Collection.NOTES, note_id)
+    return await _propose(
+        service,
+        data,
+        actor,
+        tool="remove_note",
+        summary=f"Remove the note {current.get('topic')}",
+        targets=[(Collection.NOTES, note_id, None)],
+    )
+
+
 async def undo_change(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Propose putting back what an earlier change did."""
-    proposal = await service.async_propose_undo(_str(data, "history_id"), actor, _str(data, "reason"))
-    return _proposal_json(proposal, with_code=True)
+    return _changed(await service.async_undo(_str(data, "history_id"), actor, _str(data, "reason")))
 
 
 async def start_batch(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -571,7 +623,7 @@ async def apply_change(service: TankkeeperService, data: Record, actor: Actor) -
 async def reject_change(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Close a proposal the owner said no to."""
     proposal = await service.async_reject(_str(data, "proposal_id"), actor)
-    return {"rejected": True, "proposal": _proposal_json(proposal)}
+    return {"rejected": True, "proposal": proposal_json(proposal)}
 
 
 async def get_plan(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -742,7 +794,13 @@ async def set_decision(service: TankkeeperService, data: Record, actor: Actor) -
         if "number" not in data:
             raise InvalidInputError(f"{action} needs the number of the decision")
         number = _int(data, "number")
-        if action == "accept":
+        if action == "update":
+            if "replaces" in data or "replaced_by" in data:
+                raise InvalidInputError("update changes the text only. Use add with replaces, or replace")
+            current = dec.find(decisions, number)
+            changed = [_updated_decision(current, data)]
+            summary = f"Change decision {current.record_id}: {changed[0].title}"
+        elif action == "accept":
             accepted = dec.accept(decisions, number)
             changed = [accepted]
             summary = f"Accept decision {accepted.record_id}: {accepted.title}"
@@ -1018,7 +1076,7 @@ def _light_json(service: TankkeeperService, light: Light, log: list[LightEvent],
 async def _propose(
     service: TankkeeperService, data: Record, actor: Actor, *, tool: str, summary: str, targets: list[Target]
 ) -> JsonObjectType:
-    proposal = await service.async_propose(
+    change = await service.async_change(
         targets,
         actor,
         tool=tool,
@@ -1026,7 +1084,24 @@ async def _propose(
         reason=_str(data, "reason"),
         evidence=_optional_str(data, "evidence"),
     )
-    return _proposal_json(proposal, with_code=True)
+    return _changed(change)
+
+
+def _changed(change: Proposal | HistoryEntry) -> JsonObjectType:
+    if isinstance(change, HistoryEntry):
+        return {"applied": True, "history": _history_json(change)}
+    return proposal_json(change, with_code=True)
+
+
+def _updated_decision(decision: Decision, data: Record) -> Decision:
+    return replace(
+        decision,
+        title=_str(data, "title") if "title" in data else decision.title,
+        decision=_str(data, "decision") if "decision" in data else decision.decision,
+        why=_str(data, "why") if "why" in data else decision.why,
+        open=tuple(str(item) for item in cast(list[JsonValue], data["open"])) if "open" in data else decision.open,
+        day=dec.parse_day(_date_or_today(data, "date")) if "date" in data else decision.day,
+    )
 
 
 def _decision_target(decision: Decision) -> Target:
@@ -1120,7 +1195,9 @@ def _find_product(service: TankkeeperService, product: str) -> tuple[str, Record
     if product in products:
         return product, products[product]
     matches = [
-        (pid, item) for pid, item in products.items() if str(item.get("name", "")).casefold() == product.casefold()
+        (pid, item)
+        for pid, item in products.items()
+        if item.get("removed") is None and str(item.get("name", "")).casefold() == product.casefold()
     ]
     if len(matches) != 1:
         raise InvalidInputError(f"No single product called {product}. Use list_products for the ids")
@@ -1152,13 +1229,14 @@ def _history_json(entry: HistoryEntry) -> JsonObjectType:
         "conversation_id": entry.conversation_id,
         "summary": entry.summary,
         "proposal_id": entry.proposal_id,
+        "user_id": entry.user_id,
         "changes": [_change_json(change) for change in entry.changes],
     }
 
 
 def _batch_json(service: TankkeeperService, batch: Proposal) -> JsonObjectType:
     is_open = batch.is_open(service.now())
-    result = _proposal_json(batch, with_code=is_open)
+    result = proposal_json(batch, with_code=is_open)
     result["open"] = is_open
     if batch.setup:
         records = service.batch_records(batch).records
@@ -1178,7 +1256,8 @@ def _step_json(step: Step) -> JsonObjectType:
     return result
 
 
-def _proposal_json(proposal: Proposal, *, with_code: bool = False) -> JsonObjectType:
+def proposal_json(proposal: Proposal, *, with_code: bool = False) -> JsonObjectType:
+    """A proposal as the tools and the panel show it. The confirm code only with with_code, while it waits."""
     result: JsonObjectType = {
         "proposal_id": proposal.id,
         "state": proposal.state.value,
@@ -1271,8 +1350,8 @@ SPECS: tuple[Spec, ...] = (
         annotations=READ,
         handler=list_products,
         description="Every product with its label dose, the owner's dose, notes, and the label dose worked out for "
-        "the volume of water in the tank.",
-        schema={},
+        "the volume of water in the tank. With include_removed, also the products the owner stopped using.",
+        schema={p.Optional("include_removed", default=False): bool},
     ),
     Spec(
         name="list_contents",
@@ -1490,6 +1569,38 @@ SPECS: tuple[Spec, ...] = (
         },
     ),
     Spec(
+        name="remove_product",
+        title="Propose removing a product",
+        annotations=PROPOSE,
+        handler=remove_product,
+        description="Propose that the owner stopped using a product. It stays in the records with the date. "
+        "Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={
+            p.Required("product_id"): NON_EMPTY,
+            p.Optional("removed", description="ISO date they stopped. Defaults to today"): NON_EMPTY,
+            **REASON,
+            **CONVERSATION,
+        },
+    ),
+    Spec(
+        name="update_note",
+        title="Propose note changes",
+        annotations=PROPOSE,
+        handler=update_note,
+        description="Propose changes to an open question or an assumption. Returns a confirm code; nothing "
+        "changes until tankkeeper__apply_change.",
+        schema={p.Required("note_id"): NON_EMPTY, **NOTE_FIELDS, **REASON, **CONVERSATION},
+    ),
+    Spec(
+        name="remove_note",
+        title="Propose removing a note",
+        annotations=PROPOSE,
+        handler=remove_note,
+        description="Propose removing a note, such as a question that has its answer. The history keeps it. "
+        "Returns a confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={p.Required("note_id"): NON_EMPTY, **REASON, **CONVERSATION},
+    ),
+    Spec(
         name="undo_change",
         title="Propose an undo",
         annotations=PROPOSE,
@@ -1694,11 +1805,13 @@ SPECS: tuple[Spec, ...] = (
         handler=set_decision,
         description="Propose a decision change. add takes title, decision and why, and optional open points, "
         "date (ISO, defaults to today), status (proposed or accepted) and the numbers it replaces; it gets the "
-        "next number. accept takes the number of a proposed decision. replace takes the number and replaced_by. "
+        "next number. update takes the number and any of title, decision, why, open and date; it keeps the status. "
+        "accept takes the "
+        "number of a proposed decision. replace takes the number and replaced_by. "
         "The answers to decisions come from the owner. Returns a confirm code; nothing changes until "
         "tankkeeper__apply_change.",
         schema={
-            p.Required("action"): p.In(["add", "accept", "replace"]),
+            p.Required("action"): p.In(["add", "update", "accept", "replace"]),
             p.Optional("number"): DECISION_NUMBER,
             p.Optional("title"): NON_EMPTY,
             p.Optional("decision", description="What was decided, in Markdown"): NON_EMPTY,

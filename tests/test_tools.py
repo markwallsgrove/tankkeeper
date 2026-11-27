@@ -394,3 +394,57 @@ async def test_assist_calls_are_marked_as_assist(hass: HomeAssistant, call: Call
 
     history = list_of((await call.ok("get_history"))["history"])
     assert dict_of(history[0])["source"] == "assist"
+
+
+async def test_remove_product_keeps_it_with_the_date(call: Caller) -> None:
+    product_id = await _product(call)
+
+    proposal = await call.ok("remove_product", product_id=product_id, removed="2026-11-20", reason="Ran out")
+    assert proposal["summary"] == "Remove the product Easy Green"
+    await call.ok("apply_change", proposal_id=proposal["proposal_id"], code=proposal["code"])
+
+    assert list_of((await call.ok("list_products"))["products"]) == []
+    every = list_of((await call.ok("list_products", include_removed=True))["products"])
+    assert dict_of(every[0])["removed"] == "2026-11-20"
+    assert await call.error("remove_product", product_id="missing", reason="x") == "not_found"
+
+
+async def test_a_removed_product_does_not_match_its_name(call: Caller) -> None:
+    old_id = await _product(call)
+    proposal = await call.ok("remove_product", product_id=old_id, reason="Ran out")
+    await call.ok("apply_change", proposal_id=proposal["proposal_id"], code=proposal["code"])
+    new_id = await _product(call)
+
+    dose = await call.ok("record_dose", product="Easy Green", amount_ml=1)
+
+    entry = dict_of(list_of((await call.ok("get_log"))["entries"])[0])
+    assert dose["recorded"] is True
+    assert entry["product_id"] == new_id
+    assert (await call.ok("record_dose", product=old_id, amount_ml=1))["recorded"] is True
+
+
+async def test_update_and_remove_a_note(call: Caller) -> None:
+    note_id = str_of((await call.ok("add_note", kind="question", topic="CO2", text="Is it needed?"))["record_id"])
+
+    proposal = await call.ok("update_note", note_id=note_id, text="Not for now", kind="assumption", reason="Settled")
+    assert proposal["summary"] == "Change the note CO2"
+    await call.ok("apply_change", proposal_id=proposal["proposal_id"], code=proposal["code"])
+    note = dict_of(list_of((await call.ok("list_notes"))["notes"])[0])
+    assert (note["kind"], note["text"], note["how_to_resolve"]) == ("assumption", "Not for now", None)
+
+    removed = await call.ok("remove_note", note_id=note_id, reason="Answered")
+    assert removed["summary"] == "Remove the note CO2"
+    await call.ok("apply_change", proposal_id=removed["proposal_id"], code=removed["code"])
+    assert list_of((await call.ok("list_notes"))["notes"]) == []
+    history = list_of((await call.ok("get_history", record_id=note_id))["history"])
+    assert dict_of(list_of(dict_of(history[0])["changes"])[0])["after"] is None
+    assert await call.error("update_note", note_id="missing", text="x", reason="x") == "not_found"
+    assert await call.error("remove_note", note_id="missing", reason="x") == "not_found"
+
+
+async def test_history_records_who_made_the_change(call: Caller) -> None:
+    await call.ok("add_note", kind="question", topic="CO2", text="?")
+
+    history = dict_of(list_of((await call.ok("get_history"))["history"])[0])
+
+    assert history["user_id"] == "u1"
