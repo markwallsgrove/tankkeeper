@@ -2,8 +2,10 @@ import { css, html, nothing, type PropertyValues, type TemplateResult } from "li
 import { live } from "lit/directives/live.js";
 import { errorMessage, isNotFound, type TankkeeperApi } from "../api";
 import { TkView, shared, type ChatStart } from "../base";
+import { CHATS, CHAT_PLUS, CHECK, CLOSE, SEND, UNDO, iconButton, textButton } from "../buttons";
 import { changeText, shortTime } from "../format";
 import { markdown } from "../markdown";
+import { COG, openSettings } from "../settings";
 import { PANEL_CHAT, type OpenChat } from "./chat-list";
 import "./chat-list";
 import type {
@@ -15,10 +17,8 @@ import type {
   Review,
 } from "../types";
 
-export const NO_TANK_AGENT =
-  "TankKeeper's Assist agent is missing. Reload TankKeeper in Settings, Devices & services.";
-export const NO_AGENT =
-  "Choose the conversation agent in TankKeeper's Claude settings first: Settings, Devices & services, TankKeeper, Configure.";
+export const NO_TANK_AGENT = "TankKeeper's Assist agent is missing. Reload TankKeeper to add it.";
+export const NO_AGENT = "Choose the conversation agent the chat uses in TankKeeper's settings.";
 /** As many items as one command lists, so an item to discuss is found. */
 export const LOOKUP_LIMIT = 200;
 export const ITEM_TEXT = 200;
@@ -395,13 +395,14 @@ export class TkChat extends TkView {
                   html`<li>
                     <div class="row">
                       <span class="grow">${entry.summary}</span>
-                      <button
-                        class="undo"
-                        ?disabled=${this.busy}
-                        @click=${() => this.act((api) => api.call("undo_change", { history_id: entry.id }))}
-                      >
-                        Undo
-                      </button>
+                      ${iconButton({
+                        icon: UNDO,
+                        label: "Undo",
+                        className: "undo",
+                        disabled: this.busy,
+                        onClick: () =>
+                          void this.act((api) => api.call("undo_change", { history_id: entry.id })),
+                      })}
                     </div>
                     <div class="muted">${shortTime(entry.time)}</div>
                     ${entry.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
@@ -420,26 +421,48 @@ export class TkChat extends TkView {
                     <strong class="pre">${proposal.summary}</strong>
                     <div class="pre">${proposal.reason}</div>
                     ${proposal.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
-                    <div class="row">
-                      <button
-                        class="reject"
-                        ?disabled=${this.busy}
-                        @click=${() => this.act((api) => api.reject(proposal.proposal_id))}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        class="accept primary"
-                        ?disabled=${this.busy}
-                        @click=${() => this.act((api) => api.accept(proposal.proposal_id))}
-                      >
-                        Accept
-                      </button>
+                    <div class="actions">
+                      ${iconButton({
+                        icon: CLOSE,
+                        label: "Reject",
+                        className: "reject",
+                        disabled: this.busy,
+                        onClick: () => void this.act((api) => api.reject(proposal.proposal_id)),
+                      })}
+                      ${iconButton({
+                        icon: CHECK,
+                        label: "Accept",
+                        className: "accept",
+                        disabled: this.busy,
+                        onClick: () => void this.act((api) => api.accept(proposal.proposal_id)),
+                      })}
                     </div>
                   </li>`,
               )}
             </ul>`
     }`;
+  }
+
+  /** The agent the chat goes through, or why there is none, with a button to the settings. */
+  private renderAgent(ready: boolean): TemplateResult | typeof nothing {
+    const agent = this.agent;
+    if (agent === undefined) return nothing;
+    if (ready) {
+      return html`<p class="muted agent">
+        Chatting through ${agent.chat_agent_name ?? agent.chat_agent}
+      </p>`;
+    }
+    return html`<div class="row missing">
+      <span class="grow muted">${this.missing()}</span>
+      ${textButton({
+        icon: COG,
+        label: "Open settings",
+        className: "open-settings",
+        onClick: () => {
+          openSettings(this.api?.entryId);
+        },
+      })}
+    </div>`;
   }
 
   private renderMessages(): TemplateResult {
@@ -471,7 +494,14 @@ export class TkChat extends TkView {
       ></textarea>
       <div class="row">
         <span class="grow muted">Enter sends, Shift+Enter adds a line.</span>
-        <button class="primary" type="submit" ?disabled=${this.sending}>Send</button>
+        ${textButton({
+          icon: SEND,
+          label: "Send",
+          className: "send",
+          primary: true,
+          type: "submit",
+          disabled: this.sending,
+        })}
       </div>
     </form>`;
   }
@@ -497,33 +527,32 @@ export class TkChat extends TkView {
       <section>
         <div class="row">
           <h2 class="grow">Chat</h2>
-          <button
-            class="chats"
-            aria-controls="chat-list"
-            aria-expanded=${this.listOpen ? "true" : "false"}
-            @click=${() => {
+          ${textButton({
+            icon: CHATS,
+            label: "Chats",
+            className: "chats",
+            controls: "chat-list",
+            expanded: this.listOpen,
+            onClick: () => {
               this.listOpen = !this.listOpen;
-            }}
-          >
-            Chats
-          </button>
+            },
+          })}
           ${
             ready
-              ? html`<button
-                  class="new"
-                  ?disabled=${this.sending}
-                  @click=${() => {
+              ? textButton({
+                  icon: CHAT_PLUS,
+                  label: "New chat",
+                  className: "new",
+                  disabled: this.sending,
+                  onClick: () => {
                     this.newChat();
-                  }}
-                >
-                  New chat
-                </button>`
+                  },
+                })
               : nothing
           }
         </div>
         ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
-        ${this.agent !== undefined && !ready ? html`<p class="muted">${this.missing()}</p>` : nothing}
-        ${this.renderMessages()}
+        ${this.renderAgent(ready)} ${this.renderMessages()}
         ${
           this.readOnly
             ? html`<p class="muted read-only">

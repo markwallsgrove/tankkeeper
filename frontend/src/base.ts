@@ -1,10 +1,15 @@
-import { LitElement, css, type PropertyValues } from "lit";
+import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { errorMessage, type TankkeeperApi } from "./api";
+import { HISTORY, SAVE, buttonStyles, iconButton } from "./buttons";
+import "./tk-dialog";
+import "./tk-form";
+import type { Field, Values } from "./types";
 
 /** Fired when a record changed, so the views that show it load again. */
 export const CHANGED = "tk-changed";
 
 export const shared = css`
+  ${buttonStyles}
   :host {
     display: block;
     color: var(--primary-text-color);
@@ -78,6 +83,23 @@ export const shared = css`
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .head h2 {
+    margin: 0;
+  }
+  .actions.record {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  li .detail {
+    margin-top: 6px;
   }
   .grow {
     flex: 1 1 200px;
@@ -197,6 +219,20 @@ export function openChat(from: HTMLElement, start: ChatStart): void {
   );
 }
 
+/** A form in its own dialog: what it is called, the fields and values it starts with, and how it saves. */
+export interface FormDialog {
+  /** Which dialog this is. One dialog is open at a time. */
+  key: string;
+  className: string;
+  heading: string;
+  fields: Field[];
+  values?: object;
+  submitLabel?: string;
+  submitIcon?: string;
+  /** Save what the form sent. The dialog closes once this returns true. */
+  save: (values: Values) => Promise<boolean>;
+}
+
 /** A view that loads from the API, and loads again when a record it shows changed. */
 export abstract class TkView extends LitElement {
   static override properties = {
@@ -204,12 +240,18 @@ export abstract class TkView extends LitElement {
     error: { state: true },
     busy: { state: true },
     version: { state: true },
+    dialog: { state: true },
+    openHistories: { state: true },
   };
 
   declare api: TankkeeperApi | undefined;
   declare error: string;
   declare busy: boolean;
   declare version: number;
+  /** The open dialog's key. */
+  declare dialog: string | undefined;
+  /** The keys of the histories that are open. */
+  declare openHistories: ReadonlySet<string>;
   private loads = 0;
 
   constructor() {
@@ -218,6 +260,8 @@ export abstract class TkView extends LitElement {
     this.error = "";
     this.busy = false;
     this.version = 0;
+    this.dialog = undefined;
+    this.openHistories = new Set();
     this.addEventListener(CHANGED, (event) => {
       if (event.composedPath()[0] !== this) void this.reload();
     });
@@ -273,5 +317,75 @@ export abstract class TkView extends LitElement {
   /** Tell the views around this one that a record changed. */
   protected changed(): void {
     this.dispatchEvent(new CustomEvent(CHANGED, { bubbles: true, composed: true }));
+  }
+
+  /** Open a dialog, without the error of what was done before. */
+  protected openDialog(key: string): void {
+    this.error = "";
+    this.dialog = key;
+  }
+
+  /** The view's error. While a dialog is open, the dialog shows it instead. */
+  protected renderError(): TemplateResult | typeof nothing {
+    return this.dialog === undefined && this.error
+      ? html`<p class="error">${this.error}</p>`
+      : nothing;
+  }
+
+  /** The form in its dialog while that dialog is open. Errors show in it, and it closes after a save. */
+  protected formDialog(form: FormDialog): TemplateResult | typeof nothing {
+    if (this.dialog !== form.key) return nothing;
+    return html`<tk-dialog
+      class=${form.className}
+      heading=${form.heading}
+      @tk-dialog-closed=${() => {
+        this.dialog = undefined;
+      }}
+    >
+      <tk-form
+        class=${form.className}
+        .fields=${form.fields}
+        .values=${form.values ?? {}}
+        .submitLabel=${form.submitLabel ?? "Save"}
+        .submitIcon=${form.submitIcon ?? SAVE}
+        .busy=${this.busy}
+        .error=${this.error}
+        @tk-save=${async (event: CustomEvent<Values>) => {
+          if (await form.save(event.detail)) this.dialog = undefined;
+        }}
+      ></tk-form>
+    </tk-dialog>`;
+  }
+
+  /** The icon button that opens and closes a record's history. */
+  protected historyButton(collection: string, recordId: string): TemplateResult {
+    const key = `${collection}/${recordId}`;
+    return iconButton({
+      icon: HISTORY,
+      label: "History",
+      className: "history",
+      onClick: () => {
+        const open = new Set(this.openHistories);
+        if (!open.delete(key)) open.add(key);
+        this.openHistories = open;
+      },
+    });
+  }
+
+  /** A record's history with Undo, while its history button has it open. */
+  protected historyPanel(collection: string, recordId: string): TemplateResult | typeof nothing {
+    if (!this.openHistories.has(`${collection}/${recordId}`)) return nothing;
+    return html`<tk-history
+      .api=${this.api}
+      .collection=${collection}
+      .recordId=${recordId}
+      .stamp=${this.version}
+    ></tk-history>`;
+  }
+
+  /** A record's history button, on its own line, with the history under it while it is open. */
+  protected historyDetails(collection: string, recordId: string): TemplateResult {
+    return html`<div class="actions">${this.historyButton(collection, recordId)}</div>
+      ${this.historyPanel(collection, recordId)}`;
   }
 }

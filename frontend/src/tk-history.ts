@@ -1,6 +1,7 @@
 import { html, nothing, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "./api";
 import { TkView, shared } from "./base";
+import { UNDO, iconButton } from "./buttons";
 import { changeText, shortTime, sourceText } from "./format";
 import type { HistoryEntry } from "./types";
 
@@ -91,9 +92,13 @@ export class TkHistory extends TkView {
                 </div>
                 ${entry.changes.map((change) => html`<div class="muted">${changeText(change)}</div>`)}
               </div>
-              <button class="undo" ?disabled=${this.busy} @click=${() => this.undo(entry)}>
-                Undo
-              </button>
+              ${iconButton({
+                icon: UNDO,
+                label: "Undo",
+                className: "undo",
+                disabled: this.busy,
+                onClick: () => void this.undo(entry),
+              })}
             </li>`,
         )}
       </ul>

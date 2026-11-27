@@ -6,7 +6,6 @@ A tool command takes the tool's arguments under args, as some are called id or t
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
-from homeassistant.components import conversation
 from homeassistant.components.websocket_api import async_register_command
 from homeassistant.components.websocket_api.connection import ActiveConnection
 from homeassistant.components.websocket_api.const import WebSocketCommandHandler
@@ -101,12 +100,16 @@ def _command(run: Command) -> WebSocketCommandHandler:
 
 
 async def _chat_agent(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
-    """The tank's Assist agent, which the panel's chat talks to, and whether it has an agent to pass chat to."""
+    """The tank's Assist agent, which the panel's chat talks to, and the agent it passes chat to, if any."""
     hass = service.hass
     agent_id = er.async_get(hass).async_get_entity_id("conversation", DOMAIN, f"{service.entry_id}_agent")
-    chosen = service.claude().agent
-    ready = chosen is not None and conversation.async_get_agent_info(hass, chosen) is not None
-    return {"agent_id": agent_id, "ready": ready}
+    chat = service.chat_agent()
+    return {
+        "agent_id": agent_id,
+        "ready": chat is not None,
+        "chat_agent": None if chat is None else chat.id,
+        "chat_agent_name": None if chat is None else chat.name,
+    }
 
 
 async def _accept(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:

@@ -1,6 +1,6 @@
 import { html, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "./api";
-import "./tk-history";
+import { iconButton } from "./buttons";
 import type { Field } from "./types";
 
 /** mdiCog from @mdi/js. */
@@ -24,14 +24,14 @@ export function openSettings(entryId: string | undefined): void {
 
 /** The one cog that opens TankKeeper's settings, where every setting the panel shows is changed. */
 export function settingsButton(api: TankkeeperApi | undefined): TemplateResult {
-  return html`<ha-icon-button
-    class="settings"
-    .path=${COG}
-    label="TankKeeper settings"
-    @click=${() => {
+  return iconButton({
+    icon: COG,
+    label: "TankKeeper settings",
+    className: "settings",
+    onClick: () => {
       openSettings(api?.entryId);
-    }}
-  ></ha-icon-button>`;
+    },
+  });
 }
 
 function factText(field: Field, value: unknown): string {
@@ -52,22 +52,4 @@ export function facts(fields: Field[], values: object): TemplateResult {
         <dd class="pre ${wide}">${factText(field, known.get(field.name))}</dd>`;
     })}
   </dl>`;
-}
-
-/** A record's history with Undo, folded away until it is opened. */
-export function historyDetails(
-  api: TankkeeperApi | undefined,
-  collection: string,
-  recordId: string,
-  stamp: number,
-): TemplateResult {
-  return html`<details>
-    <summary>History</summary>
-    <tk-history
-      .api=${api}
-      .collection=${collection}
-      .recordId=${recordId}
-      .stamp=${stamp}
-    ></tk-history>
-  </details>`;
 }

@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import "../src/views/records";
 import type { TkRecords } from "../src/views/records";
+import { DELETE, HISTORY, PENCIL } from "../src/buttons";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
+
+function icons(root: Element): (string | null)[][] {
+  return findAll(root, "ha-icon-button").map((button) => [
+    button.getAttribute("label"),
+    (button as unknown as { path: string }).path,
+  ]);
+}
 
 const product = {
   id: "p1",
@@ -100,6 +108,10 @@ describe("tk-records for products", () => {
     expect(findAll(element, "tk-form, button")).toEqual([]);
     expect(text(element)).not.toContain("Add");
     expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
+    expect(icons(find(element, "li[data-id=p1]"))).toEqual([["History", HISTORY]]);
+    expect(findAll(element, "details")).toEqual([]);
+    find(element, "li[data-id=p1] ha-icon-button.history").click();
+    await settle(element);
     const history = find(element, "li[data-id=p1] tk-history") as unknown as {
       collection: string;
       recordId: string;
@@ -118,28 +130,27 @@ describe("tk-records for products", () => {
     expect(text(element)).toContain("Removed 2026-11-01");
   });
 
-  it("keeps open details with their record when the list changes order", async () => {
+  it("keeps an open history with its record when the list changes order", async () => {
     const other = { ...product, id: "p2", name: "Prime" };
     const conn = connection().on("list_products", { products: [product, other] });
     const element = await records("products", conn);
-    (find(element, "li[data-id=p1] details") as HTMLDetailsElement).open = true;
+    find(element, "li[data-id=p1] ha-icon-button.history").click();
+    await settle(element);
 
     conn.on("list_products", { products: [other, product] });
     await element.reload();
     await settle(element);
 
-    expect((find(element, "li[data-id=p1] details") as HTMLDetailsElement).open).toBe(true);
-    expect((find(element, "li[data-id=p2] details") as HTMLDetailsElement).open).toBe(false);
+    expect(findAll(element, "li[data-id=p1] tk-history").length).toBe(1);
+    expect(findAll(element, "li[data-id=p2] tk-history")).toEqual([]);
   });
 
-  it("loads the history of a product only when its details open", async () => {
+  it("loads the history of a product only when its history button opens it", async () => {
     const conn = connection();
     const element = await records("products", conn);
     expect(conn.types()).not.toContain("tankkeeper/get_history");
 
-    const details = find(element, "li[data-id=p1] details") as HTMLDetailsElement;
-    details.open = true;
-    details.dispatchEvent(new Event("toggle"));
+    find(element, "li[data-id=p1] ha-icon-button.history").click();
     await settle(element);
 
     expect(conn.last("get_history").args).toEqual({
@@ -192,27 +203,46 @@ describe("tk-records for contents and notes", () => {
     expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
   });
 
-  it("adds, edits and removes notes with the panel's actions", async () => {
+  it("gives each note edit, history and remove icon buttons, and an add button", async () => {
+    const element = await records("notes");
+    expect(icons(find(element, "li[data-id=n1]"))).toEqual([
+      ["Edit", PENCIL],
+      ["History", HISTORY],
+      ["Remove", DELETE],
+    ]);
+    expect(find(element, "ha-icon-button.add").getAttribute("label")).toBe("Add a note");
+    expect(findAll(element, "tk-form, details")).toEqual([]);
+  });
+
+  it("adds, edits and removes notes, each form in its own dialog", async () => {
     const conn = connection();
     const element = await records("notes", conn);
-    expect(findAll(element, "ha-icon-button")).toEqual([]);
 
-    save(element, "tk-form.add", { kind: "assumption", topic: "Light", text: "6 hours" });
+    find(element, "ha-icon-button.add").click();
+    await settle(element);
+    expect(find(element, "tk-dialog.add").getAttribute("heading")).toBe("Add a note");
+    save(element, "tk-dialog tk-form.add", { kind: "assumption", topic: "Light", text: "6 hours" });
     await settle(element);
     expect(conn.last("add_note").args).toEqual({
       kind: "assumption",
       topic: "Light",
       text: "6 hours",
     });
+    expect(findAll(element, "tk-dialog")).toEqual([]);
 
-    save(element, "li[data-id=n1] tk-form", { text: "Is CO2 worth it?" });
+    find(element, "li[data-id=n1] ha-icon-button.edit").click();
+    await settle(element);
+    save(element, "tk-dialog.edit tk-form", { text: "Is CO2 worth it?" });
     await settle(element);
     expect(conn.last("update_note").args).toEqual({ note_id: "n1", text: "Is CO2 worth it?" });
+    expect(findAll(element, "tk-dialog")).toEqual([]);
 
-    find(element, "li[data-id=n1] button.remove").click();
+    find(element, "li[data-id=n1] ha-icon-button.remove").click();
     await settle(element);
     expect(conn.last("remove_note").args).toEqual({ note_id: "n1" });
 
+    find(element, "li[data-id=n1] ha-icon-button.history").click();
+    await settle(element);
     const history = find(element, "li[data-id=n1] tk-history") as unknown as {
       collection: string;
       recordId: string;
@@ -220,44 +250,42 @@ describe("tk-records for contents and notes", () => {
     expect([history.collection, history.recordId]).toEqual(["notes", "n1"]);
   });
 
-  it("does nothing when a form has no changes", async () => {
+  it("does nothing when a form has no changes, and keeps its dialog open", async () => {
     const conn = connection();
     const element = await records("notes", conn);
+    find(element, "li[data-id=n1] ha-icon-button.edit").click();
+    await settle(element);
 
-    save(element, "li[data-id=n1] tk-form", {});
+    save(element, "tk-dialog.edit tk-form", {});
     await settle(element);
 
     expect(conn.types()).not.toContain("tankkeeper/update_note");
+    expect(findAll(element, "tk-dialog.edit").length).toBe(1);
   });
 
-  it("clears the Add form once the note is saved, and keeps it when saving fails", async () => {
-    const conn = connection();
+  it("keeps the Add dialog and what was typed when saving fails, with the error in it", async () => {
+    const conn = connection().fail("add_note", "invalid_input", "A note needs text");
     const element = await records("notes", conn);
-    const form = find(element, "tk-form.add");
-    const kind = find(form, "[name=kind]") as HTMLSelectElement;
+    find(element, "ha-icon-button.add").click();
+    await settle(element);
+    const form = find(element, "tk-dialog tk-form.add");
     const topic = find(form, "[name=topic]") as HTMLInputElement;
-    const text = find(form, "[name=text]") as HTMLTextAreaElement;
-
-    kind.value = "question";
+    (find(form, "[name=kind]") as HTMLSelectElement).value = "question";
+    (find(form, "[name=text]") as HTMLTextAreaElement).value = "Is CO2 needed?";
     topic.value = "CO2";
-    text.value = "Is CO2 needed?";
     find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
     await settle(element);
-    expect(conn.last("add_note").args).toEqual({
-      kind: "question",
-      topic: "CO2",
-      text: "Is CO2 needed?",
-    });
-    expect(text.value).toBe("");
 
-    conn.fail("add_note", "invalid_input", "A note needs text");
-    kind.value = "question";
-    topic.value = "CO2";
-    text.value = "Is CO2 needed?";
-    find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(element);
-    expect(text.value).toBe("Is CO2 needed?");
-    expect(find(element, ".error").textContent).toBe("A note needs text");
+    expect(topic.value).toBe("CO2");
+    expect(find(form, ".error").textContent).toBe("A note needs text");
+    expect(findAll(element, "section > p.error")).toEqual([]);
+  });
+
+  it("does not offer to remove a removed record", async () => {
+    const conn = connection().on("list_notes", { notes: [{ ...note, removed: "2026-11-02" }] });
+    const element = await records("notes", conn);
+    expect(text(find(element, "li[data-id=n1]"))).toContain("Removed 2026-11-02");
+    expect(findAll(element, "li[data-id=n1] ha-icon-button.remove")).toEqual([]);
   });
 
   it("renders note text as text, never as markup", async () => {

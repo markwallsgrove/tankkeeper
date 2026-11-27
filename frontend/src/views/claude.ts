@@ -2,11 +2,13 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
 import { shortTime } from "../format";
-import { facts, historyDetails } from "../settings";
+import { facts } from "../settings";
+import "../tk-history";
 import type { ClaudeSettings, Field, Review } from "../types";
 
 const CLAUDE_FIELDS: Field[] = [
   { name: "agent", label: "Conversation agent TankKeeper chats through", type: "text" },
+  { name: "chat_agent", label: "Conversation agent the chat uses", type: "text" },
   { name: "ai_task", label: "AI task entity for review comments", type: "text" },
   { name: "review_on", label: "Review after", type: "list" },
   { name: "comments", label: "Claude comments on reviews", type: "checkbox" },
@@ -80,8 +82,7 @@ export class TkClaude extends TkView {
         settings === undefined
           ? nothing
           : html`<p class="muted note">${settings.model_note}</p>
-              ${facts(CLAUDE_FIELDS, settings)}
-              ${historyDetails(this.api, "settings", "claude", this.version)}`
+              ${facts(CLAUDE_FIELDS, settings)} ${this.historyDetails("settings", "claude")}`
       }
       <h3>Reviews</h3>
       ${

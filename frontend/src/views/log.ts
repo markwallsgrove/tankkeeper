@@ -1,8 +1,8 @@
-import { html, nothing, type TemplateResult } from "lit";
+import { html, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
+import { DOSE, TEST, textButton } from "../buttons";
 import { logText, shortTime } from "../format";
-import { saveAndClear } from "../tk-form";
 import type { Field, LogEntry, Values } from "../types";
 
 export const LOG_LIMIT = 100;
@@ -100,7 +100,27 @@ export class TkLog extends TkView {
             ${KINDS.map((kind) => html`<option value=${kind}>${kind}</option>`)}
           </select>
         </div>
-        ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
+        <div class="actions record">
+          ${textButton({
+            icon: DOSE,
+            label: "Record a dose",
+            className: "dose",
+            disabled: this.busy,
+            onClick: () => {
+              this.openDialog("dose");
+            },
+          })}
+          ${textButton({
+            icon: TEST,
+            label: "Record a test result",
+            className: "test",
+            disabled: this.busy,
+            onClick: () => {
+              this.openDialog("test");
+            },
+          })}
+        </div>
+        ${this.renderError()}
         <ul>
           ${this.entries.map(
             (entry) =>
@@ -111,28 +131,24 @@ export class TkLog extends TkView {
           )}
         </ul>
       </section>
-      <section>
-        <h2>Record a dose</h2>
-        <tk-form
-          class="dose"
-          .fields=${this.doseFields()}
-          submitLabel="Record"
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) =>
-            saveAndClear(event, (values) => this.record("record_dose", values))}
-        ></tk-form>
-      </section>
-      <section>
-        <h2>Record a test</h2>
-        <tk-form
-          class="test"
-          .fields=${TEST_FIELDS}
-          submitLabel="Record"
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) =>
-            saveAndClear(event, (values) => this.recordTest(values))}
-        ></tk-form>
-      </section>
+      ${this.formDialog({
+        key: "dose",
+        className: "dose",
+        heading: "Record a dose",
+        fields: this.doseFields(),
+        submitLabel: "Record",
+        submitIcon: DOSE,
+        save: (values) => this.record("record_dose", values),
+      })}
+      ${this.formDialog({
+        key: "test",
+        className: "test",
+        heading: "Record a test result",
+        fields: TEST_FIELDS,
+        submitLabel: "Record",
+        submitIcon: TEST,
+        save: (values) => this.recordTest(values),
+      })}
     `;
   }
 }

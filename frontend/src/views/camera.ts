@@ -2,8 +2,19 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
+import {
+  CAMERA,
+  CHAT,
+  CHECK,
+  CLOSE,
+  NOT_A_PROBLEM,
+  PHOTOS,
+  iconButton,
+  textButton,
+} from "../buttons";
 import { changeText, shortTime } from "../format";
-import { facts, historyDetails } from "../settings";
+import { facts } from "../settings";
+import "../tk-history";
 import type { CameraInfo, Field, PhotoCheck, Proposal } from "../types";
 
 export const PHOTOS_SHOWN = 20;
@@ -153,36 +164,37 @@ export class TkCamera extends TkView {
               )}
             </div>`
       }
-      <div class="row">
-        <button
-          class="dismiss"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.call("dismiss_finding", { check_id: check.id }))}
-        >
-          Not a problem
-        </button>
-        <button
-          class="discuss"
-          @click=${() => {
+      <div class="actions">
+        ${iconButton({
+          icon: NOT_A_PROBLEM,
+          label: "Not a problem",
+          className: "dismiss",
+          disabled: this.busy,
+          onClick: () =>
+            void this.act((api) => api.call("dismiss_finding", { check_id: check.id })),
+        })}
+        ${iconButton({
+          icon: CHAT,
+          label: "Discuss",
+          className: "discuss",
+          onClick: () => {
             openChat(this, { kind: "photo", id: check.id });
-          }}
-        >
-          Discuss
-        </button>
-        <button
-          class="reject"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.rejectFinding(check.id))}
-        >
-          Reject
-        </button>
-        <button
-          class="accept primary"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.acceptFinding(check.id))}
-        >
-          Accept
-        </button>
+          },
+        })}
+        ${iconButton({
+          icon: CLOSE,
+          label: "Reject",
+          className: "reject",
+          disabled: this.busy,
+          onClick: () => void this.act((api) => api.rejectFinding(check.id)),
+        })}
+        ${iconButton({
+          icon: CHECK,
+          label: "Accept",
+          className: "accept",
+          disabled: this.busy,
+          onClick: () => void this.act((api) => api.acceptFinding(check.id)),
+        })}
       </div>
     </li>`;
   }
@@ -190,9 +202,13 @@ export class TkCamera extends TkView {
   private renderPhotos(): TemplateResult {
     const photos = this.photos;
     if (photos === undefined) {
-      return html`<button class="photos" ?disabled=${this.busy} @click=${() => this.showPhotos()}>
-        Photos
-      </button>`;
+      return textButton({
+        icon: PHOTOS,
+        label: "Photos",
+        className: "photos",
+        disabled: this.busy,
+        onClick: () => void this.showPhotos(),
+      });
     }
     return html`<h3>Photos</h3>
       ${photos.length === 0 ? html`<p class="muted">No photos yet.</p>` : nothing}
@@ -216,7 +232,7 @@ export class TkCamera extends TkView {
         Each check sends the photo to Anthropic through the AI task entity, uses paid API calls and
         counts toward Claude's comments a day.
       </p>
-      ${facts(CAMERA_FIELDS, info)} ${historyDetails(this.api, "settings", "camera", this.version)}
+      ${facts(CAMERA_FIELDS, info)} ${this.historyDetails("settings", "camera")}
     </details>`;
   }
 
@@ -250,13 +266,14 @@ export class TkCamera extends TkView {
               </div>`
         }
         <div class="row">
-          <button
-            class="check primary"
-            ?disabled=${this.busy}
-            @click=${() => this.act((api) => api.call("check_now"))}
-          >
-            Check now
-          </button>
+          ${textButton({
+            icon: CAMERA,
+            label: "Check now",
+            className: "check",
+            primary: true,
+            disabled: this.busy,
+            onClick: () => void this.act((api) => api.call("check_now")),
+          })}
         </div>
         ${this.renderPhotos()} ${this.renderSettings(info)}
       </section>

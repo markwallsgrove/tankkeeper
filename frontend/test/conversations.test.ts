@@ -6,7 +6,16 @@ import type { TkConversations } from "../src/views/conversations";
 import type { TkEmbed } from "../src/tk-embed";
 import type { TkDeleteConversation } from "../src/tk-delete-conversation";
 import type { Message } from "../src/types";
+import { BACK, CHAT as CHAT_ICON, OPEN, SEARCH, UNDO } from "../src/buttons";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
+
+function named(button: Element): (string | null)[] {
+  return [button.getAttribute("label"), (button as unknown as { path: string }).path];
+}
+
+function iconOf(button: Element): string | null | undefined {
+  return button.querySelector("svg.icon path")?.getAttribute("d");
+}
 
 const summary = {
   id: "c1",
@@ -74,21 +83,27 @@ describe("tk-conversations", () => {
     const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
     await settle(element);
 
-    find(element, "li[data-id=c1] button.open").click();
+    expect(named(find(element, "li[data-id=c1] ha-icon-button.open"))).toEqual(["Open", OPEN]);
+    const search = find(element, "form.search button[type=submit]");
+    expect([text(search), iconOf(search)]).toEqual(["Search", SEARCH]);
+    find(element, "li[data-id=c1] ha-icon-button.open").click();
     await settle(element);
     expect(conn.last("get_conversation").args).toEqual({ id: "c1" });
+    const back = find(element, "button.back");
+    expect([text(back), iconOf(back)]).toEqual(["Back", BACK]);
+    expect(named(find(element, "ha-icon-button.undo"))).toEqual(["Undo", UNDO]);
     expect(findAll(element, "script")).toEqual([]);
     expect(text(element)).toContain("<script>alert(1)</script>");
     expect(text(element)).toContain("Shorten the light");
     expect(text(element)).toContain("Added to notes");
 
-    find(element, "button.undo").click();
+    find(element, "ha-icon-button.undo").click();
     await settle(element);
     expect(conn.last("undo_change").args).toEqual({ history_id: "h1" });
 
     find(element, "button.back").click();
     await settle(element);
-    expect(findAll(element, "button.undo")).toEqual([]);
+    expect(findAll(element, "ha-icon-button.undo")).toEqual([]);
   });
 
   it("shows photos and charts in the agent's messages only, and markdown in them", async () => {
@@ -105,7 +120,7 @@ describe("tk-conversations", () => {
     const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
     await settle(element);
 
-    find(element, "li[data-id=c1] button.open").click();
+    find(element, "li[data-id=c1] ha-icon-button.open").click();
     await settle(element);
 
     const embeds = findAll(element, "tk-embed") as TkEmbed[];
@@ -126,15 +141,17 @@ describe("tk-conversations", () => {
     element.addEventListener(CHAT, (event) => starts.push((event as CustomEvent).detail));
     await settle(element);
 
-    find(element, "li[data-id=panel_1] button.open").click();
+    find(element, "li[data-id=panel_1] ha-icon-button.open").click();
     await settle(element);
-    find(element, "button.resume").click();
+    const resume = find(element, "button.resume");
+    expect([text(resume), iconOf(resume)]).toEqual(["Continue in Chat", CHAT_ICON]);
+    resume.click();
     expect(starts).toEqual([{ kind: "resume", id: "panel_1" }]);
 
     find(element, "button.back").click();
     await settle(element);
     conn.on("get_conversation", { ...summary, messages: [], changes: [] });
-    find(element, "li[data-id=c1] button.open").click();
+    find(element, "li[data-id=c1] ha-icon-button.open").click();
     await settle(element);
     expect(findAll(element, "button.resume")).toEqual([]);
   });
@@ -143,7 +160,7 @@ describe("tk-conversations", () => {
     const conn = connection().on("get_conversation", { ...summary, messages: [], changes: [] });
     const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
     await settle(element);
-    find(element, "li[data-id=c1] button.open").click();
+    find(element, "li[data-id=c1] ha-icon-button.open").click();
     await settle(element);
     expect(text(element)).toContain("No changes");
 
@@ -164,12 +181,12 @@ describe("tk-conversations", () => {
     vi.stubGlobal("confirm", confirm);
     const element = mount<TkConversations>("tk-conversations", { api: new TankkeeperApi(conn) });
     await settle(element);
-    find(element, "li[data-id=c1] button.open").click();
+    find(element, "li[data-id=c1] ha-icon-button.open").click();
     await settle(element);
 
     const remove = find(element, "tk-delete-conversation") as TkDeleteConversation;
     expect(remove.conversationId).toBe("c1");
-    find(remove, "button.delete").click();
+    find(remove, "ha-icon-button.delete").click();
     await settle(remove);
     find(remove, "button.confirm").click();
     await settle(element);

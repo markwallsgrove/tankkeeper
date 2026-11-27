@@ -86,10 +86,11 @@ class TankkeeperAgent(conversation.ConversationEntity):
         self, user_input: conversation.ConversationInput, chat_log: conversation.ChatLog
     ) -> conversation.ConversationResult:
         """Pass the message on with TankKeeper's context, then record what was said and done."""
-        agent_id = self._service.claude().agent
+        chat_agent = self._service.chat_agent()
         conversation_id = chat_log.conversation_id
-        if agent_id is None or conversation.async_get_agent_info(self.hass, agent_id) is None:
+        if chat_agent is None:
             return _error(user_input, conversation_id, NO_AGENT)
+        agent_id = chat_agent.id
         actor = Actor(source=Source.ASSIST, user_id=user_input.context.user_id, conversation_id=conversation_id)
         start = len(chat_log.content)
         earlier = self._earlier(conversation_id, chat_log)

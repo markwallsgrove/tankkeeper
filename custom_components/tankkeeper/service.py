@@ -10,6 +10,7 @@ from pathlib import Path
 import secrets
 import shutil
 
+from homeassistant.components.conversation.models import AgentInfo
 from homeassistant.components.recorder import history
 from homeassistant.const import STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
@@ -18,7 +19,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.ulid import ulid_now
 
-from .claude import CLAUDE_ID, ClaudeSettings, check_settings
+from .claude import CLAUDE_ID, ClaudeSettings, chat_agent, check_settings
 from .const import DOMAIN, STORAGE_VERSION
 from .domain import (
     CODE_ALPHABET,
@@ -464,6 +465,10 @@ class TankkeeperService:
     def claude(self) -> ClaudeSettings:
         """The Claude settings."""
         return ClaudeSettings.from_json(self.state.get(Collection.SETTINGS, CLAUDE_ID))
+
+    def chat_agent(self) -> AgentInfo | None:
+        """The conversation agent TankKeeper's Assist agent passes chat to, or None when there is none to use."""
+        return chat_agent(self.hass, self.claude())
 
     def claude_targets(self, settings: ClaudeSettings) -> list[Target]:
         """The change that stores new Claude settings. Raises InvalidInputError or NothingToChangeError."""

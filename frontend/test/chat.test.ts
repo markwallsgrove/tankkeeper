@@ -7,7 +7,20 @@ import type { TkChatList } from "../src/views/chat-list";
 import { DELETED } from "../src/tk-delete-conversation";
 import type { ChatStart } from "../src/base";
 import type { Conversation, ConversationDetail, Message, Proposal } from "../src/types";
+import { CHATS, CHAT_PLUS, CHECK, CLOSE, SEND, UNDO } from "../src/buttons";
+import { COG } from "../src/settings";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
+
+function iconOf(button: Element): string | null | undefined {
+  return button.querySelector("svg.icon path")?.getAttribute("d");
+}
+
+function icons(root: Element): (string | null)[][] {
+  return findAll(root, "ha-icon-button").map((button) => [
+    button.getAttribute("label"),
+    (button as unknown as { path: string }).path,
+  ]);
+}
 
 const AGENT = "conversation.nano_agent";
 
@@ -43,7 +56,12 @@ function reply(speech: string, type = "action_done", conversationId: string | nu
 
 function connection(ready = true): FakeConnection {
   return new FakeConnection()
-    .on("chat_agent", { agent_id: AGENT, ready })
+    .on("chat_agent", {
+      agent_id: AGENT,
+      ready,
+      chat_agent: ready ? "conversation.claude_conversation" : null,
+      chat_agent_name: ready ? "Claude conversation" : null,
+    })
     .on("list_proposals", { proposals: [] })
     .on("get_conversation", { id: "panel_x", messages: [], changes: [] })
     .on("list_conversations", { conversations: [] })
@@ -105,19 +123,61 @@ describe("tk-chat", () => {
     vi.restoreAllMocks();
   });
 
-  it("says where to choose an agent when none is chosen", async () => {
-    const element = await chat(connection(false));
+  it("says which agent the chat goes through", async () => {
+    const element = await chat(connection());
+
+    expect(text(find(element, ".agent"))).toBe("Chatting through Claude conversation");
+    expect(findAll(element, "button.open-settings")).toEqual([]);
+  });
+
+  it("names the agent by its id when it has no name", async () => {
+    const element = await chat(
+      connection().on("chat_agent", {
+        agent_id: AGENT,
+        ready: true,
+        chat_agent: "conversation.only_agent",
+        chat_agent_name: null,
+      }),
+    );
+
+    expect(text(find(element, ".agent"))).toBe("Chatting through conversation.only_agent");
+  });
+
+  it("says to choose an agent, with a button that opens TankKeeper's settings", async () => {
+    const seen: string[] = [];
+    const listen = (): void => {
+      seen.push(`${window.location.pathname}${window.location.hash}`);
+    };
+    window.addEventListener("location-changed", listen);
+    const element = mount<TkChat>("tk-chat", {
+      api: new TankkeeperApi(connection(false), "UTC", "entry1"),
+    });
+    await settle(element);
 
     expect(text(element)).toContain(NO_AGENT);
-    expect(findAll(element, "textarea")).toEqual([]);
+    expect(NO_AGENT).not.toContain("Devices & services");
+    expect(findAll(element, "textarea, .agent")).toEqual([]);
+    const button = find(element, "button.open-settings");
+    expect([text(button), iconOf(button)]).toEqual(["Open settings", COG]);
+    button.click();
+    window.removeEventListener("location-changed", listen);
+    expect(seen).toEqual(["/config/integrations/integration/tankkeeper#config_entry=entry1"]);
   });
 
   it("says the tank's own agent is missing when Home Assistant has none", async () => {
-    const element = await chat(connection().on("chat_agent", { agent_id: null, ready: true }));
+    const element = await chat(
+      connection().on("chat_agent", {
+        agent_id: null,
+        ready: true,
+        chat_agent: "conversation.claude_conversation",
+        chat_agent_name: "Claude conversation",
+      }),
+    );
 
     expect(text(element)).toContain(NO_TANK_AGENT);
     expect(text(element)).not.toContain(NO_AGENT);
-    expect(findAll(element, "textarea")).toEqual([]);
+    expect(findAll(element, "textarea, .agent")).toEqual([]);
+    expect(findAll(element, "button.open-settings").length).toBe(1);
   });
 
   it("keeps a late reply out of a chat started while it waited", async () => {
@@ -338,16 +398,21 @@ describe("tk-chat", () => {
     expect(findAll(element, ".waiting li").map((item) => item.getAttribute("data-id"))).toEqual([
       "p1",
     ]);
+    expect(icons(find(element, ".changes"))).toEqual([["Undo", UNDO]]);
+    expect(icons(find(element, ".waiting"))).toEqual([
+      ["Reject", CLOSE],
+      ["Accept", CHECK],
+    ]);
 
-    find(element, ".changes button.undo").click();
+    find(element, ".changes ha-icon-button.undo").click();
     await settle(element);
     expect(conn.last("undo_change").args).toEqual({ history_id: "h1" });
 
-    find(element, ".waiting button.accept").click();
+    find(element, ".waiting ha-icon-button.accept").click();
     await settle(element);
     expect(conn.sent).toContainEqual({ type: "tankkeeper/accept_proposal", proposal_id: "p1" });
 
-    find(element, ".waiting button.reject").click();
+    find(element, ".waiting ha-icon-button.reject").click();
     await settle(element);
     expect(conn.sent).toContainEqual({ type: "tankkeeper/reject_proposal", proposal_id: "p1" });
     expect(changed).toHaveBeenCalledTimes(3);
@@ -362,7 +427,7 @@ describe("tk-chat", () => {
     const element = await chat(conn);
     await say(element, "Note snails");
 
-    find(element, ".changes button.undo").click();
+    find(element, ".changes ha-icon-button.undo").click();
     await settle(element);
 
     expect(text(find(element, "p.error"))).toBe("Already undone");
@@ -518,6 +583,11 @@ describe("tk-chat", () => {
     const element = await chat(conn);
     const list = chatList(element);
     const toggle = find(element, "button.chats");
+    expect([text(toggle), iconOf(toggle)]).toEqual(["Chats", CHATS]);
+    const newChat = find(element, "button.new");
+    expect([text(newChat), iconOf(newChat)]).toEqual(["New chat", CHAT_PLUS]);
+    const send = find(element, "form.send button[type=submit]");
+    expect([text(send), iconOf(send)]).toEqual(["Send", SEND]);
 
     expect(list.api).toBe(element.api);
     expect(find(element, ".list").classList.contains("open")).toBe(false);
@@ -735,7 +805,7 @@ describe("tk-chat", () => {
 
   it("lets the owner read saved chats while no agent is ready", async () => {
     const conn = new FakeConnection()
-      .on("chat_agent", { agent_id: null, ready: false })
+      .on("chat_agent", { agent_id: null, ready: false, chat_agent: null, chat_agent_name: null })
       .on("list_proposals", { proposals: [] })
       .on("list_conversations", { conversations: [saved("panel_a")] })
       .on("get_conversation", detail("panel_a", [{ role: "user", text: "Old words" }]));

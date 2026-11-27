@@ -3,6 +3,7 @@ import { TankkeeperApi } from "../src/api";
 import "../src/views/plan";
 import type { TkWeek } from "../src/tk-week";
 import type { TkPlan } from "../src/views/plan";
+import { DELETE, HISTORY, PENCIL } from "../src/buttons";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const reminders = {
@@ -128,7 +129,7 @@ describe("tk-plan", () => {
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
     expect(find(element, "li[data-task=t1] .grow").textContent.trim()).toBe("Test water");
-    find(element, "li[data-task=t1] button.remove").click();
+    find(element, "li[data-task=t1] ha-icon-button.remove").click();
     await settle(element);
     expect(find(element, ".error").textContent).toBe("No task t1");
   });
@@ -146,29 +147,30 @@ describe("tk-plan", () => {
     expect(text(element)).toContain("No tasks in the next four weeks");
   });
 
-  it("adds, edits and removes tasks", async () => {
-    const conn = connection();
-    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
+  it("gives each task edit, history and remove icon buttons, each named", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
     await settle(element);
 
-    save(element, "tk-form.add", { text: "Trim", date: "2026-11-28" });
-    await settle(element);
-    expect(conn.last("add_task").args).toEqual({ text: "Trim", date: "2026-11-28" });
-
-    save(element, "li[data-task=t1] tk-form", { state: "skip" });
-    await settle(element);
-    expect(conn.last("update_task").args).toEqual({ task_id: "t1", state: "skip" });
-
-    find(element, "li[data-task=t1] button.remove").click();
-    await settle(element);
-    expect(conn.last("remove_task").args).toEqual({ task_id: "t1" });
+    const buttons = findAll(element, "li[data-task=t1] .actions ha-icon-button").map((button) => [
+      button.getAttribute("label"),
+      (button as unknown as { path: string }).path,
+    ]);
+    expect(buttons).toEqual([
+      ["Edit", PENCIL],
+      ["History", HISTORY],
+      ["Remove", DELETE],
+    ]);
+    expect(findAll(element, "li[data-task=t1] details")).toEqual([]);
+    expect(find(element, "li[data-task=t1] .detail").textContent.trim()).toBe("open");
   });
 
   it("adds a repeating task", async () => {
     const conn = connection();
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
-    const add = find(element, "tk-form.add") as unknown as { fields: { name: string }[] };
+    find(element, "ha-icon-button.add").click();
+    await settle(element);
+    const add = find(element, "tk-dialog tk-form.add") as unknown as { fields: { name: string }[] };
     expect(add.fields.map((field) => field.name)).toEqual([
       "text",
       "date",
@@ -179,7 +181,11 @@ describe("tk-plan", () => {
       "until",
     ]);
 
-    save(element, "tk-form.add", { text: "Water change", every_days: 7, until: "2026-12-31" });
+    save(element, "tk-dialog tk-form.add", {
+      text: "Water change",
+      every_days: 7,
+      until: "2026-12-31",
+    });
     await settle(element);
 
     expect(conn.last("add_task").args).toEqual({
@@ -203,7 +209,12 @@ describe("tk-plan", () => {
     const conn = connection();
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
-    const selector = "li[data-task='s1@2026-11-28'] tk-form";
+    const selector = "tk-dialog.edit tk-form";
+    const edit = async (taskId: string): Promise<void> => {
+      find(element, `li[data-task='${taskId}'] ha-icon-button.edit`).click();
+      await settle(element);
+    };
+    await edit("s1@2026-11-28");
     const form = find(element, selector) as unknown as {
       fields: { name: string }[];
       values: Record<string, unknown>;
@@ -226,14 +237,12 @@ describe("tk-plan", () => {
       weekdays: ["mon", "sat"],
       until: "2026-12-31",
     });
-    expect(
-      (find(element, "li[data-task=t1] tk-form") as unknown as { fields: { name: string }[] })
-        .fields.length,
-    ).toBe(5);
 
     save(element, selector, { state: "complete" });
     await settle(element);
     expect(conn.last("update_task").args).toEqual({ task_id: "s1@2026-11-28", state: "complete" });
+
+    await edit("s1@2026-11-28");
 
     save(element, selector, { scope: "future", every_days: 3, weekdays: [], until: "" });
     await settle(element);
@@ -243,19 +252,24 @@ describe("tk-plan", () => {
       every_days: 3,
       until: "",
     });
+
+    await edit("t1");
+    expect(
+      (find(element, selector) as unknown as { fields: { name: string }[] }).fields.length,
+    ).toBe(5);
   });
 
   it("removes one occurrence, or it and every later one", async () => {
     const conn = connection();
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
-    expect(findAll(find(element, "li[data-task=t1]"), "button.remove-future")).toEqual([]);
+    expect(findAll(find(element, "li[data-task=t1]"), "ha-icon-button.remove-future")).toEqual([]);
 
-    find(element, "li[data-task='s1@2026-11-28'] button.remove").click();
+    find(element, "li[data-task='s1@2026-11-28'] ha-icon-button.remove").click();
     await settle(element);
     expect(conn.last("remove_task").args).toEqual({ task_id: "s1@2026-11-28" });
 
-    find(element, "li[data-task='s1@2026-11-28'] button.remove-future").click();
+    find(element, "li[data-task='s1@2026-11-28'] ha-icon-button.remove-future").click();
     await settle(element);
     expect(conn.last("remove_task").args).toEqual({ task_id: "s1@2026-11-28", scope: "future" });
   });
@@ -328,7 +342,9 @@ describe("tk-plan", () => {
     expect(findAll(element, ".filter")).toHaveLength(1);
 
     vi.setSystemTime(new Date(2026, 10, 27, 10));
-    save(element, "tk-form.add", { date: "2026-11-30", slot: "task", text: "Trim" });
+    find(element, "ha-icon-button.add").click();
+    await settle(element);
+    save(element, "tk-dialog tk-form.add", { date: "2026-11-30", slot: "task", text: "Trim" });
     await settle(element);
 
     expect(findAll(element, ".filter")).toEqual([]);
@@ -361,14 +377,75 @@ describe("tk-plan", () => {
     expect(findAll(element, ".filter")).toEqual([]);
   });
 
-  it("adds nothing when the Add form is empty", async () => {
+  it("adds a task in its own dialog, which closes after the save", async () => {
     const conn = connection();
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
+    await settle(element);
+    expect(findAll(element, "tk-form")).toEqual([]);
+
+    find(element, "ha-icon-button.add").click();
+    await settle(element);
+    expect(find(element, "tk-dialog.add").getAttribute("heading")).toBe("Add a task");
+
+    save(element, "tk-dialog tk-form.add", { text: "Trim", date: "2026-11-28" });
+    await settle(element);
+    expect(conn.last("add_task").args).toEqual({ text: "Trim", date: "2026-11-28" });
+    expect(findAll(element, "tk-dialog")).toEqual([]);
+  });
+
+  it("keeps the add dialog open with nothing to add, and shows errors in it", async () => {
+    const conn = connection().fail("add_task", "invalid_input", "No date");
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
+    await settle(element);
+    find(element, "ha-icon-button.add").click();
     await settle(element);
 
     save(element, "tk-form.add", {});
     await settle(element);
     expect(conn.types()).not.toContain("tankkeeper/add_task");
+
+    save(element, "tk-form.add", { text: "Trim" });
+    await settle(element);
+    const form = find(element, "tk-dialog tk-form.add") as unknown as { error: string };
+    expect(form.error).toBe("No date");
+    expect(findAll(element, "section > p.error")).toEqual([]);
+  });
+
+  it("edits a task in its own dialog, and removes it", async () => {
+    const conn = connection();
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
+    await settle(element);
+
+    find(element, "li[data-task=t1] ha-icon-button.edit").click();
+    await settle(element);
+    const form = find(element, "tk-dialog.edit tk-form") as unknown as { values: { id: string } };
+    expect(form.values.id).toBe("t1");
+    save(element, "tk-dialog.edit tk-form", { state: "skip" });
+    await settle(element);
+    expect(conn.last("update_task").args).toEqual({ task_id: "t1", state: "skip" });
+    expect(findAll(element, "tk-dialog")).toEqual([]);
+
+    find(element, "li[data-task=t1] ha-icon-button.remove").click();
+    await settle(element);
+    expect(conn.last("remove_task").args).toEqual({ task_id: "t1" });
+  });
+
+  it("opens and closes a task's history from its icon button", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+    expect(findAll(element, "li[data-task=t1] tk-history")).toEqual([]);
+
+    find(element, "li[data-task=t1] ha-icon-button.history").click();
+    await settle(element);
+    const history = find(element, "li[data-task=t1] tk-history") as unknown as {
+      collection: string;
+      recordId: string;
+    };
+    expect([history.collection, history.recordId]).toEqual(["tasks", "t1"]);
+
+    find(element, "li[data-task=t1] ha-icon-button.history").click();
+    await settle(element);
+    expect(findAll(element, "li[data-task=t1] tk-history")).toEqual([]);
   });
 
   it("shows the reminders read-only, with their history and no cog", async () => {
@@ -381,6 +458,8 @@ describe("tk-plan", () => {
     expect(text(card)).toContain("Task reminder time 09:00");
     expect(findAll(card, "tk-form")).toEqual([]);
     expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
+    find(card, "ha-icon-button.history").click();
+    await settle(element);
     const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
     expect([history.collection, history.recordId]).toEqual(["settings", "reminders"]);
   });

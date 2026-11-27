@@ -1,6 +1,7 @@
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { errorMessage, type TankkeeperApi } from "./api";
 import { shared } from "./base";
+import { CLOSE, DELETE, iconButton, textButton } from "./buttons";
 import type { DeleteAsked } from "./types";
 
 /** Fired once a conversation is deleted, with its id. */
@@ -96,7 +97,7 @@ export class TkDeleteConversation extends LitElement {
 
   private async cancel(): Promise<void> {
     this.asked = undefined;
-    await this.focusOn("button.delete");
+    await this.focusOn("ha-icon-button.delete");
   }
 
   private async focusOn(selector: string): Promise<void> {
@@ -114,40 +115,34 @@ export class TkDeleteConversation extends LitElement {
         still works.
       </p>
       <div class="row">
-        <button
-          class="cancel"
-          ?disabled=${this.busy}
-          @click=${() => {
-            void this.cancel();
-          }}
-        >
-          Cancel
-        </button>
-        <button
-          class="confirm confirm-delete"
-          ?disabled=${this.disabled || this.busy}
-          @click=${() => {
-            void this.confirm(asked.code);
-          }}
-        >
-          Delete conversation
-        </button>
+        ${textButton({
+          icon: CLOSE,
+          label: "Cancel",
+          className: "cancel",
+          disabled: this.busy,
+          onClick: () => void this.cancel(),
+        })}
+        ${textButton({
+          icon: DELETE,
+          label: "Delete conversation",
+          className: "confirm confirm-delete",
+          disabled: this.disabled || this.busy,
+          onClick: () => void this.confirm(asked.code),
+        })}
       </div>
     </div>`;
   }
 
   override render(): TemplateResult {
-    return html`<button
-        class="delete"
-        ?disabled=${this.disabled || this.busy || this.asked !== undefined}
-        @click=${() => {
-          void this.ask();
-        }}
-      >
-        Delete
-      </button>
-      ${this.asked === undefined ? nothing : this.renderAsked(this.asked)}
-      ${this.error ? html`<p class="error">${this.error}</p>` : nothing}`;
+    return html`${iconButton({
+      icon: DELETE,
+      label: "Delete",
+      className: "delete",
+      disabled: this.disabled || this.busy || this.asked !== undefined,
+      onClick: () => void this.ask(),
+    })}
+    ${this.asked === undefined ? nothing : this.renderAsked(this.asked)}
+    ${this.error ? html`<p class="error">${this.error}</p>` : nothing}`;
   }
 }
 

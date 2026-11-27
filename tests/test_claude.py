@@ -13,7 +13,7 @@ from custom_components.tankkeeper.claude import CLAUDE_ID, MODEL_NOTE, ClaudeSet
 from custom_components.tankkeeper.domain import Collection, Source
 from custom_components.tankkeeper.service import TankkeeperService
 
-from .agents import AI_TASK, CLAUDE, FakeClaude
+from .agents import AI_TASK, CLAUDE, SIMPLE, FakeClaude, add_simple_agent
 from .common import Caller, apply
 
 DEFAULTS = {
@@ -27,7 +27,48 @@ DEFAULTS = {
 
 
 async def test_get_claude_shows_the_defaults_and_the_model_note(call: Caller) -> None:
-    assert await call.ok("get_claude") == {**DEFAULTS, "model_note": MODEL_NOTE}
+    assert await call.ok("get_claude") == {**DEFAULTS, "chat_agent": None, "model_note": MODEL_NOTE}
+
+
+async def test_without_a_chosen_agent_the_only_other_agent_chats(call: Caller, claude: FakeClaude) -> None:
+    settings = await call.ok("get_claude")
+
+    assert settings["agent"] is None
+    assert settings["chat_agent"] == CLAUDE
+
+
+async def test_without_a_chosen_agent_two_other_agents_leave_the_chat_without_one(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude
+) -> None:
+    add_simple_agent(hass)
+
+    assert (await call.ok("get_claude"))["chat_agent"] is None
+
+
+async def test_an_agent_that_did_not_load_is_not_counted(hass: HomeAssistant, call: Caller, claude: FakeClaude) -> None:
+    hass.states.async_set("conversation.old_agent", "unavailable", {"restored": True})
+
+    assert (await call.ok("get_claude"))["chat_agent"] == CLAUDE
+
+
+async def test_the_chosen_agent_chats_even_when_others_exist(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude
+) -> None:
+    add_simple_agent(hass)
+    await apply(call, await call.ok("set_claude", agent=SIMPLE, reason="Chat simply"))
+
+    assert (await call.ok("get_claude"))["chat_agent"] == SIMPLE
+
+
+async def test_a_chosen_agent_that_is_gone_leaves_the_chat_without_one(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude
+) -> None:
+    add_simple_agent(hass)
+    await apply(call, await call.ok("set_claude", agent=CLAUDE, reason="Chat through Claude"))
+    er.async_get(hass).async_remove(CLAUDE)
+    await hass.async_block_till_done()
+
+    assert (await call.ok("get_claude"))["chat_agent"] is None
 
 
 async def test_set_claude_is_a_proposal(call: Caller, claude: FakeClaude) -> None:
@@ -52,6 +93,7 @@ async def test_set_claude_is_a_proposal(call: Caller, claude: FakeClaude) -> Non
         "comments": True,
         "daily_time": "20:00",
         "daily_cap": 3,
+        "chat_agent": CLAUDE,
         "model_note": MODEL_NOTE,
     }
 

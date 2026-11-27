@@ -9,7 +9,13 @@ from dataclasses import dataclass
 from datetime import time
 from enum import StrEnum
 
-from homeassistant.components.conversation import async_get_agent_info
+from homeassistant.components.conversation import (
+    DOMAIN as CONVERSATION_DOMAIN,
+    HOME_ASSISTANT_AGENT,
+    async_get_agent_info,
+)
+from homeassistant.components.conversation.agent_manager import get_agent_manager
+from homeassistant.components.conversation.models import AgentInfo
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
@@ -100,6 +106,31 @@ def check_settings(hass: HomeAssistant, settings: ClaudeSettings) -> None:
         not settings.ai_task.startswith(f"{AI_TASK_DOMAIN}.") or hass.states.get(settings.ai_task) is None
     ):
         raise InvalidInputError(f"No AI task entity {settings.ai_task}")
+
+
+def chat_agents(hass: HomeAssistant) -> list[AgentInfo]:
+    """The agents TankKeeper can pass chat to: all but TankKeeper's own and Home Assistant's built-in one."""
+    registry = er.async_get(hass)
+    ids = [
+        *hass.states.async_entity_ids(CONVERSATION_DOMAIN),
+        *(info.id for info in get_agent_manager(hass).async_get_agent_info()),
+    ]
+    found: list[AgentInfo] = []
+    for agent_id in ids:
+        entry = registry.async_get(agent_id)
+        if agent_id == HOME_ASSISTANT_AGENT or (entry is not None and entry.platform == DOMAIN):
+            continue
+        if (info := async_get_agent_info(hass, agent_id)) is not None:
+            found.append(info)
+    return found
+
+
+def chat_agent(hass: HomeAssistant, settings: ClaudeSettings) -> AgentInfo | None:
+    """The agent TankKeeper passes chat to: the chosen one, or without a choice the only agent it can use."""
+    if settings.agent is not None:
+        return async_get_agent_info(hass, settings.agent)
+    agents = chat_agents(hass)
+    return agents[0] if len(agents) == 1 else None
 
 
 def _optional_str(value: JsonValue) -> str | None:

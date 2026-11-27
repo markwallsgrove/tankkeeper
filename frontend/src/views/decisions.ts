@@ -2,7 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
-import { saveAndClear } from "../tk-form";
+import { CHECK, COLLAPSE, EXPAND, PENCIL, PLUS, REPLACE, iconButton } from "../buttons";
 import "../tk-history";
 import type { Decision, DecisionDetail, Field, Values } from "../types";
 
@@ -102,44 +102,56 @@ export class TkDecisions extends TkView {
           ? html`<p class="muted">Replaces ${detail.replaces.map(code).join(", ")}</p>`
           : nothing
       }
-      ${
-        detail.status === "proposed"
-          ? html`<button
-              class="accept primary"
-              ?disabled=${this.busy}
-              @click=${() => this.save("accept", {}, detail.number)}
-            >
-              Accept
-            </button>`
-          : nothing
-      }
-      <details>
-        <summary>Edit</summary>
-        <tk-form
-          class="update"
-          .fields=${TEXT_FIELDS}
-          .values=${detail}
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) => this.save("update", event.detail, detail.number)}
-        ></tk-form>
-      </details>
-      <details>
-        <summary>Replace</summary>
-        <tk-form
-          class="replace"
-          .fields=${REPLACE_FIELDS}
-          submitLabel="Replace"
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) =>
-            saveAndClear(event, (values) => this.save("replace", values, detail.number))}
-        ></tk-form>
-      </details>
-      <tk-history
-        .api=${this.api}
-        .collection=${"decisions"}
-        .recordId=${code(detail.number)}
-        .stamp=${this.version}
-      ></tk-history>
+      <div class="actions">
+        ${
+          detail.status === "proposed"
+            ? iconButton({
+                icon: CHECK,
+                label: "Accept",
+                className: "accept",
+                disabled: this.busy,
+                onClick: () => void this.save("accept", {}, detail.number),
+              })
+            : nothing
+        }
+        ${iconButton({
+          icon: PENCIL,
+          label: "Edit",
+          className: "update",
+          disabled: this.busy,
+          onClick: () => {
+            this.openDialog("update");
+          },
+        })}
+        ${iconButton({
+          icon: REPLACE,
+          label: "Replace",
+          className: "replace",
+          disabled: this.busy,
+          onClick: () => {
+            this.openDialog("replace");
+          },
+        })}
+        ${this.historyButton("decisions", code(detail.number))}
+      </div>
+      ${this.historyPanel("decisions", code(detail.number))}
+      ${this.formDialog({
+        key: "update",
+        className: "update",
+        heading: `Edit decision ${code(detail.number)}`,
+        fields: TEXT_FIELDS,
+        values: detail,
+        save: (values) => this.save("update", values, detail.number),
+      })}
+      ${this.formDialog({
+        key: "replace",
+        className: "replace",
+        heading: `Replace decision ${code(detail.number)}`,
+        fields: REPLACE_FIELDS,
+        submitLabel: "Replace",
+        submitIcon: REPLACE,
+        save: (values) => this.save("replace", values, detail.number),
+      })}
     </div>`;
   }
 
@@ -148,14 +160,14 @@ export class TkDecisions extends TkView {
     return html`<li data-number=${decision.number}>
       <div class="row">
         <strong class="grow">${code(decision.number)} ${decision.title}</strong>
-        <button
-          class="open"
-          @click=${() => {
+        ${iconButton({
+          icon: open ? COLLAPSE : EXPAND,
+          label: open ? "Close" : "Open",
+          className: "open",
+          onClick: () => {
             this.toggle(decision.number);
-          }}
-        >
-          ${open ? "Close" : "Open"}
-        </button>
+          },
+        })}
       </div>
       <div class="muted">${decision.status} · ${decision.date}</div>
       ${open && this.detail?.number === decision.number ? this.renderDetail(this.detail) : nothing}
@@ -165,7 +177,7 @@ export class TkDecisions extends TkView {
   override render(): TemplateResult {
     return html`
       <section>
-        <div class="row">
+        <div class="head">
           <h2 class="grow">Decisions</h2>
           <select
             class="status"
@@ -176,8 +188,17 @@ export class TkDecisions extends TkView {
             <option value="">All</option>
             ${STATUSES.map((status) => html`<option value=${status}>${status}</option>`)}
           </select>
+          ${iconButton({
+            icon: PLUS,
+            label: "Add a decision",
+            className: "add",
+            disabled: this.busy,
+            onClick: () => {
+              this.openDialog("add");
+            },
+          })}
         </div>
-        ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
+        ${this.renderError()}
         <ul>
           ${repeat(
             this.decisions,
@@ -185,17 +206,15 @@ export class TkDecisions extends TkView {
             (decision) => this.renderDecision(decision),
           )}
         </ul>
-      </section>
-      <section>
-        <h2>Add a decision</h2>
-        <tk-form
-          class="add"
-          .fields=${ADD_FIELDS}
-          submitLabel="Add"
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) =>
-            saveAndClear(event, (values) => this.save("add", values))}
-        ></tk-form>
+        ${this.formDialog({
+          key: "add",
+          className: "add",
+          heading: "Add a decision",
+          fields: ADD_FIELDS,
+          submitLabel: "Add",
+          submitIcon: PLUS,
+          save: (values) => this.save("add", values),
+        })}
       </section>
     `;
   }
