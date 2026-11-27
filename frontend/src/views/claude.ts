@@ -7,7 +7,7 @@ import "../tk-history";
 import type { ClaudeSettings, Field, Review, Values } from "../types";
 
 const CLAUDE_FIELDS: Field[] = [
-  { name: "agent", label: "Conversation agent Tankkeeper chats through", type: "text" },
+  { name: "agent", label: "Conversation agent TankKeeper chats through", type: "text" },
   { name: "ai_task", label: "AI task entity for review comments", type: "text" },
   {
     name: "review_on",
@@ -52,7 +52,7 @@ function reviewItem(review: Review): TemplateResult {
   </li>`;
 }
 
-/** The Claude settings: the agent Tankkeeper chats through, and when and how Claude reviews the tank. */
+/** The Claude settings: the agent TankKeeper chats through, and when and how Claude reviews the tank. */
 export class TkClaude extends TkView {
   static override properties = {
     ...TkView.properties,

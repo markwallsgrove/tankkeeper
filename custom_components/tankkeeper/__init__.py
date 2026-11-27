@@ -1,4 +1,4 @@
-"""Tankkeeper: the fish tank's records, plan, reminders, lights and status, MCP first."""
+"""TankKeeper: the fish tank's records, plan, reminders, lights and status, MCP first."""
 
 from contextlib import suppress
 from typing import cast

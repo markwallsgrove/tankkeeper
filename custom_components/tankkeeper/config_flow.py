@@ -299,7 +299,7 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         return self.async_show_menu(step_id="light", menu_options=["add_light", "reminders"])
 
     async def async_step_add_light(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Add the tank light. Tankkeeper switches it on its schedule."""
+        """Add the tank light. TankKeeper switches it on its schedule."""
         if user_input is not None:
             try:
                 target = light_target(self.hass, new_light(_light_data(user_input)), [])
@@ -332,7 +332,7 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_claude(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Offer to choose the agent Tankkeeper chats through, and when Claude reviews the tank."""
+        """Offer to choose the agent TankKeeper chats through, and when Claude reviews the tank."""
         return self.async_show_menu(step_id="claude", menu_options=["set_claude", "finish"])
 
     async def async_step_set_claude(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

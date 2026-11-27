@@ -1,6 +1,6 @@
 """Claude settings.
 
-They hold the agent Tankkeeper's Assist agent passes chat to, the AI task entity for review comments, what starts a
+They hold the agent TankKeeper's Assist agent passes chat to, the AI task entity for review comments, what starts a
 review and the daily cap on comments.
 """
 
@@ -22,11 +22,11 @@ AI_TASK_DOMAIN = "ai_task"
 MAX_DAILY_CAP = 50
 MODEL_NOTE = (
     "The models are set in the Anthropic integration: the chat model on the conversation agent, the review model on "
-    "the AI task entity. Tankkeeper never holds an API key."
+    "the AI task entity. TankKeeper never holds an API key."
 )
 
 ASSIST_CONVERSATION: ContextVar[tuple[str, str] | None] = ContextVar("tankkeeper_assist_conversation", default=None)
-"""The conversation Tankkeeper's Assist agent is recording and the id of the request's context, while the chosen
+"""The conversation TankKeeper's Assist agent is recording and the id of the request's context, while the chosen
 agent answers a message in it. Tools use the conversation only for calls with that same context."""
 
 
@@ -95,7 +95,7 @@ def check_settings(hass: HomeAssistant, settings: ClaudeSettings) -> None:
             raise InvalidInputError(f"No conversation agent {settings.agent}")
         entry = er.async_get(hass).async_get(settings.agent)
         if entry is not None and entry.platform == DOMAIN:
-            raise InvalidInputError("Tankkeeper's agent can't pass chat to itself. Choose the Claude agent")
+            raise InvalidInputError("TankKeeper's agent can't pass chat to itself. Choose the Claude agent")
     if settings.ai_task is not None and (
         not settings.ai_task.startswith(f"{AI_TASK_DOMAIN}.") or hass.states.get(settings.ai_task) is None
     ):

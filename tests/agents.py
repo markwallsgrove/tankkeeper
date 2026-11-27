@@ -33,7 +33,7 @@ FAILING = "failing_agent"
 
 @dataclass
 class Turn:
-    """What the agent does with the next message: the Tankkeeper tools it calls, then its reply."""
+    """What the agent does with the next message: the TankKeeper tools it calls, then its reply."""
 
     tools: list[tuple[str, JsonObjectType]] = field(default_factory=list)
     reply: str = "Done."
@@ -41,7 +41,7 @@ class Turn:
 
 @dataclass
 class Answer:
-    """What the AI task entity does with the next task: the Tankkeeper tools it calls, then the data it returns."""
+    """What the AI task entity does with the next task: the TankKeeper tools it calls, then the data it returns."""
 
     tools: list[tuple[str, JsonObjectType]] = field(default_factory=list)
     data: object = field(default_factory=lambda: {"comment": "The cycle has started."})
@@ -54,7 +54,7 @@ class AnthropicFlow(ConfigFlow):
 
 
 class FakeClaude(conversation.ConversationEntity):
-    """Answers like the Anthropic agent: it reads the Tankkeeper prompt, calls tools in the chat log, then replies."""
+    """Answers like the Anthropic agent: it reads the TankKeeper prompt, calls tools in the chat log, then replies."""
 
     _attr_name = "Claude conversation"
 

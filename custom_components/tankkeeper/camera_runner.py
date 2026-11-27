@@ -84,7 +84,7 @@ REASON_TEXT = {
 }
 NO_CONTENTS = "nothing recorded"
 CAMERA_FAILED_NOTE = "The camera did not give a photo: {error}"
-UNKNOWN_TYPE_NOTE = "The camera gave an {content_type} photo, which Tankkeeper can't keep."
+UNKNOWN_TYPE_NOTE = "The camera gave an {content_type} photo, which TankKeeper can't keep."
 NO_AI_TASK_NOTE = "No AI task entity is set, so Claude did not look at the photo."
 CAP_NOTE = "Claude did not look: the daily cap of {cap} is reached."
 FAILED_NOTE = "Claude could not look at the photo: {error}"

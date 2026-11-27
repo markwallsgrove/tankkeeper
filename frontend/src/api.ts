@@ -1,6 +1,6 @@
 import type { HassConnection, Message } from "./types";
 
-/** Calls Tankkeeper's websocket commands, which use the same service layer as the tools. */
+/** Calls TankKeeper's websocket commands, which use the same service layer as the tools. */
 export class TankkeeperApi {
   /** timeZone is Home Assistant's, so "today" is the same day the backend uses. */
   constructor(

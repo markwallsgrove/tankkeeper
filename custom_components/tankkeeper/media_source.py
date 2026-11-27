@@ -18,7 +18,7 @@ from .domain import NotFoundError
 from .photos import PHOTO_PATH, is_photo_id
 from .service import TankkeeperService
 
-TITLE = "Tankkeeper photos"
+TITLE = "TankKeeper photos"
 TIME_FORMAT = "%d %b %Y %H:%M"
 
 
@@ -40,7 +40,7 @@ class TankkeeperMediaSource(MediaSource):
     def _service(self) -> TankkeeperService:
         entries = self.hass.config_entries.async_loaded_entries(DOMAIN)
         if not entries:
-            raise Unresolvable("Tankkeeper is not loaded")
+            raise Unresolvable("TankKeeper is not loaded")
         service: TankkeeperService = entries[0].runtime_data
         return service
 

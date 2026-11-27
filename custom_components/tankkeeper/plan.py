@@ -275,7 +275,7 @@ def action_for(status: TaskStatus, task_id: str) -> str:
 
 
 def parse_action(action: str) -> tuple[TaskStatus, str] | None:
-    """The state and task id from a notification action, or None when it is not Tankkeeper's."""
+    """The state and task id from a notification action, or None when it is not TankKeeper's."""
     name, _, task_id = action.partition("|")
     for status in (TaskStatus.COMPLETE, TaskStatus.SKIP):
         if name == f"{ACTION_PREFIX}{status.value.upper()}" and task_id:

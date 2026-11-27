@@ -76,14 +76,14 @@ from .service import Actor, TankkeeperService, Target
 
 MCP_PLATFORM = "mcp_server"
 
-PROMPT = """Tankkeeper holds the records of the owner's fish tank: the tank, water, products, \
+PROMPT = """TankKeeper holds the records of the owner's fish tank: the tank, water, products, \
 contents, a log of doses and tests, notes, the history of every change and past conversations.
 - Record doses, tests, new contents and notes as soon as the owner tells you about them.
 - Every other change is a proposal. Call the change tool, read its summary and changes back to the \
 owner, and call tankkeeper__apply_change with the confirm code only after the owner says yes. Never \
 apply a change the owner has not seen.
 - At the start of a conversation call tankkeeper__save_conversation with a title, and pass the \
-conversation_id it returns to every other Tankkeeper tool. Before you finish, call it again with a \
+conversation_id it returns to every other TankKeeper tool. Before you finish, call it again with a \
 summary and the key messages. When you are given a conversation_id, use that one instead: every \
 message is recorded already, so only set the title and summary.
 - Before you answer, search past conversations for what the owner already said.
@@ -234,7 +234,7 @@ class Spec:
 
 
 class TankkeeperTool(Tool):
-    """A Tankkeeper tool. It checks its arguments, then calls the service."""
+    """A TankKeeper tool. It checks its arguments, then calls the service."""
 
     integration = DOMAIN
 
@@ -275,7 +275,7 @@ class TankkeeperTool(Tool):
 
 
 def _assist_conversation(llm_context: LLMContext) -> str | None:
-    """The conversation Tankkeeper's Assist agent records, when the call is part of the request it passed on."""
+    """The conversation TankKeeper's Assist agent records, when the call is part of the request it passed on."""
     assist = ASSIST_CONVERSATION.get()
     if assist is None or llm_context.context is None or llm_context.context.id != assist[1]:
         return None
@@ -283,7 +283,7 @@ def _assist_conversation(llm_context: LLMContext) -> str | None:
 
 
 def build_tools(service: TankkeeperService) -> list[Tool]:
-    """Every Tankkeeper tool, bound to one tank. get_light needs a light, and the photo tools need a camera."""
+    """Every TankKeeper tool, bound to one tank. get_light needs a light, and the photo tools need a camera."""
     hidden: set[str] = set()
     if not service.has_lights():
         hidden |= LIGHT_ONLY
@@ -467,7 +467,7 @@ async def add_note(service: TankkeeperService, data: Record, actor: Actor) -> Js
 async def save_conversation(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Start a conversation, or add a summary and messages to it.
 
-    Tankkeeper's Assist agent records its conversation itself, so messages for that one are left out.
+    TankKeeper's Assist agent records its conversation itself, so messages for that one are left out.
     """
     assist = ASSIST_CONVERSATION.get()
     recorded = assist is not None and assist[0] == actor.conversation_id
@@ -1936,7 +1936,7 @@ SPECS: tuple[Spec, ...] = (
         title="Get the Claude settings",
         annotations=READ,
         handler=get_claude,
-        description="The conversation agent Tankkeeper's Assist agent passes chat to, the AI task entity that writes "
+        description="The conversation agent TankKeeper's Assist agent passes chat to, the AI task entity that writes "
         "review comments, what starts a review, whether reviews get a comment, the daily review time and the daily "
         "cap on comments.",
         schema={},

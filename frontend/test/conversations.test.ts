@@ -103,9 +103,9 @@ describe("tk-conversations", () => {
     expect(findAll(element, "button.delete").length).toBe(1);
 
     find(element, "button.back").click();
-    conn.fail("list_conversations", "not_loaded", "Tankkeeper is not loaded");
+    conn.fail("list_conversations", "not_loaded", "TankKeeper is not loaded");
     await settle(element);
-    expect(find(element, ".error").textContent).toBe("Tankkeeper is not loaded");
+    expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
   it("deletes a conversation only after the Member confirms", async () => {
