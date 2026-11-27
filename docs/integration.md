@@ -1,6 +1,6 @@
 # Tankkeeper integration
 
-Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo, the plan calendar, reminders and the light.
+Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools to read and change them. You talk to Claude; Claude uses the tools. This page covers the integration as it is built today: records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, and the rules and status.
 
 ## Use cases
 
@@ -10,18 +10,21 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
 - See what changed, who changed it and why, and undo a change.
 - Keep the plan in a calendar, tick off today's tasks, and get a reminder with Complete and Skip on your phone.
 - Let Tankkeeper switch the tank light on its schedule, and know when the light does not follow it.
+- Know where the tank stands: On course, Watch or Act, with the reason and what to do.
+- Keep numbered decisions, and move your earlier decisions and log in.
 
 ## What it provides
 
 - **Tools** for Claude, through Home Assistant's LLM API. Claude Code and Claude Desktop reach them through the [Model Context Protocol](https://www.home-assistant.io/integrations/mcp_server/) integration. Assist reaches them when its conversation agent can control Home Assistant.
 - **Entities** on a Tankkeeper service device:
+  - **Status** (sensor): On course, Watch or Act, the worst result of the [rules](#rules-and-status). The `rules` attribute lists each rule's result with its reason and what to do.
   - **Proposals waiting** (sensor): how many proposals wait for a yes or a no.
   - **Last water test** (sensor): when the tank water was last tested. Tap water tests don't count.
   - **Plan** (`calendar.tankkeeper`): every task as a 30-minute event at its slot time. A done task's title starts with `Complete:` or `Skip:`, and its note is the description. You can add, change and delete tasks in the calendar. Tasks can't repeat.
   - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
   - **Next light change** (sensor, only with a light): when a light next turns on or off, and which lights.
   - **Light problem** (binary sensor, only with a light): on when a light's entity is unavailable or did not switch. The `problems` attribute lists each light with when it became unavailable and the change it missed.
-- **Reminders** to the notify services you choose (see [options](#options)).
+- **Reminders** and **status alerts** to the notify services you choose (see [options](#options)).
 - **A repair issue** for each light that does not follow its schedule. It clears by itself.
 - **Diagnostics:** record counts and settings, without notes, messages or reasons.
 
@@ -36,7 +39,7 @@ Every tool name starts with `tankkeeper__`.
 | `get_tank` | The tank's details, the water values, how many records there are and how many proposals wait. |
 | `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the volume of water in the tank. |
 | `list_contents` | Plants, rocks, wood, substrate, decorations and fish in the tank. |
-| `get_log` | Doses and water tests, newest first, optionally between two dates. |
+| `get_log` | Doses, water tests and imported events, newest first, optionally between two dates. |
 | `list_notes` | Open questions and assumptions about the tank. |
 | `list_proposals` | Proposed changes, newest first, without their confirm codes. |
 | `get_history` | The newest changes, with the record before and after, who made each change and in which conversation. |
@@ -44,11 +47,11 @@ Every tool name starts with `tankkeeper__`.
 | `get_conversation` | A past conversation, its key messages and the changes made in it. |
 | `search_conversations` | Past conversations that mention some words, newest first. |
 | `record_dose` | Record a dose. |
-| `record_test` | Record water test results: ammonia, nitrite, nitrate and phosphate in mg/l, KH in dKH, GH in dGH, and pH. |
+| `record_test` | Record water test results: ammonia, nitrite, nitrate and phosphate in mg/l, KH in dKH, GH in dGH, and pH. Returns the status. |
 | `add_content` | Record something put in the tank. |
 | `add_note` | Record an open question or an assumption. |
 | `save_conversation` | Start a conversation, or add a title, summary and key messages to one. Up to 20 messages a call and 200 a conversation. |
-| `set_tank` | Propose new tank details. |
+| `set_tank` | Propose new tank details, including the stage: `cycling` or `cycled`. |
 | `set_water` | Propose new tap water values. |
 | `add_product` | Propose a new product. |
 | `update_product` | Propose changes to a product. |
@@ -63,7 +66,14 @@ Every tool name starts with `tankkeeper__`.
 | `add_task` | Propose a new task for a day, in the task or dose slot. |
 | `update_task` | Propose changes to a task: text, day, slot, state or note. |
 | `remove_task` | Propose taking a task out of the plan. |
-| `set_reminders` | Propose the notify services and the task, dose and resend times. |
+| `set_reminders` | Propose the notify services for reminders and for status alerts, and the task, dose and resend times. |
+| `get_status` | The status, each rule's result, the stage and the rule limits. |
+| `set_rules` | Propose new rule limits. |
+| `list_decisions` | Every decision by number, with its title, date and status. |
+| `get_decision` | One decision in full, with what replaced it and what it replaced. |
+| `set_decision` | Propose adding a decision (it gets the next number), accepting a proposed one, or replacing one with another. |
+| `import_decisions` | Propose adding or updating decisions given in full, such as your decision files. |
+| `import_log` | Propose adding your earlier log. Each dose and test becomes a log record; tasks, fills and water changes become an event. Records already in the log are left out. |
 | `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
@@ -81,6 +91,24 @@ A light is a `light` or `switch` entity, its model, its control and a daily sche
 - Tankkeeper keeps a 30-day on/off log, with who switched the light: the schedule or something else.
 - If the entity is unavailable, or a switch fails, the schedule stays as it is. The change is logged as missed, the light problem sensor turns on and a repair issue opens. When the entity comes back, Tankkeeper makes the missed change, late.
 - With a light, doses are due when the earliest light turns on, the one-day change included. Without one, they use the dose time.
+
+### Rules and status
+
+The rules run after every change to the records and once an hour. The status is the worst result. A rule with no data gives no result. Tap water tests never count.
+
+| Rule | Watch | Act |
+|---|---|---|
+| Ammonia, nitrite | latest tank test above 2 ppm | above 4 ppm |
+| pH, while cycling | under 7.0 | under 6.5 |
+| Cycle stalled, while cycling | ammonia the same for 5 days with no nitrite | 7 days |
+| Test overdue | a planned test 1 day late | 3 days late |
+| Dose skipped | a product's dose skipped once in the last 7 days | twice running in the last 7 days |
+| Plan runs out | 14 days of tasks left | 7 days |
+| Light problem | a light missed a change | its entity is unavailable |
+
+The limits are settings: change them in the options or with `set_rules`. The pH and cycle stalled rules need the stage set to cycling. A planned test is a task with "test" in its text. It is done when it is completed or skipped, or when a tank test is recorded on or after its day.
+
+When a rule gets worse, the status alert devices get the status, the reasons and what to do. When the status goes back to On course, they get one "Back on course" message. Nothing is sent after a restart until something changes.
 
 ### Reminders
 
@@ -123,6 +151,9 @@ Open the integration and choose **Configure**. Changes made here apply straight 
 | Task time | When tasks are sent. |
 | Dose time | When doses are sent when no light is set. |
 | Resend time | When tasks still open are sent again. |
+| Status alert devices | The notify services that get a message when the status changes. None means no alerts. |
+
+**Rules and status.** The stage (cycling or cycled) and the Watch and Act limit of each rule. Act must be at least as strict as Watch. Claude can propose the same with `set_rules` and `set_tank`.
 
 **Lights.** Add, change or remove a light, or change it for one day. Claude can propose the same with `set_light`.
 
@@ -179,7 +210,9 @@ actions:
 - One tank per Home Assistant.
 - Proposals can only be accepted in the conversation that made them. A proposal whose code has expired, or that had too many wrong codes, stays waiting until it is rejected. Make it again to get a new code.
 - Over MCP, a conversation is known only by the `conversation_id` Claude passes. Proposals made without one can be applied from any conversation by the same Home Assistant user.
-- No rules, status, panel or camera yet. See the [design](design.html). A light problem raises a repair issue, but sends no notification yet.
+- No panel or camera yet. See the [design](design.html).
+- The rule limits are settings. A decision does not change them by itself; Claude proposes the change with `set_rules`.
+- Temperature has no rule yet.
 - A light turns on and off on the same day. A schedule over midnight is not possible.
 - Tankkeeper does not check that a light or plug really changed. It trusts the entity's state.
 - A switch is logged as made by the schedule only when the device reports it with Tankkeeper's action. A device that reports later shows it as made by something else.
@@ -197,6 +230,8 @@ actions:
 - **No reminders.** Check that the device is chosen in the options, and that its `notify.mobile_app_…` action works from **Developer tools > Actions**.
 - **Complete or Skip did nothing.** The task may be done already, or removed; the reminder is cleared anyway. Check the task in `calendar.tankkeeper`.
 - **"Tankkeeper tasks can't repeat".** Add a single event for each day.
+- **The status is Watch or Act.** Read the `rules` attribute of the status sensor, or ask Claude for `get_status`. Each rule says why and what to do.
+- **No status alerts.** Check that the device is chosen under **Status alert devices** in the options. Only Watch, Act and back on course are sent.
 - **Light problem is on.** Check that the light or plug has power and shows in Home Assistant. Read the `problems` attribute to see what was missed. The problem clears when the light is in the state its schedule wants.
 - **Something else.** Download the diagnostics from the integration's menu and [open an issue](https://github.com/markwallsgrove/tankkeeper/issues). Diagnostics leave out your notes and messages.
 

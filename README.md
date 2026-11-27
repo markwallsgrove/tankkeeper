@@ -17,7 +17,7 @@ Tankkeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders and the light work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, and the rules and status work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
