@@ -15,9 +15,11 @@ from custom_components.tankkeeper.lights import (
     OneDayChange,
     Schedule,
     dose_time,
+    history_periods,
     next_change,
     on_periods,
     prune_log,
+    state_periods,
     wanted_on,
 )
 
@@ -349,3 +351,37 @@ def test_on_periods_skip_repeated_states_and_periods_before_the_window() -> None
     ]
 
     assert on_periods(events, "l1", _at(0), _at(23)) == [(_at(12), _at(20))]
+
+
+def test_state_periods_follow_recorded_states_and_clip_to_the_window() -> None:
+    changes = [
+        (_at(20, day=DAY - timedelta(days=1)), True),
+        (_at(2), False),
+        (_at(12), True),
+        (_at(13), True),
+        (_at(14), False),
+        (_at(16), True),
+    ]
+
+    assert state_periods(changes, _at(0), _at(23)) == [(_at(0), _at(2)), (_at(12), _at(14)), (_at(16), _at(23))]
+    assert state_periods([], _at(0), _at(23)) == []
+    assert state_periods([(_at(1), False), (_at(22, day=DAY - timedelta(days=1)), True)], _at(0), _at(3)) == [
+        (_at(0), _at(1))
+    ]
+    assert state_periods([(_at(5), True)], _at(0), _at(3)) == []
+
+
+def test_history_periods_use_the_fallback_before_the_first_recorded_change() -> None:
+    fallback = [(_at(1), _at(3)), (_at(5), _at(9))]
+
+    assert history_periods([], fallback, _at(0), _at(23)) == fallback
+    assert history_periods([(_at(7), True), (_at(8), False)], fallback, _at(0), _at(23)) == [
+        (_at(1), _at(3)),
+        (_at(5), _at(8)),
+    ]
+    assert history_periods([(_at(8), False), (_at(10), True)], fallback, _at(0), _at(23)) == [
+        (_at(1), _at(3)),
+        (_at(5), _at(8)),
+        (_at(10), _at(23)),
+    ]
+    assert history_periods([(_at(4), False)], fallback, _at(0), _at(23)) == [(_at(1), _at(3))]

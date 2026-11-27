@@ -341,6 +341,45 @@ def on_periods(
     return periods
 
 
+def state_periods(
+    changes: Iterable[tuple[datetime, bool]], since: datetime, until: datetime
+) -> list[tuple[datetime, datetime]]:
+    """When recorded states show a light on between two moments. Each change is a time and whether the light was on."""
+    periods: list[tuple[datetime, datetime]] = []
+    start: datetime | None = None
+    for moment, on in sorted(changes, key=lambda change: change[0]):
+        if moment >= until:
+            break
+        if on:
+            if start is None:
+                start = max(moment, since)
+        elif start is not None:
+            if moment > start:
+                periods.append((start, moment))
+            start = None
+    if start is not None:
+        periods.append((start, until))
+    return periods
+
+
+def history_periods(
+    changes: Iterable[tuple[datetime, bool]],
+    fallback: Iterable[tuple[datetime, datetime]],
+    since: datetime,
+    until: datetime,
+) -> list[tuple[datetime, datetime]]:
+    """On periods from recorded changes, with the fallback periods for the time before the first change."""
+    recorded = list(changes)
+    if not recorded:
+        return list(fallback)
+    first = min(moment for moment, _ in recorded)
+    before = [(start, min(end, first)) for start, end in fallback if start < first]
+    after = state_periods(recorded, since, until)
+    if before and after and before[-1][1] == after[0][0]:
+        return [*before[:-1], (before[-1][0], after[0][1]), *after[1:]]
+    return before + after
+
+
 def _check_schedule(control: Control, schedule: Schedule) -> None:
     if schedule.off <= schedule.on:
         raise InvalidLightError("off", "The light turns off after it turns on, on the same day")

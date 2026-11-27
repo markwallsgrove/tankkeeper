@@ -5,11 +5,15 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 import secrets
 import shutil
 
+from homeassistant.components.recorder import history
+from homeassistant.const import STATE_ON
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.helpers.recorder import get_instance
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.util.ulid import ulid_now
@@ -62,7 +66,7 @@ from .domain import (
     tank_is_empty,
     undo_changes,
 )
-from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
+from .lights import Light, LightEvent, LightStatus, dose_time, history_periods, on_periods, prune_log
 from .photos import (
     CAMERA_ID,
     CameraSettings,
@@ -239,6 +243,35 @@ class TankkeeperService:
         log = prune_log([*self.light_log(), *events], self._clock())
         self._state.light_log = [event.to_json() for event in log]
         self.hass.async_create_task(self._async_save(), eager_start=False)
+
+    async def async_light_on_periods(
+        self, light: Light, since: datetime, until: datetime
+    ) -> list[tuple[datetime, datetime]]:
+        """When a light was on, from the day it was added.
+
+        Uses the recorder's state history and the state now, and the on/off log for the time before the recorder's
+        first state, or for all of it when the recorder has none or is not loaded.
+        """
+        start = max(since, dt_util.start_of_local_day(light.added))
+        logged = on_periods(self.light_log(), light.id, start, until)
+        if "recorder" not in self.hass.config.components:
+            return logged
+        states = await get_instance(self.hass).async_add_executor_job(
+            partial(
+                history.state_changes_during_period,
+                self.hass,
+                start,
+                until,
+                entity_id=light.entity_id,
+                no_attributes=True,
+            )
+        )
+        recorded = states.get(light.entity_id, [])
+        now = self.hass.states.get(light.entity_id)
+        if recorded and now is not None:
+            recorded = [*recorded, now]
+        changes = [(state.last_changed, state.state == STATE_ON) for state in recorded]
+        return history_periods(changes, logged, start, until)
 
     def light_status(self, light_id: str) -> LightStatus:
         """Whether a light is following its schedule. Kept in memory only."""

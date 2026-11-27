@@ -51,7 +51,6 @@ from .lights import (
     cancel_one_day_summary,
     change_summary as light_change_summary,
     next_change,
-    on_periods,
     one_day_summary,
     remove_summary as light_remove_summary,
     with_control,
@@ -1157,7 +1156,10 @@ async def get_light(service: TankkeeperService, data: Record, actor: Actor) -> J
     return {
         "today": now.date().isoformat(),
         "dose_time": format_time(service.reminders_on(now.date()).dose_time),
-        "lights": [_light_json(service, light, log, since) for light in lights],
+        "lights": [
+            _light_json(service, light, log, since, await service.async_light_on_periods(light, since, service.now()))
+            for light in lights
+        ],
         "next_change": None
         if change is None
         else {
@@ -1253,7 +1255,13 @@ def _rgb(value: JsonValue) -> tuple[int, int, int] | None:
     return red, green, blue
 
 
-def _light_json(service: TankkeeperService, light: Light, log: list[LightEvent], since: datetime) -> JsonObjectType:
+def _light_json(
+    service: TankkeeperService,
+    light: Light,
+    log: list[LightEvent],
+    since: datetime,
+    periods: list[tuple[datetime, datetime]],
+) -> JsonObjectType:
     today = dt_util.now().date()
     schedule = light.schedule_on(today)
     state = service.hass.states.get(light.entity_id)
@@ -1276,9 +1284,7 @@ def _light_json(service: TankkeeperService, light: Light, log: list[LightEvent],
         "missed_or_late": [
             event.to_json() for event in events if event.kind in (LightEventKind.MISSED, LightEventKind.LATE)
         ],
-        "on_periods": [
-            [start.isoformat(), end.isoformat()] for start, end in on_periods(log, light.id, since, service.now())
-        ],
+        "on_periods": [[start.isoformat(), end.isoformat()] for start, end in periods],
     }
 
 
