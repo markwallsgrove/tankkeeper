@@ -2,7 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
 import { shortTime } from "../format";
-import { facts, historyDetails, settingsHeader } from "../settings";
+import { facts, historyDetails } from "../settings";
 import type { ClaudeSettings, Field, Review } from "../types";
 
 const CLAUDE_FIELDS: Field[] = [
@@ -74,7 +74,7 @@ export class TkClaude extends TkView {
   override render(): TemplateResult {
     const settings = this.settings;
     return html`<section>
-      ${settingsHeader("Claude", "Claude", this.api)}
+      <h2>Claude</h2>
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
       ${
         settings === undefined

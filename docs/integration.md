@@ -108,7 +108,7 @@ The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phon
 - **Claude**: the Claude settings, with their history, and the latest reviews.
 - **Camera** (on the Overview): the latest photo and what Claude saw, **Check now** and **Photos**. **Seen by the camera** lists the issues waiting for you, with **Not a problem**, **Discuss**, **Reject** and **Accept**.
 - **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation. **Continue in Chat** goes on with a chat started in the panel.
-- Settings are read-only in the panel: the tank, tap water, products, contents, lights, reminders, rule limits, Claude and camera. Each settings card has a cog that opens the integration page; choose **Configure** there to change them. Home Assistant cannot open a given options step from a link.
+- Settings are read-only in the panel: the tank, tap water, products, contents, lights, reminders, rule limits, Claude and camera. The cog in the panel's header, **TankKeeper settings**, opens the integration page; choose **Configure** there to change them. Home Assistant cannot open a given options step from a link.
 - Each record has its latest changes with Undo, settings too.
 - On the charts, hollow points are tap tests. Dashed lines are the Watch and Act limits, the tap water values you gave and the target temperature.
 - **Discuss**, on a waiting change, a camera issue or a notification, opens a new chat with a first message about it. The message is not sent until you send it, so you can change it first. A link only names the item, such as `/tankkeeper?proposal=<id>`; the panel reads its text from the records.

@@ -155,10 +155,6 @@ export const shared = css`
     margin: 0;
     min-width: 0;
   }
-  ha-icon-button.settings {
-    color: var(--secondary-text-color);
-    margin: -8px -8px -8px 0;
-  }
   .dash {
     display: inline-block;
     width: 14px;

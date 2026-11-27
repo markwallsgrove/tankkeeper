@@ -4,7 +4,7 @@ import type { ChatAgent, ConverseResult, HassConnection, Message } from "./types
 export class TankkeeperApi {
   /**
    * timeZone is Home Assistant's, so "today" is the same day the backend uses.
-   * entryId is the tank's config entry, which the settings links open.
+   * entryId is the tank's config entry, which the settings cog opens.
    */
   constructor(
     private readonly connection: HassConnection,

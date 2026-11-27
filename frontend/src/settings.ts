@@ -22,28 +22,16 @@ export function openSettings(entryId: string | undefined): void {
   window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
 }
 
-/** A cog that opens the settings, where these values are changed. */
-export function cog(what: string, api: TankkeeperApi | undefined): TemplateResult {
+/** The one cog that opens TankKeeper's settings, where every setting the panel shows is changed. */
+export function settingsButton(api: TankkeeperApi | undefined): TemplateResult {
   return html`<ha-icon-button
     class="settings"
     .path=${COG}
-    label="Edit ${what} settings"
+    label="TankKeeper settings"
     @click=${() => {
       openSettings(api?.entryId);
     }}
   ></ha-icon-button>`;
-}
-
-/** A card title with a cog that opens the settings. */
-export function settingsHeader(
-  title: string,
-  what: string,
-  api: TankkeeperApi | undefined,
-): TemplateResult {
-  return html`<div class="row">
-    <h2 class="grow">${title}</h2>
-    ${cog(what, api)}
-  </div>`;
 }
 
 function factText(field: Field, value: unknown): string {

@@ -2,6 +2,7 @@ import { LitElement, css, html, nothing, type PropertyValues, type TemplateResul
 import { keyed } from "lit/directives/keyed.js";
 import { TankkeeperApi } from "./api";
 import { CHAT, type ChatStart } from "./base";
+import { settingsButton } from "./settings";
 import type { HomeAssistant, PanelInfo, Route } from "./types";
 import "./views/chat";
 import type { TkChat } from "./views/chat";
@@ -71,6 +72,7 @@ export class TankkeeperPanel extends LitElement {
       color: var(--app-header-text-color, var(--text-primary-color, #fff));
     }
     h1 {
+      flex: 1;
       font-size: 1.25em;
       font-weight: 400;
       margin: 0;
@@ -190,6 +192,7 @@ export class TankkeeperPanel extends LitElement {
       <header>
         ${this.narrow ? html`<ha-menu-button .hass=${this.hass} .narrow=${this.narrow}></ha-menu-button>` : nothing}
         <h1>TankKeeper</h1>
+        ${settingsButton(this.api)}
       </header>
       <nav role="tablist">
         ${TABS.map(

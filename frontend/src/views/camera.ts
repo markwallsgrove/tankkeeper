@@ -3,7 +3,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
 import { changeText, shortTime } from "../format";
-import { facts, historyDetails, settingsHeader } from "../settings";
+import { facts, historyDetails } from "../settings";
 import type { CameraInfo, Field, PhotoCheck, Proposal } from "../types";
 
 export const PHOTOS_SHOWN = 20;
@@ -228,7 +228,8 @@ export class TkCamera extends TkView {
     const error = this.error ? html`<p class="error">${this.error}</p>` : nothing;
     if (info.camera === null) {
       return html`<section id="camera">
-        ${settingsHeader("Camera", "camera", this.api)} ${error}
+        <h2>Camera</h2>
+        ${error}
         <p class="muted">
           No camera is set. Add one in the settings, such as a Tapo C100, to have Claude look at the
           tank.
@@ -238,7 +239,8 @@ export class TkCamera extends TkView {
     }
     const latest = info.latest;
     return html`<section id="camera">
-        ${settingsHeader("Camera", "camera", this.api)} ${error}
+        <h2>Camera</h2>
+        ${error}
         ${
           latest === null
             ? html`<p class="muted">No photo yet.</p>`

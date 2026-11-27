@@ -3,7 +3,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
 import { addDays, isoDate } from "../format";
-import { facts, historyDetails, settingsHeader } from "../settings";
+import { facts, historyDetails } from "../settings";
 import { saveAndClear } from "../tk-form";
 import "../tk-history";
 import type { Field, Plan, Task, Values } from "../types";
@@ -131,7 +131,7 @@ export class TkPlan extends TkView {
         plan === undefined
           ? nothing
           : html`<section id="reminders">
-              ${settingsHeader("Reminders", "reminder", this.api)}
+              <h2>Reminders</h2>
               ${facts(REMINDER_FIELDS, plan.reminders)}
               ${historyDetails(this.api, "settings", "reminders", this.version)}
             </section>`

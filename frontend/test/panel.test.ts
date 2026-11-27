@@ -180,7 +180,27 @@ describe("tankkeeper-panel", () => {
     expect(element.api?.timeZone).toBe("Pacific/Kiritimati");
   });
 
-  it("gives the views the tank's config entry, for the settings links", async () => {
+  it("has one settings cog in its header that opens the tank's settings", async () => {
+    const seen: string[] = [];
+    const listen = (): void => {
+      seen.push(`${window.location.pathname}${window.location.hash}`);
+    };
+    window.addEventListener("location-changed", listen);
+    const element = await panelAt("/tankkeeper");
+    element.panel = { config: { entry_id: "entry1" } };
+    await settle(element);
+
+    const cogs = findAll(element, "ha-icon-button.settings");
+    expect(cogs.map((cog) => cog.getAttribute("label"))).toEqual(["TankKeeper settings"]);
+    expect(find(element, "header ha-icon-button.settings")).toBe(cogs[0]);
+    (cogs[0] as HTMLElement).click();
+
+    window.removeEventListener("location-changed", listen);
+    expect(seen.at(-1)).toBe("/config/integrations/integration/tankkeeper#config_entry=entry1");
+    history.replaceState(null, "", "/");
+  });
+
+  it("gives the views the API with the tank's config entry", async () => {
     const conn = connection();
     const element = mount<TankkeeperPanel>("tankkeeper-panel", {
       hass: hassWith(conn),

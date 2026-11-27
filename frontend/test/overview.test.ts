@@ -213,15 +213,11 @@ describe("tk-overview", () => {
     expect(histories(element, "#rules")).toEqual([["settings", "rules"]]);
   });
 
-  it("has a cog on each settings card that opens the settings", async () => {
+  it("has no cog on the settings cards, as the panel has one for all settings", async () => {
     const element = await view(connection());
 
-    expect(cogs(element)).toEqual([
-      "Edit tank settings",
-      "Edit water settings",
-      "Edit light settings",
-      "Edit rule settings",
-    ]);
+    expect(cogs(element)).toEqual([]);
+    expect(findAll(element, "#tank h2, #water h2, #light h2, #rules h2").length).toBe(4);
   });
 
   it("shows a tank without water values", async () => {
@@ -274,12 +270,9 @@ describe("tk-overview", () => {
     expect(histories(element, "#light")).toEqual([["lights", "light1"]]);
   });
 
-  it("shows the light card with its cog when there are no lights", async () => {
+  it("shows the light card when there are no lights", async () => {
     const element = await view(connection([]));
     expect(text(find(element, "#light"))).toContain("No lights yet");
-    expect(find(element, "#light ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit light settings",
-    );
     expect(findAll(element, "#light li")).toEqual([]);
   });
 
