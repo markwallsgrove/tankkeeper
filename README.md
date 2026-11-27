@@ -77,7 +77,7 @@ Saved. TankKeeper is live.
 
 **Look back.** The Conversations tab shows every conversation, where it happened and what it changed, with undo.
 
-**Use the panel.** The TankKeeper panel in the sidebar shows the status, today's tasks, the cycle and water charts, the light and the changes waiting for you. Every record can be edited there too, with history and undo.
+**Use the panel.** The TankKeeper panel in the sidebar shows the status, today's tasks, the cycle chart, a chart for each water parameter, the light and the changes waiting for you. Tests, doses, tasks, notes and decisions are added there, with history and undo. Settings are read-only there: each card's cog opens **Configure**, where they change.
 
 **Optional extras:**
 

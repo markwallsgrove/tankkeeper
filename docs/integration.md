@@ -101,15 +101,16 @@ Every tool name starts with `tankkeeper__`.
 
 The **TankKeeper** panel is in the sidebar. Only admins see it. It works at phone width and uses your Home Assistant theme.
 
-- **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle and water chemistry charts, the next 7 days, the light (only when you have one) and the changes waiting for you.
-- **Plan**, **Log**, **Contents**, **Products**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
-- **Claude**: the Claude settings, with their history, where the models are set, and the latest reviews.
+- **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle chart, a chart for each water parameter, the next 7 days, the tank, the tap water, the lights, the rule limits and the changes waiting for you.
+- **Plan**, **Log**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
+- **Contents** and **Products**: list them, with their history.
+- **Claude**: the Claude settings, with their history, and the latest reviews.
 - **Camera** (on the Overview): the latest photo and what Claude saw, **Check now** and **Photos**. **Seen by the camera** lists the issues waiting for you, with **Not a problem**, **Discuss**, **Reject** and **Accept**.
 - **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation.
-- Each record has its latest changes with Undo. Edit the tank, water, rule limits and lights from the Overview, and reminders from the Plan.
-- On the water chemistry chart, hollow points are tap tests and dashed lines are the water values you gave.
+- Settings are read-only in the panel: the tank, tap water, products, contents, lights, reminders, rule limits, Claude and camera. Each settings card has a cog that opens the integration page; choose **Configure** there to change them. Home Assistant cannot open a given options step from a link.
+- Each record has its latest changes with Undo, settings too.
+- On the charts, hollow points are tap tests. Dashed lines are the Watch and Act limits, the tap water values you gave and the target temperature.
 - **Discuss** on a waiting change opens Assist. Assist starts a new chat, so tell it which change you mean.
-- Add a light with **Configure > Add a light** or with Claude. The panel edits and removes lights.
 
 ### Assist agent
 
@@ -159,7 +160,7 @@ A review checks the tank after the events chosen in **Review after**: a new test
 
 ### Camera
 
-A camera, such as a Tapo C100 on the side glass, lets Claude look at the tank. Choose the camera entity in **Configure > Camera**, in the panel or with `set_camera`.
+A camera, such as a Tapo C100 on the side glass, lets Claude look at the tank. Choose the camera entity in **Configure > Camera** or with `set_camera`.
 
 - A photo check takes a snapshot, stores it in `config/tankkeeper/photos`, and sends it to the AI task entity as an attachment, with the tank's contents, the rules' result and the findings you said are not a problem. Claude answers with a summary, whether it is an issue, a suggestion and what it saw of the water, algae, plants and water level.
 - Checks run at the **Daily check time** (14:00 by default), only while a light is on when lights are set; after each water test when **Check after each test** is on; and when you choose **Check now** or ask Claude for a photo.
@@ -257,7 +258,11 @@ To change them later, open the integration and choose **Reconfigure**. The old v
 
 ### Options
 
-Open the integration and choose **Configure**. Changes made here apply straight away, with no proposal and no reason.
+Open the integration and choose **Configure**. Changes made here apply straight away, with no proposal and no reason. Each is recorded with its history and can be undone in the panel.
+
+**Tank** and **Tap water.** The same fields as in [setup](#parameters). Clear a field to remove its value. Renaming the tank reloads the integration. Claude can propose the same with `set_tank` and `set_water`.
+
+**Products** and **Contents.** Add, change, or stop using a product; add, change, or take something out. Taking something out records today as its removal date. Claude can propose the same with `add_product`, `update_product`, `remove_product`, `update_content` and `remove_content`. `add_content` records an item straight away.
 
 **Reminders.** Claude can propose the same with `set_reminders`.
 
@@ -387,7 +392,7 @@ Assist chat and Claude's comments use the Anthropic API and are paid per use, on
 - **The status is Watch or Act.** Read the `rules` attribute of the status sensor, or ask Claude for `get_status`. Each rule says why and what to do.
 - **No status alerts.** Check that the device is chosen under **Status alert devices** in the options. Only Watch, Act and back on course are sent.
 - **Light problem is on.** Check that the light or plug has power and shows in Home Assistant. Read the `problems` attribute to see what was missed. The problem clears when the light is in the state its schedule wants.
-- **"Choose the conversation agent in TankKeeper's Claude settings first".** Choose the agent with **Configure > Claude**, in the panel's Claude tab, or with Claude Code.
+- **"Choose the conversation agent in TankKeeper's Claude settings first".** Choose the agent with **Configure > Claude** or with Claude Code.
 - **The Assist agent answers but can't change anything.** Turn on the **TankKeeper** API in the chosen agent's options.
 - **"Every tank light is off".** A photo in the dark shows nothing. Try again while a light is on.
 - **No photo alert.** Alerts are sent only for issues from daily and after-test checks, to the **Status alert devices**, and only when **Alert me about issues** is on.
