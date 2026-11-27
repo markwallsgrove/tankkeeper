@@ -132,7 +132,7 @@ Claude saves doses, tests, notes and new contents straight away. A change to the
 
 To get reminders with Complete and Skip on your phone, open the integration, choose **Configure > Reminders** and pick your devices. To let Tankkeeper run the tank light, tell Claude about it, or choose **Configure > Add a light**.
 
-To chat in Assist, set up the [Anthropic](https://www.home-assistant.io/integrations/anthropic/) integration with your API key and turn on the **Tankkeeper** API in its conversation agent. Then choose that agent with **Configure > Claude**, and choose the tank's **Assist agent** in **Settings > Voice assistants**. Tankkeeper records each Assist conversation; the key stays in the Anthropic integration. See [Assist agent](docs/integration.md#assist-agent) and [cost](docs/integration.md#cost).
+To chat in Assist, set up the [Anthropic](https://www.home-assistant.io/integrations/anthropic/) integration with your API key and turn on the **Tankkeeper** API in its conversation agent. Then choose that agent with **Configure > Claude**, and choose the tank's **Assist agent** in **Settings > Voice assistants**. Tankkeeper records each Assist conversation; the key stays in the Anthropic integration. For Claude's comments on [reviews](docs/integration.md#reviews), choose its AI task entity and turn comments on in the same step. See [Assist agent](docs/integration.md#assist-agent) and [cost](docs/integration.md#cost).
 
 If Claude still can't see the tools, see [troubleshooting](docs/integration.md#troubleshooting).
 

@@ -1,9 +1,10 @@
-"""A stand-in for the Anthropic integration's conversation agent, so no test calls the real API."""
+"""Stand-ins for the Anthropic integration's conversation agent and AI task entity, so no test calls the real API."""
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Literal, override
 
-from homeassistant.components import conversation
+from homeassistant.components import ai_task, conversation
 from homeassistant.components.conversation.models import AbstractConversationAgent
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import MATCH_ALL, Platform
@@ -34,6 +35,14 @@ class Turn:
     reply: str = "Done."
 
 
+@dataclass
+class Answer:
+    """What the AI task entity does with the next task: the Tankkeeper tools it calls, then the data it returns."""
+
+    tools: list[tuple[str, JsonObjectType]] = field(default_factory=list)
+    data: object = field(default_factory=lambda: {"comment": "The cycle has started."})
+
+
 class AnthropicFlow(ConfigFlow):
     """The stand-in integration's config flow, which its entries need to load."""
 
@@ -50,6 +59,7 @@ class FakeClaude(conversation.ConversationEntity):
         self._attr_unique_id = "claude_conversation"
         self.turns: list[Turn] = []
         self.prompts: list[str] = []
+        self.ai_task = FakeAITask()
 
     @property
     @override
@@ -80,6 +90,48 @@ class FakeClaude(conversation.ConversationEntity):
             conversation.AssistantContent(agent_id=user_input.agent_id, content=turn.reply)
         )
         return conversation.async_get_result_from_chat_log(user_input, chat_log)
+
+
+class FakeAITask(ai_task.AITaskEntity):
+    """Answers like the Anthropic AI task entity: it reads the prompt, calls tools in the chat log, then answers."""
+
+    _attr_name = "Claude AI Task"
+    _attr_supported_features = ai_task.AITaskEntityFeature.GENERATE_DATA
+
+    def __init__(self) -> None:
+        """Start with no answers planned and no tasks seen."""
+        self._attr_unique_id = "claude_ai_task"
+        self.answers: list[Answer] = []
+        self.tasks: list[ai_task.GenDataTask] = []
+        self.prompts: list[str] = []
+        self.results: list[llm.ToolResult] = []
+        self.error: Exception | None = None
+        self.gate: asyncio.Event | None = None
+
+    @override
+    async def _async_generate_data(
+        self, task: ai_task.GenDataTask, chat_log: conversation.ChatLog
+    ) -> ai_task.GenDataTaskResult:
+        self.tasks.append(task)
+        system = chat_log.content[0]
+        assert isinstance(system, conversation.SystemContent)
+        self.prompts.append(system.content)
+        if self.gate is not None:
+            await self.gate.wait()
+        if self.error is not None:
+            raise self.error
+        answer = self.answers.pop(0) if self.answers else Answer()
+        if answer.tools:
+            calls = [
+                llm.ToolInput(id=f"call{index}", tool_name=f"tankkeeper__{name}", tool_args=args)
+                for index, (name, args) in enumerate(answer.tools)
+            ]
+            async for content in chat_log.async_add_assistant_content(
+                conversation.AssistantContent(agent_id=self.entity_id, tool_calls=calls)
+            ):
+                assert isinstance(content, conversation.ToolResultContent)
+                self.results.append(content.result)
+        return ai_task.GenDataTaskResult(conversation_id=chat_log.conversation_id, data=answer.data)
 
 
 class SimpleAgent(AbstractConversationAgent):
@@ -115,21 +167,22 @@ class FailingAgent(AbstractConversationAgent):
 
 
 async def async_add_claude(hass: HomeAssistant) -> FakeClaude:
-    """Load the stand-in agent and an AI task entity, as the Anthropic integration's entry does."""
+    """Load the stand-in agent and its AI task entity, as the Anthropic integration's entry does."""
     claude = FakeClaude()
 
     async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-        await hass.config_entries.async_forward_entry_setups(entry, [Platform.CONVERSATION])
+        await hass.config_entries.async_forward_entry_setups(entry, [Platform.AI_TASK, Platform.CONVERSATION])
         return True
 
     mock_integration(hass, MockModule("test", async_setup_entry=async_setup_entry))
     mock_platform(hass, "test.config_flow")
     setup_test_component_platform(hass, Platform.CONVERSATION, [claude], from_config_entry=True)
+    setup_test_component_platform(hass, Platform.AI_TASK, [claude.ai_task], from_config_entry=True)
     entry = MockConfigEntry(domain="test")
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    hass.states.async_set(AI_TASK, "unknown")
+    assert claude.ai_task.entity_id == AI_TASK
     return claude
 
 

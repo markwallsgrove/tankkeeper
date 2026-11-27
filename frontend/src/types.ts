@@ -203,3 +203,15 @@ export interface DecisionDetail extends Decision {
   open: string[];
   replaces: number[];
 }
+
+export interface Review {
+  id: string;
+  time: string;
+  triggers: string[];
+  level: string;
+  result: string;
+  asked: boolean;
+  comment: string | null;
+  note: string | null;
+  proposal_ids: string[];
+}
