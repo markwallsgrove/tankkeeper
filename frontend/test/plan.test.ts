@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import "../src/views/plan";
+import type { TkWeek } from "../src/tk-week";
 import type { TkPlan } from "../src/views/plan";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
@@ -257,6 +258,107 @@ describe("tk-plan", () => {
     find(element, "li[data-task='s1@2026-11-28'] button.remove-future").click();
     await settle(element);
     expect(conn.last("remove_task").args).toEqual({ task_id: "s1@2026-11-28", scope: "future" });
+  });
+
+  it("shows the week above the list, from today", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+
+    const week = find(element, "tk-week") as unknown as TkWeek;
+    expect([week.start, week.end, week.today]).toEqual(["2026-11-26", "2026-12-23", "2026-11-26"]);
+    expect(week.tasks.map((task) => task.id)).toEqual(["t1", "t2", "s1@2026-11-28"]);
+    expect(week.picked).toBeUndefined();
+    expect(
+      element.shadowRoot?.querySelector("section")?.firstElementChild?.nextElementSibling?.tagName,
+    ).toBe("TK-WEEK");
+  });
+
+  it("scrolls to a task's row when its chip is clicked", async () => {
+    const scrolled: string[] = [];
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value(this: Element) {
+        scrolled.push(this.getAttribute("data-task") ?? "");
+      },
+    });
+    try {
+      const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+      await settle(element);
+      const week = find(element, "tk-week");
+      await settle(week as unknown as TkWeek);
+
+      find(week, ".strip button[data-day='2026-11-26']").click();
+      await settle(element);
+      expect(findAll(element, "li[data-task]")).toHaveLength(1);
+      find(week, ".chip[data-task=t2]").click();
+      await settle(element);
+      expect((week as unknown as TkWeek).picked).toBeUndefined();
+      expect(findAll(element, "li[data-task]")).toHaveLength(3);
+      expect(scrolled).toEqual(["t2"]);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+    }
+    expect("scrollIntoView" in Element.prototype).toBe(false);
+  });
+
+  it("drops the day filter when the week moves off the day", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+    const week = find(element, "tk-week");
+    await settle(week as unknown as TkWeek);
+    find(week, ".strip button[data-day='2026-11-27']").click();
+    await settle(element);
+
+    find(week, "button.next").click();
+    await settle(element);
+    expect(findAll(element, ".filter")).toEqual([]);
+
+    find(week, ".strip button[data-day='2026-12-01']").click();
+    await settle(element);
+    week.dispatchEvent(new CustomEvent("tk-week-change", { detail: "2026-11-30" }));
+    await settle(element);
+    expect(text(find(element, ".filter"))).toContain("Showing 2026-12-01");
+  });
+
+  it("drops the day filter when a reload moves the day out of the plan", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+    find(find(element, "tk-week"), ".strip button[data-day='2026-11-26']").click();
+    await settle(element);
+    expect(findAll(element, ".filter")).toHaveLength(1);
+
+    vi.setSystemTime(new Date(2026, 10, 27, 10));
+    save(element, "tk-form.add", { date: "2026-11-30", slot: "task", text: "Trim" });
+    await settle(element);
+
+    expect(findAll(element, ".filter")).toEqual([]);
+    expect((find(element, "tk-week") as unknown as TkWeek).picked).toBeUndefined();
+  });
+
+  it("shows only the day tapped in the strip, until it is tapped again or Show all", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+    const week = find(element, "tk-week");
+    const pick = async (day: string): Promise<void> => {
+      week.dispatchEvent(new CustomEvent("tk-pick-day", { detail: day }));
+      await settle(element);
+    };
+
+    await pick("2026-11-27");
+    expect(findAll(element, "h3").map((heading) => heading.textContent)).toEqual(["2026-11-27"]);
+    expect((week as unknown as TkWeek).picked).toBe("2026-11-27");
+    expect(text(find(element, ".filter"))).toContain("Showing 2026-11-27");
+
+    await pick("2026-11-27");
+    expect(findAll(element, "h3")).toHaveLength(3);
+
+    await pick("2026-11-30");
+    expect(findAll(element, "h3")).toEqual([]);
+    expect(text(element)).toContain("No tasks on 2026-11-30");
+    find(element, ".filter button").click();
+    await settle(element);
+    expect(findAll(element, "h3")).toHaveLength(3);
+    expect(findAll(element, ".filter")).toEqual([]);
   });
 
   it("adds nothing when the Add form is empty", async () => {

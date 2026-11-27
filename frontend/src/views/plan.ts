@@ -6,10 +6,8 @@ import { addDays, isoDate } from "../format";
 import { facts, historyDetails } from "../settings";
 import { saveAndClear } from "../tk-form";
 import "../tk-history";
+import { REPEAT } from "../tk-week";
 import type { Field, Plan, Series, Task, Values } from "../types";
-
-/** mdiRepeat from @mdi/js. */
-export const REPEAT = "M17,17H7V14L3,18L7,22V19H19V13H17M7,7H17V10L21,6L17,2V5H5V11H7V7Z";
 
 export const PLAN_DAYS = 28;
 
@@ -58,15 +56,21 @@ export class TkPlan extends TkView {
   static override properties = {
     ...TkView.properties,
     plan: { state: true },
+    today: { state: true },
+    day: { state: true },
   };
 
   static override styles = shared;
 
   declare plan: Plan | undefined;
+  declare today: string;
+  declare day: string | undefined;
 
   constructor() {
     super();
     this.plan = undefined;
+    this.today = "";
+    this.day = undefined;
   }
 
   protected override async load(api: TankkeeperApi): Promise<() => void> {
@@ -74,6 +78,8 @@ export class TkPlan extends TkView {
     const plan = await api.call<Plan>("get_plan", { start, end: addDays(start, PLAN_DAYS - 1) });
     return () => {
       this.plan = plan;
+      this.today = start;
+      if (this.day !== undefined && (this.day < start || this.day > plan.end)) this.day = undefined;
     };
   }
 
@@ -86,6 +92,27 @@ export class TkPlan extends TkView {
     const saved = await this.run((api) => api.call(tool, args));
     if (saved) this.changed();
     return saved;
+  }
+
+  /** Show every day, then scroll to the task's row. */
+  private async showTask(taskId: string): Promise<void> {
+    this.day = undefined;
+    await this.updateComplete;
+    this.renderRoot.querySelector(`li[data-task="${CSS.escape(taskId)}"]`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }
+
+  /** Drop the day filter when the week starting on monday doesn't hold the day. */
+  private keepDayIn(monday: string): void {
+    if (this.day !== undefined && (this.day < monday || this.day > addDays(monday, 6))) {
+      this.day = undefined;
+    }
+  }
+
+  private pickDay(day: string): void {
+    this.day = this.day === day ? undefined : day;
   }
 
   private renderTask(task: Task): TemplateResult {
@@ -142,12 +169,51 @@ export class TkPlan extends TkView {
 
   override render(): TemplateResult {
     const plan = this.plan;
-    const days = [...new Set(plan?.tasks.map((task) => task.date) ?? [])];
+    const all = [...new Set(plan?.tasks.map((task) => task.date) ?? [])];
+    const days = this.day === undefined ? all : all.filter((day) => day === this.day);
     return html`
       <section>
         <h2>Plan</h2>
         ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
-        ${plan !== undefined && days.length === 0 ? html`<p class="muted">No tasks in the next four weeks</p>` : nothing}
+        ${
+          plan === undefined
+            ? nothing
+            : html`<tk-week
+                .tasks=${plan.tasks}
+                .start=${plan.start}
+                .end=${plan.end}
+                .today=${this.today}
+                .picked=${this.day}
+                @tk-week-change=${(event: CustomEvent<string>) => {
+                  this.keepDayIn(event.detail);
+                }}
+                @tk-pick-task=${(event: CustomEvent<string>) => this.showTask(event.detail)}
+                @tk-pick-day=${(event: CustomEvent<string>) => {
+                  this.pickDay(event.detail);
+                }}
+              ></tk-week>`
+        }
+        ${
+          this.day === undefined
+            ? nothing
+            : html`<p class="filter muted">
+                Showing ${this.day}
+                <button
+                  @click=${() => {
+                    this.day = undefined;
+                  }}
+                >
+                  Show all
+                </button>
+              </p>`
+        }
+        ${
+          plan !== undefined && days.length === 0
+            ? html`<p class="muted">
+                ${this.day === undefined ? "No tasks in the next four weeks" : `No tasks on ${this.day}`}
+              </p>`
+            : nothing
+        }
         ${days.map(
           (day) =>
             html`<h3>${day}</h3>
