@@ -27,7 +27,7 @@ from custom_components.tankkeeper.reviewer import DELAY_SECONDS
 from custom_components.tankkeeper.service import TankkeeperService
 
 from .agents import AI_TASK, CAMERA, PHOTO, Answer, FakeCamera, FakeClaude, async_add_camera
-from .common import PLUG, Caller, Devices, Panel, apply, dict_of, list_of, str_of
+from .common import PLUG, PLUG_HELPERS, Caller, Devices, Panel, apply, dict_of, list_of, str_of
 
 pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 
@@ -452,7 +452,14 @@ async def test_photos_are_taken_only_while_a_light_is_on(
     await apply(
         call,
         await call.ok(
-            "set_light", action="add", entity_id=PLUG, model="LED 10120", on="12:00", off="20:00", reason="Light"
+            "set_light",
+            action="add",
+            entity_id=PLUG,
+            model="LED 10120",
+            on="12:00",
+            off="20:00",
+            reason="Light",
+            **PLUG_HELPERS,
         ),
     )
     await hass.async_block_till_done(wait_background_tasks=True)
@@ -512,7 +519,14 @@ async def test_the_daily_check_follows_its_time_and_skips_the_dark(
     await apply(
         call,
         await call.ok(
-            "set_light", action="add", entity_id=PLUG, model="LED 10120", on="12:00", off="20:00", reason="Light"
+            "set_light",
+            action="add",
+            entity_id=PLUG,
+            model="LED 10120",
+            on="12:00",
+            off="20:00",
+            reason="Light",
+            **PLUG_HELPERS,
         ),
     )
     await _at(hass, freezer, "2026-11-27T10:00:00+00:00")

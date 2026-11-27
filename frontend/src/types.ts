@@ -194,8 +194,22 @@ export interface Light {
   ramp_minutes: number;
   today: { day: string; on: string; off: string };
   state: string | null;
-  problem: string | null;
+  /** True until the light has an automation and helpers. Nothing is set then. */
+  needs_helpers: boolean;
+  /** What the helpers hold now. A value is null when its helper is missing or holds none. */
+  schedule: LightSchedule | null;
+  automation: { entity_id: string; state: string | null; id: string | null } | null;
+  problem: boolean;
+  /** Each problem in words. */
+  problems: string[];
   on_periods: [string, string][];
+}
+
+export interface LightSchedule {
+  on: string | null;
+  off: string | null;
+  brightness_pct: number | null;
+  ramp_minutes: number | null;
 }
 
 export interface LightInfo {

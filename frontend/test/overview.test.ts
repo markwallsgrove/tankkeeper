@@ -3,6 +3,7 @@ import { TankkeeperApi } from "../src/api";
 import { CHAT } from "../src/base";
 import "../src/views/overview";
 import type { TkOverview } from "../src/views/overview";
+import type { Light } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const status = {
@@ -71,7 +72,7 @@ const log = [
     values: { ammonia: 3, ph: 7.2 },
   },
 ];
-const light = {
+const light: Light = {
   id: "light1",
   entity_id: "light.tank",
   model: "Chihiros WRGB II",
@@ -82,7 +83,11 @@ const light = {
   ramp_minutes: 30,
   today: { day: "2026-11-26", on: "14:00", off: "20:00" },
   state: "on",
-  problem: null,
+  needs_helpers: false,
+  schedule: { on: "13:00", off: "20:00", brightness_pct: 60, ramp_minutes: 30 },
+  automation: { entity_id: "automation.tank_light", state: "on", id: "tank_light" },
+  problem: false,
+  problems: [],
   on_periods: [["2026-11-25T13:00:00+00:00", "2026-11-25T20:00:00+00:00"]],
 };
 const proposal = {
@@ -97,7 +102,7 @@ const proposal = {
   batch: false,
 };
 
-function connection(lights: unknown[] = [light]): FakeConnection {
+function connection(lights: Light[] = [light]): FakeConnection {
   return new FakeConnection()
     .on("get_status", status)
     .on("get_tank", tank)
@@ -261,13 +266,54 @@ describe("tk-overview", () => {
 
     const lightText = text(find(element, "#light"));
     expect(lightText).toContain("Chihiros WRGB II");
-    expect(lightText).toContain("13:00 to 20:00");
+    expect(lightText).toContain("13:00 to 20:00, 60%, 30 min ramp");
     expect(lightText).toContain("Today 14:00 to 20:00");
+    expect(lightText).not.toContain("false");
+    const link = find(element, "#light a.automation");
+    expect(link.getAttribute("href")).toBe("/config/automation/edit/tank_light");
+    expect(text(link)).toBe("automation.tank_light");
+    expect(findAll(element, "#light .error")).toEqual([]);
     expect(find(element, "#light svg").getAttribute("aria-label")).toBe(
       "Light on and off, last 30 days",
     );
     expect(findAll(element, "#light tk-form, #light button")).toEqual([]);
     expect(histories(element, "#light")).toEqual([["lights", "light1"]]);
+  });
+
+  it("shows a light that needs helpers with what it should run", async () => {
+    const element = await view(
+      connection([
+        {
+          ...light,
+          needs_helpers: true,
+          schedule: null,
+          automation: null,
+          problem: true,
+          problems: ["Chihiros WRGB II needs an automation and helpers"],
+        },
+        {
+          ...light,
+          id: "light2",
+          model: "Plug",
+          brightness_pct: null,
+          needs_helpers: true,
+          schedule: null,
+          automation: null,
+          problem: true,
+          problems: [],
+        },
+      ]),
+    );
+    const lightText = text(find(element, "#light"));
+    expect(lightText).toContain("Needs helpers");
+    expect(lightText).toContain("Should run 13:00 to 20:00, 60%");
+    expect(text(find(element, '#light [data-light="light2"]'))).toContain(
+      "Should run 13:00 to 20:00 Today",
+    );
+    expect(findAll(element, "#light a.automation")).toEqual([]);
+    expect(findAll(element, "#light .error").map(text)).toEqual([
+      "Chihiros WRGB II needs an automation and helpers",
+    ]);
   });
 
   it("shows the light card when there are no lights", async () => {
@@ -310,17 +356,20 @@ describe("tk-overview", () => {
   });
 
   it("shows lights and tasks with missing details", async () => {
-    const conn = connection([
-      { ...light, state: null, brightness_pct: null, problem: "The light is off but should be on" },
-    ])
+    const conn = connection()
       .on("get_light", {
         today: "2026-11-26",
         lights: [
           {
             ...light,
             state: null,
-            brightness_pct: null,
-            problem: "The light is off but should be on",
+            schedule: { on: null, off: null, brightness_pct: null, ramp_minutes: null },
+            automation: { entity_id: "automation.tank_light", state: null, id: null },
+            problem: true,
+            problems: [
+              "Chihiros WRGB II did not turn on at 13:00",
+              "automation.tank_light is missing",
+            ],
           },
         ],
         next_change: null,
@@ -342,8 +391,13 @@ describe("tk-overview", () => {
     const element = await view(conn);
     const lightText = text(find(element, "#light"));
     expect(lightText).toContain("unknown");
-    expect(lightText).toContain("13:00 to 20:00 Today");
-    expect(lightText).toContain("The light is off but should be on");
+    expect(lightText).toContain("? to ? Automation");
+    expect(findAll(element, "#light a.automation")).toEqual([]);
+    expect(lightText).toContain("automation.tank_light (missing)");
+    expect(findAll(element, "#light .error").map(text)).toEqual([
+      "Chihiros WRGB II did not turn on at 13:00",
+      "automation.tank_light is missing",
+    ]);
     expect(lightText).not.toContain("Next change");
     expect(text(find(element, "#today"))).toContain("Test water skip");
     expect(text(find(element, "#week"))).toContain("2026-11-28 Trim plants");

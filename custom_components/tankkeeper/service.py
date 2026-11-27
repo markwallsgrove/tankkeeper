@@ -11,7 +11,7 @@ import secrets
 import shutil
 
 from homeassistant.components.recorder import history
-from homeassistant.const import STATE_ON
+from homeassistant.const import STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.recorder import get_instance
 from homeassistant.helpers.storage import Store
@@ -66,7 +66,7 @@ from .domain import (
     tank_is_empty,
     undo_changes,
 )
-from .lights import Light, LightEvent, LightStatus, dose_time, history_periods, on_periods, prune_log
+from .lights import InvalidLightError, Light, LightEvent, LightStatus, dose_time, history_periods, on_periods, prune_log
 from .photos import (
     CAMERA_ID,
     CameraSettings,
@@ -348,7 +348,12 @@ class TankkeeperService:
             readings=tuple(self.readings()),
             tasks=tuple(self.tasks()),
             lights=tuple(
-                LightCheck(name=light.model, entity_id=light.entity_id, status=self.light_status(light.id))
+                LightCheck(
+                    name=light.model,
+                    entity_id=light.entity_id,
+                    automation=None if light.helpers is None else light.helpers.automation,
+                    status=self.light_status(light.id),
+                )
                 for light in self.active_lights()
             ),
         )
@@ -820,11 +825,54 @@ class TankkeeperService:
 
 
 def light_target(hass: HomeAssistant, light: Light, others: Iterable[Light]) -> Target:
-    """The change that stores a light, after checking it and that its entity exists and is free. Setup uses it too."""
+    """The change that stores a light, after checking it, its entity and its helpers. Setup uses it too."""
     light.check()
     if light.active:
         if hass.states.get(light.entity_id) is None:
             raise InvalidInputError(f"No entity {light.entity_id}")
         if any(other.id != light.id and other.entity_id == light.entity_id for other in others):
             raise InvalidInputError(f"Another light already uses {light.entity_id}")
+        if problems := helper_problems(hass, light):
+            field, message = problems[0]
+            raise InvalidLightError(field, message[:1].upper() + message[1:])
     return (Collection.LIGHTS, light.id, light.to_record())
+
+
+def helper_problems(hass: HomeAssistant, light: Light) -> list[tuple[str, str]]:
+    """Each helper of a light that is missing or can't hold its value, as the field and the problem."""
+    helpers = light.helpers
+    if helpers is None:
+        return []
+    problems: list[tuple[str, str]] = []
+    if hass.states.get(helpers.automation) is None:
+        problems.append(("automation", f"no automation {helpers.automation}"))
+    for field, entity_id in (("on_helper", helpers.on), ("off_helper", helpers.off)):
+        state = hass.states.get(entity_id)
+        if state is None:
+            problems.append((field, f"no helper {entity_id}"))
+        elif state.state == STATE_UNAVAILABLE:
+            problems.append((field, f"the helper {entity_id} is unavailable"))
+        elif not state.attributes.get("has_time") or state.attributes.get("has_date"):
+            problems.append((field, f"the helper {entity_id} must hold a time only: turn has_time on and has_date off"))
+    days = [light.schedule] if light.one_day is None else [light.schedule, light.schedule_on(light.one_day.day)]
+    for field, number, values in (
+        ("brightness_helper", helpers.brightness, [day.brightness_pct for day in days]),
+        ("ramp_helper", helpers.ramp, [day.ramp_minutes for day in days]),
+    ):
+        if number is None:
+            continue
+        state = hass.states.get(number)
+        if state is None:
+            problems.append((field, f"no helper {number}"))
+            continue
+        if "min" not in state.attributes or "max" not in state.attributes:
+            problems.append((field, f"the helper {number} is unavailable"))
+            continue
+        low = float(state.attributes["min"])
+        high = float(state.attributes["max"])
+        problems.extend(
+            (field, f"the helper {number} goes from {low:g} to {high:g}, so it can't hold {value}")
+            for value in sorted({value for value in values if value is not None})
+            if not low <= value <= high
+        )
+    return problems

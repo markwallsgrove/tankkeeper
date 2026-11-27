@@ -1,11 +1,17 @@
 """Helpers to call TankKeeper's tools the way Assist and the MCP server do."""
 
-from homeassistant.const import STATE_OFF, STATE_ON
+from pathlib import Path
+import re
+from typing import Any, cast
+
+from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import Context, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.llm import LLMContext, ToolInput, ToolResult
+from homeassistant.setup import async_setup_component
 from homeassistant.util.json import JsonObjectType, JsonValueType
+from homeassistant.util.yaml import parse_yaml
 from pytest_homeassistant_custom_component.typing import MockHAClientWebSocket
 
 from custom_components.tankkeeper.const import API_ID
@@ -13,6 +19,66 @@ from custom_components.tankkeeper.const import API_ID
 MCP = "mcp_server"
 PLUG = "switch.tank_light"
 LAMP = "light.tank_lamp"
+README = Path(__file__).parent.parent / "README.md"
+PLUG_HELPERS: dict[str, str] = {
+    "automation": "automation.tank_light",
+    "on_helper": "input_datetime.tank_light_on",
+    "off_helper": "input_datetime.tank_light_off",
+}
+LAMP_HELPERS: dict[str, str] = {
+    "automation": "automation.tank_lamp",
+    "on_helper": "input_datetime.tank_lamp_on",
+    "off_helper": "input_datetime.tank_lamp_off",
+    "brightness_helper": "input_number.tank_lamp_brightness",
+    "ramp_helper": "input_number.tank_lamp_ramp",
+}
+
+
+def example_package() -> dict[str, Any]:
+    """The example package in the README: helpers and an automation for light.tank_lamp."""
+    found = re.search(r"<!-- example-package -->\n```yaml\n(.*?)```", README.read_text(), re.DOTALL)
+    assert found is not None
+    return cast(dict[str, Any], parse_yaml(found.group(1)))
+
+
+def plug_package() -> dict[str, Any]:
+    """The README's package changed for the plug switch.tank_light, as the README says."""
+    return {
+        "input_datetime": {
+            "tank_light_on": {"name": "Tank light on", "has_time": True},
+            "tank_light_off": {"name": "Tank light off", "has_time": True},
+        },
+        "automation": [
+            {
+                "id": "tank_light",
+                "alias": "Tank light",
+                "mode": "restart",
+                "triggers": [
+                    {"trigger": "time", "at": "input_datetime.tank_light_on", "id": "on"},
+                    {"trigger": "time", "at": "input_datetime.tank_light_off", "id": "off"},
+                ],
+                "actions": [
+                    {
+                        "if": [{"condition": "trigger", "id": "on"}],
+                        "then": [{"action": "switch.turn_on", "target": {"entity_id": PLUG}}],
+                        "else": [{"action": "switch.turn_off", "target": {"entity_id": PLUG}}],
+                    }
+                ],
+            }
+        ],
+    }
+
+
+async def async_add_packages(hass: HomeAssistant) -> None:
+    """Set up the helpers and automations of the README's package and of its plug version."""
+    lamp = example_package()
+    plug = plug_package()
+    assert await async_setup_component(
+        hass, "input_datetime", {"input_datetime": lamp["input_datetime"] | plug["input_datetime"]}
+    )
+    assert await async_setup_component(hass, "input_number", {"input_number": lamp["input_number"]})
+    assert await async_setup_component(hass, "automation", {"automation": lamp["automation"] + plug["automation"]})
+    await hass.async_block_till_done()
 
 
 class Devices:
@@ -41,11 +107,15 @@ class Devices:
         """Each call as its action and data."""
         return [(f"{call.domain}.{call.service}", dict(call.data)) for call in self.calls]
 
+    def _unavailable(self, entity_id: str) -> bool:
+        state = self.hass.states.get(entity_id)
+        return state is not None and state.state == STATE_UNAVAILABLE
+
     async def _async_handle(self, call: ServiceCall) -> None:
         self.calls.append(call)
         targets = call.data["entity_id"]
         for entity_id in [targets] if isinstance(targets, str) else targets:
-            if entity_id in self.failing:
+            if entity_id in self.failing or self._unavailable(entity_id):
                 raise HomeAssistantError(f"{entity_id} did not answer")
             state = STATE_ON if call.service == "turn_on" else STATE_OFF
             self.hass.states.async_set(entity_id, state, context=call.context)

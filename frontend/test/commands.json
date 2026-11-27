@@ -284,6 +284,8 @@
   "set_light": {
     "required": ["action"],
     "optional": [
+      "automation",
+      "brightness_helper",
       "brightness_pct",
       "control",
       "date",
@@ -292,10 +294,12 @@
       "light_id",
       "model",
       "off",
+      "off_helper",
       "on",
+      "on_helper",
+      "ramp_helper",
       "ramp_minutes",
-      "reason",
-      "rgb_color"
+      "reason"
     ]
   }
 }

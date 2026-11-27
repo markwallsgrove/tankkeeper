@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry, mock_c
 from custom_components.tankkeeper.const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 
 from .agents import AnthropicFlow, FakeClaude, async_add_claude
-from .common import Caller, Devices
+from .common import Caller, Devices, async_add_packages
 
 pytest_plugins = ["pytest_homeassistant_custom_component"]
 
@@ -66,9 +66,12 @@ async def london(hass: HomeAssistant) -> None:
 
 
 @pytest.fixture
-def plugs(hass: HomeAssistant) -> Devices:
-    """Fake light and switch entities."""
-    return Devices(hass)
+async def plugs(hass: HomeAssistant) -> AsyncIterator[Devices]:
+    """Fake light and switch entities, with the helpers and automations that run them."""
+    devices = Devices(hass)
+    await async_add_packages(hass)
+    yield devices
+    await hass.services.async_call("automation", "turn_off", {"entity_id": "all"}, blocking=True)
 
 
 @pytest.fixture

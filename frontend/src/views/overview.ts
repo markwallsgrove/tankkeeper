@@ -10,6 +10,7 @@ import type {
   Field,
   Level,
   Light,
+  LightSchedule,
   LightInfo,
   LogEntry,
   Plan,
@@ -199,17 +200,38 @@ export class TkOverview extends TkView {
   }
 
   private renderLight(light: Light, today: string): TemplateResult {
+    const { schedule, automation } = light;
     return html`<li data-light=${light.id}>
       <div class="row">
         <strong class="grow">${light.model}</strong>
         <span class="muted">${light.state ?? "unknown"}</span>
       </div>
-      <div>
-        ${light.on} to
-        ${light.off}${light.brightness_pct === null ? "" : `, ${String(light.brightness_pct)}%`}
-      </div>
+      ${
+        schedule === null
+          ? html`<div><strong>Needs helpers</strong></div>
+              <div class="muted">
+                Should run ${light.on} to
+                ${light.off}${light.brightness_pct === null ? "" : `, ${String(light.brightness_pct)}%`}
+              </div>`
+          : html`<div>${helperSchedule(schedule)}</div>`
+      }
+      ${
+        automation === null
+          ? nothing
+          : html`<div class="muted">
+              Automation
+              ${
+                automation.id === null
+                  ? automation.entity_id
+                  : html`<a class="automation" href=${`/config/automation/edit/${automation.id}`}
+                      >${automation.entity_id}</a
+                    >`
+              }
+              (${automation.state ?? "missing"})
+            </div>`
+      }
       <div class="muted">Today ${light.today.on} to ${light.today.off}</div>
-      ${light.problem === null ? nothing : html`<div class="error">${light.problem}</div>`}
+      ${light.problems.map((problem) => html`<div class="error">${problem}</div>`)}
       ${renderLightChart(lightRows(light.on_periods, today, LIGHT_DAYS, this.api?.timeZone))}
       ${historyDetails(this.api, "lights", light.id, this.version)}
     </li>`;
@@ -347,3 +369,11 @@ export class TkOverview extends TkView {
 }
 
 customElements.define("tk-overview", TkOverview);
+
+/** The schedule the helpers hold, with "?" for a helper that holds no time. */
+function helperSchedule(schedule: LightSchedule): string {
+  const parts = [`${schedule.on ?? "?"} to ${schedule.off ?? "?"}`];
+  if (schedule.brightness_pct !== null) parts.push(`${String(schedule.brightness_pct)}%`);
+  if (schedule.ramp_minutes !== null) parts.push(`${String(schedule.ramp_minutes)} min ramp`);
+  return parts.join(", ");
+}

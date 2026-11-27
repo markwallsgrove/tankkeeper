@@ -12,12 +12,20 @@ from custom_components.tankkeeper.domain import Collection, Source
 from custom_components.tankkeeper.lights import Control
 from custom_components.tankkeeper.service import TankkeeperService
 
-from .common import LAMP, PLUG, Devices
+from .common import LAMP, LAMP_HELPERS, PLUG, PLUG_HELPERS, Devices
 
 pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 
 SETTINGS = ["tank", "water", "products", "contents", "reminders", "rules", "claude", "camera"]
-PLUG_LIGHT = {"entity_id": PLUG, "model": "LED 10120", "control": "on_off", "on": "11:00:00", "off": "20:00:00"}
+PLUG_LIGHT = {
+    "entity_id": PLUG,
+    "model": "LED 10120",
+    "control": "on_off",
+    "on": "11:00:00",
+    "off": "20:00:00",
+    **PLUG_HELPERS,
+}
+LAMP_LIGHT = PLUG_LIGHT | {"entity_id": LAMP, **LAMP_HELPERS}
 
 
 async def _step(hass: HomeAssistant, entry: MockConfigEntry, step: str) -> ConfigFlowResult:
@@ -103,36 +111,26 @@ async def test_add_light_keeps_the_form_when_the_light_cannot_run(
     assert not service.has_lights()
 
 
-async def test_add_a_colour_light_with_its_ramp_brightness_and_colour(
+async def test_add_a_colour_light_with_its_ramp_and_brightness_helpers(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, plugs: Devices
 ) -> None:
     plugs.add(LAMP)
 
     light_id = await _add(
-        hass,
-        loaded_entry,
-        PLUG_LIGHT
-        | {
-            "entity_id": LAMP,
-            "control": "colour",
-            "ramp_minutes": 30.0,
-            "brightness_pct": 80.0,
-            "rgb_color": [1, 2, 3],
-        },
+        hass, loaded_entry, LAMP_LIGHT | {"control": "colour", "ramp_minutes": 30.0, "brightness_pct": 80.0}
     )
 
     service: TankkeeperService = loaded_entry.runtime_data
-    schedule = service.light(light_id).schedule
-    assert (schedule.ramp_minutes, schedule.brightness_pct, schedule.rgb_color) == (30, 80, (1, 2, 3))
+    light = service.light(light_id)
+    assert (light.schedule.ramp_minutes, light.schedule.brightness_pct) == (30, 80)
+    assert [plugs.state(LAMP_HELPERS[key]) for key in ("brightness_helper", "ramp_helper")] == ["80.0", "30.0"]
 
 
 async def test_change_light_suggests_the_current_settings_and_saves_the_change(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, plugs: Devices
 ) -> None:
     plugs.add(LAMP)
-    light_id = await _add(
-        hass, loaded_entry, PLUG_LIGHT | {"entity_id": LAMP, "control": "dimmable", "brightness_pct": 80.0}
-    )
+    light_id = await _add(hass, loaded_entry, LAMP_LIGHT | {"control": "dimmable", "brightness_pct": 80.0})
     pick = await _step(hass, loaded_entry, "change_light")
     assert pick["step_id"] == "change_light"
 
@@ -147,6 +145,7 @@ async def test_change_light_suggests_the_current_settings_and_saves_the_change(
         "off": "20:00",
         "brightness_pct": 80,
         "ramp_minutes": 0,
+        **LAMP_HELPERS,
     }
     edited = {key: value for key, value in _suggested(form).items() if key != "brightness_pct"}
     result = await _submit(hass, form, edited | {"off": "21:00:00"})
@@ -235,14 +234,35 @@ async def test_remove_light_removes_it_and_its_entities(
     assert hass.states.get("binary_sensor.nano_light_problem") is None
 
 
-async def test_change_light_suggests_the_colour_of_a_colour_light(
+async def test_add_light_says_which_helper_is_missing(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, plugs: Devices
 ) -> None:
-    plugs.add(LAMP)
-    light_id = await _add(
-        hass, loaded_entry, PLUG_LIGHT | {"entity_id": LAMP, "control": "colour", "rgb_color": [1, 2, 3]}
-    )
+    plugs.add(PLUG)
+    form = await _step(hass, loaded_entry, "add_light")
+
+    result = await _submit(hass, form, PLUG_LIGHT | {"off_helper": "input_datetime.missing"})
+
+    assert result["errors"] == {"base": "invalid_light"}
+    assert result["description_placeholders"] == {"error": "No helper input_datetime.missing"}
+
+
+async def test_change_light_leaves_out_helpers_a_light_does_not_have(
+    hass: HomeAssistant,
+    loaded_entry: MockConfigEntry,
+    plugs: Devices,
+    hass_storage: dict[str, dict[str, dict[str, dict[str, dict[str, dict[str, object]]]]]],
+) -> None:
+    plugs.add(PLUG)
+    light_id = await _add(hass, loaded_entry, PLUG_LIGHT)
+    assert await hass.config_entries.async_unload(loaded_entry.entry_id)
+    del hass_storage[f"tankkeeper.{loaded_entry.entry_id}"]["data"]["records"]["lights"][light_id]["helpers"]
+    assert await hass.config_entries.async_setup(loaded_entry.entry_id)
+    await hass.async_block_till_done()
 
     form = await _submit(hass, await _step(hass, loaded_entry, "change_light"), {"light_id": light_id})
 
-    assert _suggested(form)["rgb_color"] == [1, 2, 3]
+    assert "automation" not in _suggested(form)
+    result = await _submit(hass, form, PLUG_LIGHT)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    service: TankkeeperService = loaded_entry.runtime_data
+    assert service.light(light_id).helpers is not None

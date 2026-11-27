@@ -10,7 +10,7 @@ TankKeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
 - Chat with Claude in Assist on your phone, and find the whole conversation, with its tool calls, in TankKeeper.
 - See what changed, who changed it and why, and undo a change.
 - Keep the plan in a calendar, tick off today's tasks, and get a reminder with Complete and Skip on your phone.
-- Let TankKeeper switch the tank light on its schedule, and know when the light does not follow it.
+- Keep the tank light's times in the helpers of a Home Assistant automation, and know when the light does not follow them.
 - Know where the tank stands: On course, Watch or Act, with the reason and what to do.
 - Keep numbered decisions, and move your earlier decisions and log in.
 - Let Claude look at a photo of the tank each day and tell you about algae, cloudy water or a plant melting.
@@ -26,9 +26,9 @@ TankKeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
   - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
   - **Next light change** (sensor, only with a light): when a light next turns on or off, and which lights.
   - **Assist agent** (`conversation.<tank>_assist_agent`): chats about the tank through the agent you choose, and records the conversation. See [Assist agent](#assist-agent).
-  - **Light problem** (binary sensor, only with a light): on when a light's entity is unavailable or did not switch. The `problems` attribute lists each light with when it became unavailable and the change it missed.
+  - **Light problem** (binary sensor, only with a light): on when a light's entity is unavailable, its automation is off or missing, a helper is wrong or missing, or the light did not follow the helper times. The `problems` attribute lists each light with what is wrong.
 - **Reminders**, **status alerts** and **proposals still waiting** to the notify services you choose (see [options](#options)).
-- **A repair issue** for each light that does not follow its schedule. It clears by itself.
+- **A repair issue** for each light with a problem. It clears by itself.
 - **Diagnostics:** record counts and settings, without notes, messages or reasons.
 - **Photos** in Home Assistant's media browser, under **TankKeeper photos**, only while the tank is loaded.
 
@@ -86,8 +86,8 @@ Every tool name starts with `tankkeeper__`.
 | `set_decision` | Propose adding a decision (it gets the next number), changing its text, accepting a proposed one, or replacing one with another. |
 | `import_decisions` | Propose adding or updating decisions given in full, such as your decision files. |
 | `import_log` | Propose adding your earlier log. Each dose and test becomes a log record; tasks, fills and water changes become an event. Records already in the log are left out. |
-| `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
-| `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
+| `get_light` | The lights, the schedule the helpers hold, the automation, today's schedule, the dose time, the next change, the problems in words, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
+| `set_light` | Propose adding, changing or removing a light, its automation and helpers, a change for one day, or cancelling it. Applying it sets the helpers. No tool switches the light. |
 | `get_claude` | The Claude settings: the agent, the AI task entity, what starts a review, comments, the daily review time and the daily cap, with a note on where the models are set. |
 | `get_reviews` | The latest reviews, newest first: what started each, the rules' result, Claude's comment or why there is none, and the plan changes it proposed. 20 by default. |
 | `set_claude` | Propose new Claude settings. An empty value clears the agent, the AI task entity or the daily review time. |
@@ -207,13 +207,17 @@ A task is due in one of two slots: **task** (09:00 by default) or **dose** (12:0
 
 ### Light
 
-A light is a `light` or `switch` entity, its model, its control and a daily schedule. The control is **on/off**, **dimmable** (brightness and ramp) or **colour** (brightness, ramp and colour). The light turns on and off on the same day. The ramp fades the light in at on and out at off.
+A light is a `light` or `switch` entity, its model, its control, a daily schedule, a Home Assistant automation and its helpers. The control is **on/off**, **dimmable** (brightness and ramp) or **colour** (brightness and ramp; TankKeeper sets no colour). The schedule turns the light on and off on the same day. The ramp fades the light in at on and out at off.
 
-- TankKeeper switches the light itself. At startup, after a schedule change and when the entity comes back, it puts the light in the state the schedule wants. A switch by hand stays until the next change.
-- A one-day change sets other times, and maybe a brightness, for one day. The next day the light goes back to its schedule. A light has one one-day change at a time.
-- TankKeeper keeps a 30-day on/off log, with who switched the light: the schedule or something else.
+- TankKeeper does not switch the light. The automation does, at the times in its helpers: an `input_datetime` for on and one for off (time only), and for a dimmable or colour light an `input_number` for brightness (%) and one for the ramp (minutes). The [README](../README.md#-the-tank-light) has an example package.
+- TankKeeper sets the helpers with `input_datetime.set_datetime` and `input_number.set_value` when a light is added or its schedule, one-day change or helpers change, and when Home Assistant starts with a light added before it. A helper changed by hand stays until the next change.
+- Each helper is checked when it is set: it must exist, be the right type and, for a time, hold a time only. A brightness or ramp must fit the helper's range. A helper that could not be set is set again when it comes back or changes.
+- A light added before helpers existed **needs helpers**: it shows a problem and nothing is set until its automation and helpers are given.
+- A one-day change sets the helpers for its day. After it, TankKeeper puts the schedule back, unless a helper was changed by hand. A light has one one-day change at a time.
+- TankKeeper keeps a 30-day on/off log, with who switched the light: the automation or something else.
 - The light chart's on periods come from Home Assistant's recorded state history of the entity, from the day the light was added. Unavailable counts as off. The on/off log fills the days before the recorder's oldest state (the recorder keeps 10 days by default), and all of it when the recorder is not loaded or leaves the entity out.
-- If the entity is unavailable, or a switch fails, the schedule stays as it is. The change is logged as missed, the light problem sensor turns on and a repair issue opens. When the entity comes back, TankKeeper makes the missed change, late.
+- At each helper time TankKeeper checks the light within 5 minutes, or at off within 5 minutes plus the ramp. A light that did not follow is logged as missed and is a problem until it is in the wanted state. Times over midnight in the helpers are followed. Five minutes after Home Assistant starts, TankKeeper also checks the light against its last helper time, so a change missed while Home Assistant was down is a problem.
+- A light whose entity is unavailable, whose automation is off or missing, or whose helper is missing or could not be set is a problem: the light problem sensor turns on and a repair issue opens. It clears when that is fixed.
 - With a light, doses are due when the earliest light turns on, the one-day change included. Without one, they use the dose time.
 
 ### Rules and status
@@ -228,7 +232,7 @@ The rules run after every change to the records and once an hour. The status is 
 | Test overdue | a planned test 1 day late | 3 days late |
 | Dose skipped | a product's dose skipped once in the last 7 days | twice running in the last 7 days |
 | Plan runs out | 14 days of tasks left | 7 days |
-| Light problem | a light missed a change | its entity is unavailable |
+| Light problem | a light did not follow its helper times | its entity is unavailable, it needs helpers, or its automation or a helper is wrong |
 
 The limits are settings: change them in the options or with `set_rules`. The pH and cycle stalled rules need the stage set to cycling. A planned test is a task with "test" in its text. It is done when it is completed or skipped, or when a tank test is recorded on or after its day.
 
@@ -269,7 +273,7 @@ After the tank, choose **Go on step by step** or **Finish now**. The later steps
 2. Tap water: the values from your supplier or a test.
 3. Products: add each product, with its label dose if you want doses worked out.
 4. Contents: plants, fish, rocks, wood and the rest.
-5. Light: the entity and its schedule, as in the options below.
+5. Light: the entity, its schedule, its automation and helpers, as in the options below.
 6. Reminders: the devices and times, as in the options below.
 7. Claude: the agent TankKeeper chats through, the AI task entity and the reviews, as in the options below.
 
@@ -316,9 +320,11 @@ Open the integration and choose **Configure**. Changes made here apply straight 
 | Model | The light's make and model. |
 | Control | On/off, dimmable or colour. |
 | On, Off | When the light turns on and off each day. |
-| Brightness | 1 to 100%. Dimmable and colour only. |
-| Ramp | Minutes to fade in and out. Dimmable and colour only. |
-| Colour | Colour lights only. |
+| Brightness | 1 to 100%. Dimmable and colour only. Needs the brightness helper. Empty leaves the helper as it is. |
+| Ramp | Minutes to fade in and out. Dimmable and colour only. Needs the ramp helper. |
+| Automation | The automation that runs the light from the helpers. |
+| On helper, Off helper | The `input_datetime` helpers, time only, that hold the on and off times. |
+| Brightness helper, Ramp helper | Optional `input_number` helpers for the brightness (%) and the ramp (minutes). |
 
 **Camera.** Claude can propose the same with `set_camera`. Photo checks use the AI task entity from the Claude options.
 
@@ -380,9 +386,11 @@ actions:
 - A log entry can't be edited or removed in the panel. No tool changes one.
 - The rule limits are settings. A decision does not change them by itself; Claude proposes the change with `set_rules`.
 - Temperature has no rule yet.
-- A light turns on and off on the same day. A schedule over midnight is not possible.
+- A schedule turns the light on and off on the same day. A schedule over midnight is not possible.
 - TankKeeper does not check that a light or plug really changed. It trusts the entity's state.
-- A switch is logged as made by the schedule only when the device reports it with TankKeeper's action. A device that reports later shows it as made by something else.
+- A switch is logged as made by the automation only when the device reports it with the automation's action. A device that reports later shows it as made by something else.
+- TankKeeper does not read the automation. It checks only that it is on and that the light follows the helper times.
+- A light with helpers sets no colour.
 - The light problem state is kept in memory. After a restart TankKeeper checks each light again.
 - Calendar and to-do edits are recorded as made in the panel, without the Home Assistant user.
 - Reminders sent before a restart are not cleared on other devices after it.
@@ -414,7 +422,8 @@ Assist chat and Claude's comments use the Anthropic API and are paid per use, on
 - **"TankKeeper tasks can't repeat".** Add a single event for each day.
 - **The status is Watch or Act.** Read the `rules` attribute of the status sensor, or ask Claude for `get_status`. Each rule says why and what to do.
 - **No status alerts.** Check that the device is chosen under **Status alert devices** in the options. Only Watch, Act and back on course are sent.
-- **Light problem is on.** Check that the light or plug has power and shows in Home Assistant. Read the `problems` attribute to see what was missed. The problem clears when the light is in the state its schedule wants.
+- **Light problem is on.** Read the `problems` attribute, or ask Claude for `get_light`. Check that the light or plug has power and shows in Home Assistant, that the automation is on, and that each helper exists and holds a time only. A missed change clears when the light is in the state the helpers want.
+- **The light needs helpers.** Add the automation and helpers from the [README](../README.md#-the-tank-light), then choose **Configure > Change a light** or ask Claude to set them.
 - **"Choose the conversation agent in TankKeeper's Claude settings first".** Choose the agent with **Configure > Claude** or with Claude Code.
 - **The Assist agent answers but can't change anything.** Turn on the **TankKeeper** API in the chosen agent's options.
 - **"Every tank light is off".** A photo in the dark shows nothing. Try again while a light is on.

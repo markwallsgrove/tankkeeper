@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from custom_components.tankkeeper.domain import InvalidInputError, Record
-from custom_components.tankkeeper.lights import LightEvent, LightEventKind, LightStatus
+from custom_components.tankkeeper.lights import AutomationProblem, LightEvent, LightEventKind, LightStatus
 from custom_components.tankkeeper.plan import Slot, Task, TaskStatus
 from custom_components.tankkeeper.rules import (
     Facts,
@@ -348,7 +348,9 @@ def test_plan_runs_out_reason() -> None:
 
 
 def _light(status: LightStatus) -> LightCheck:
-    return LightCheck(name="Chihiros WRGB II", entity_id="switch.tank_light", status=status)
+    return LightCheck(
+        name="Chihiros WRGB II", entity_id="switch.tank_light", automation="automation.tank_light", status=status
+    )
 
 
 def test_light_problems() -> None:
@@ -368,7 +370,7 @@ def test_light_problems() -> None:
     assert watch_result is not None
     assert watch_result.level is Level.WATCH
     assert watch_result.reason == "Chihiros WRGB II did not turn on at 07:00."
-    assert watch_result.action == "Check the light and its plug."
+    assert watch_result.action == "Check the light, its plug and its automation."
     act_result = _result(act, Rule.LIGHT)
     assert act_result is not None
     assert act_result.level is Level.ACT
@@ -376,6 +378,35 @@ def test_light_problems() -> None:
         "Chihiros WRGB II did not turn on at 07:00. switch.tank_light for Chihiros WRGB II is unavailable."
     )
     assert act_result.action == "Check the plug has power and is connected to Home Assistant."
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        (
+            LightStatus(needs_helpers=True),
+            "Chihiros WRGB II needs helpers: give it an automation and its on and off time helpers, "
+            "then TankKeeper sets them.",
+        ),
+        (
+            LightStatus(automation=AutomationProblem.MISSING),
+            "The automation automation.tank_light for Chihiros WRGB II is missing.",
+        ),
+        (
+            LightStatus(helper_error="no helper input_datetime.tank_light_on"),
+            "Chihiros WRGB II: no helper input_datetime.tank_light_on.",
+        ),
+    ],
+)
+def test_a_broken_automation_or_helper_is_act(status: LightStatus, reason: str) -> None:
+    result = _result(evaluate(_facts(lights=(_light(status),)), RuleSettings()), Rule.LIGHT)
+
+    assert result == RuleResult(
+        rule=Rule.LIGHT,
+        level=Level.ACT,
+        reason=reason,
+        action="Check the light's automation and helpers in Home Assistant.",
+    )
 
 
 def test_a_missed_off_says_off() -> None:

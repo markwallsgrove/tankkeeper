@@ -13,7 +13,7 @@ from pytest_homeassistant_custom_component.common import (
     async_mock_service,
 )
 
-from .common import PLUG, Caller, Devices, apply, dict_of, list_of
+from .common import PLUG, PLUG_HELPERS, Caller, Devices, apply, dict_of, list_of
 
 pytestmark = [pytest.mark.freeze_time("2026-11-26T08:00:00+00:00")]
 
@@ -177,7 +177,13 @@ async def test_the_light_problem_is_notified(
     hass: HomeAssistant, call: Caller, alerts: list[ServiceCall], plugs: Devices
 ) -> None:
     plugs.add(PLUG)
-    led: dict[str, JsonValueType] = {"entity_id": PLUG, "model": "LED 10120", "on": "12:00", "off": "20:00"}
+    led: dict[str, JsonValueType] = {
+        "entity_id": PLUG,
+        "model": "LED 10120",
+        "on": "12:00",
+        "off": "20:00",
+        **PLUG_HELPERS,
+    }
     await apply(call, await call.ok("set_light", action="add", reason="The tank light", **led))
     await hass.async_block_till_done(wait_background_tasks=True)
     assert alerts == []
