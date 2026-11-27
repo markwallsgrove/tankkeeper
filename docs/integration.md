@@ -212,6 +212,7 @@ A light is a `light` or `switch` entity, its model, its control and a daily sche
 - TankKeeper switches the light itself. At startup, after a schedule change and when the entity comes back, it puts the light in the state the schedule wants. A switch by hand stays until the next change.
 - A one-day change sets other times, and maybe a brightness, for one day. The next day the light goes back to its schedule. A light has one one-day change at a time.
 - TankKeeper keeps a 30-day on/off log, with who switched the light: the schedule or something else.
+- The light chart's on periods come from Home Assistant's recorded state history of the entity, from the day the light was added. Unavailable counts as off. The on/off log fills the days before the recorder's oldest state (the recorder keeps 10 days by default), and all of it when the recorder is not loaded or leaves the entity out.
 - If the entity is unavailable, or a switch fails, the schedule stays as it is. The change is logged as missed, the light problem sensor turns on and a repair issue opens. When the entity comes back, TankKeeper makes the missed change, late.
 - With a light, doses are due when the earliest light turns on, the one-day change included. Without one, they use the dose time.
 

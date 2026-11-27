@@ -3,7 +3,8 @@
   "name": "TankKeeper",
   "after_dependencies": [
     "ai_task",
-    "camera"
+    "camera",
+    "recorder"
   ],
   "codeowners": [
     "@markwallsgrove"
@@ -24,5 +25,5 @@
   "issue_tracker": "https://github.com/markwallsgrove/tankkeeper/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.6.1"
+  "version": "0.6.2"
 }

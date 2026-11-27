@@ -20,6 +20,7 @@ from custom_components.tankkeeper.lights import (
     next_change,
     on_periods,
     prune_log,
+    state_periods,
     wanted_on,
 )
 
@@ -178,6 +179,20 @@ def test_on_periods_are_ordered_and_inside_the_window(tc: hegel.TestCase) -> Non
     now = datetime.combine(DAY, time(12), LONDON)
     since = now - timedelta(days=7)
     periods = on_periods(events, "a", since, now)
+
+    for start, end in periods:
+        assert since <= start < end <= now
+    for (_, first_end), (second_start, _) in itertools.pairwise(periods):
+        assert first_end <= second_start
+
+
+@hegel.test
+def test_state_periods_are_ordered_and_inside_the_window(tc: hegel.TestCase) -> None:
+    now = datetime.combine(DAY, time(12), LONDON)
+    since = now - timedelta(days=1)
+    offsets = tc.draw(gs.lists(gs.integers(min_value=-3000, max_value=3000)))
+    changes = [(now + timedelta(minutes=offset), tc.draw(gs.booleans())) for offset in offsets]
+    periods = state_periods(changes, since, now)
 
     for start, end in periods:
         assert since <= start < end <= now
