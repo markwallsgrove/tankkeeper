@@ -24,7 +24,7 @@ Tankkeeper keeps a fish tank's records in Home Assistant and gives Claude tools 
   - **Today** (`todo.tankkeeper_today`): today's tasks. Tick an item to complete its task. Tick it with a description that starts with `Skip` to skip it; the rest of the description is the note.
   - **Next light change** (sensor, only with a light): when a light next turns on or off, and which lights.
   - **Light problem** (binary sensor, only with a light): on when a light's entity is unavailable or did not switch. The `problems` attribute lists each light with when it became unavailable and the change it missed.
-- **Reminders** and **status alerts** to the notify services you choose (see [options](#options)).
+- **Reminders**, **status alerts** and **proposals still waiting** to the notify services you choose (see [options](#options)).
 - **A repair issue** for each light that does not follow its schedule. It clears by itself.
 - **Diagnostics:** record counts and settings, without notes, messages or reasons.
 
@@ -36,12 +36,12 @@ Every tool name starts with `tankkeeper__`.
 
 | Tool | What it does |
 |---|---|
-| `get_tank` | The tank's details, the water values, how many records there are and how many proposals wait. |
+| `get_tank` | The tank's details, the water values, how many records there are, how many proposals wait, and whether the tank is empty. |
 | `list_products` | Every product with its label dose, your dose, notes, and the label dose worked out for the volume of water in the tank. |
 | `list_contents` | Plants, rocks, wood, substrate, decorations and fish in the tank. |
 | `get_log` | Doses, water tests and imported events, newest first, optionally between two dates. |
 | `list_notes` | Open questions and assumptions about the tank. |
-| `list_proposals` | Proposed changes, newest first, without their confirm codes. |
+| `list_proposals` | Proposed changes, newest first, without their confirm codes. A batch shows its changes and the steps that made them. |
 | `get_history` | The newest changes, with the record before and after, who made each change and in which conversation. |
 | `list_conversations` | Past conversations about the tank, newest first. |
 | `get_conversation` | A past conversation, its key messages and the changes made in it. |
@@ -58,6 +58,9 @@ Every tool name starts with `tankkeeper__`.
 | `update_content` | Propose changes to a contents item, such as a new count. |
 | `remove_content` | Propose taking an item out. It stays in the records with the date it came out. |
 | `undo_change` | Propose putting back what an earlier change did. |
+| `start_batch` | Start a batch: one proposal that the next changes in this conversation join. Needs a `conversation_id`. |
+| `start_setup` | Start the setup draft for an empty tank. It is a batch. |
+| `get_batch` | Read back the open batch in this conversation, with its changes, steps and code. A setup draft also lists what is still empty. |
 | `apply_change` | Apply a proposal with its confirm code. |
 | `reject_change` | Close a proposal you said no to. Only the person who made it can. |
 | `get_plan` | Tasks between two dates, 7 days from today by default, with their times and the reminder settings. |
@@ -77,6 +80,26 @@ Every tool name starts with `tankkeeper__`.
 | `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
+
+### Batches and setup
+
+A batch is one proposal that holds many changes of any kind. After `start_batch`, every change tool called by the same person in the same conversation adds to the batch instead of making a new proposal.
+
+- One code applies the whole batch. The apply is all or nothing, and `undo_change` puts the whole batch back.
+- A record changed twice holds one change, from the stored value to the newest value.
+- Later changes see the earlier ones. For example, `update_task` can change a task added earlier in the batch.
+- The code lasts 15 minutes after the last change, and at most 2 hours after the batch started. After that a change returns `batch_expired`. Call `start_batch` again: the new batch keeps the changes and has a new code.
+- Entities, the calendar and the read tools show the stored records, not the batch, until it is applied.
+
+Setup is a batch for an empty tank: no products, contents, tasks, lights or decisions. Claude asks one thing at a time in Assist, or reads the notes you point to in Claude Code. Then it reads the whole draft back, and one yes applies it.
+
+### Proposal notifications
+
+A proposal or batch still waiting 10 minutes after its last change is sent once to the **Status alert devices**. A batch that keeps changing is not sent. A proposal applied or rejected in the conversation is not sent.
+
+- **Accept** applies it, without a code. **Reject** closes it. Both record who pressed the button. Anyone who gets the notification can use them.
+- **Discuss** opens the Tankkeeper integration page in the Home Assistant app. Home Assistant has no link that opens Assist, so ask Claude there.
+- When the proposal is applied or rejected anywhere, the notification is cleared.
 
 ### Tasks and slots
 
@@ -151,7 +174,7 @@ Open the integration and choose **Configure**. Changes made here apply straight 
 | Task time | When tasks are sent. |
 | Dose time | When doses are sent when no light is set. |
 | Resend time | When tasks still open are sent again. |
-| Status alert devices | The notify services that get a message when the status changes. None means no alerts. |
+| Status alert devices | The notify services that get a message when the status changes, and proposals still waiting. None means no alerts. |
 
 **Rules and status.** The stage (cycling or cycled) and the Watch and Act limit of each rule. Act must be at least as strict as Watch. Claude can propose the same with `set_rules` and `set_tank`.
 
@@ -208,7 +231,7 @@ actions:
 ## Known limitations
 
 - One tank per Home Assistant.
-- Proposals can only be accepted in the conversation that made them. A proposal whose code has expired, or that had too many wrong codes, stays waiting until it is rejected. Make it again to get a new code.
+- In a conversation, proposals can only be applied in the one that made them. From a notification, anyone who gets it can accept it. A proposal whose code has expired, or that had too many wrong codes, stays waiting until it is rejected. Make it again to get a new code.
 - Over MCP, a conversation is known only by the `conversation_id` Claude passes. Proposals made without one can be applied from any conversation by the same Home Assistant user.
 - No panel or camera yet. See the [design](design.html).
 - The rule limits are settings. A decision does not change them by itself; Claude proposes the change with `set_rules`.
@@ -219,6 +242,8 @@ actions:
 - The light problem state is kept in memory. After a restart Tankkeeper checks each light again.
 - Calendar and to-do edits are recorded as made in the panel, without the Home Assistant user.
 - Reminders sent before a restart are not cleared on other devices after it.
+- A batch needs a `conversation_id`. A conversation has one open batch per person.
+- A proposal made while no status alert device is set is sent when it is waiting and a device is set.
 - Tasks can't repeat. Add one for each day, or ask Claude to.
 - Conversations and the records Claude reads are sent to Anthropic when you talk to Claude.
 
@@ -226,6 +251,9 @@ actions:
 
 - **Claude can't see the tools.** Check that Tankkeeper is loaded, and that the Model Context Protocol integration or Assist uses the Tankkeeper or Assist API. Reload the Model Context Protocol integration after you change its options, then start a new Claude session: Claude loads the tools only when a session starts.
 - **"The confirm code does not match" or "expired".** Ask Claude to make the proposal again.
+- **`batch_expired`.** The batch had no change for 15 minutes, or is 2 hours old. Ask Claude to start the batch again; it keeps the changes.
+- **No notification for a proposal.** It is sent 10 minutes after the last change, only to the **Status alert devices**, and only once.
+- **Accept did nothing.** The proposal was applied or rejected already, or a record in it changed since. Ask Claude to make it again.
 - **"The proposal belongs to another conversation".** Apply it from the conversation that made it, or reject it and make it again.
 - **No reminders.** Check that the device is chosen in the options, and that its `notify.mobile_app_…` action works from **Developer tools > Actions**.
 - **Complete or Skip did nothing.** The task may be done already, or removed; the reminder is cleared anyway. Check the task in `calendar.tankkeeper`.

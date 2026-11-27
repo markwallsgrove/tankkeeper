@@ -1,6 +1,8 @@
 """The one service layer that tools, flows and entities use to read and change records."""
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 import secrets
@@ -27,14 +29,20 @@ from .domain import (
     Record,
     Source,
     TankState,
+    accept_proposal,
+    add_to_batch,
     apply_changes,
     apply_proposal,
+    batch_view,
     changes_in_conversation,
+    find_batch,
     plan_changes,
     propose,
     reject_proposal,
     save_conversation,
     search_conversations,
+    start_batch,
+    tank_is_empty,
     undo_changes,
 )
 from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
@@ -42,6 +50,8 @@ from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
 from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
 type Target = tuple[Collection, str, Record | None]
+
+_DRAFT: ContextVar[tuple[TankkeeperService, TankState] | None] = ContextVar("tankkeeper_draft", default=None)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -76,17 +86,36 @@ class TankkeeperService:
         self._code_factory = code_factory
         self._listeners: list[CALLBACK_TYPE] = []
         self._light_status: dict[str, LightStatus] = {}
-        self.state = TankState()
+        self._state = TankState()
+
+    @property
+    def state(self) -> TankState:
+        """The records to read. Inside drafting, they include the open batch's changes."""
+        draft = _DRAFT.get()
+        return draft[1] if draft is not None and draft[0] is self else self._state
+
+    @contextmanager
+    def drafting(self, actor: Actor) -> Iterator[None]:
+        """Read the records as the person's open batch would leave them, so a change builds on the batch."""
+        batch = find_batch(self._state, user_id=actor.user_id, conversation_id=actor.conversation_id)
+        if batch is None or not batch.is_open(self._clock()):
+            yield
+            return
+        token = _DRAFT.set((self, batch_view(self._state, batch)))
+        try:
+            yield
+        finally:
+            _DRAFT.reset(token)
 
     async def async_load(self, tank: Record) -> None:
         """Load the records, or start a new tank with the given details."""
         stored = await self._store.async_load()
         if stored is None:
-            self.state = TankState()
-            self.state.records[Collection.TANK][TANK_ID] = tank
+            self._state = TankState()
+            self._state.records[Collection.TANK][TANK_ID] = tank
             await self._async_save()
         else:
-            self.state = TankState.from_json(stored)
+            self._state = TankState.from_json(stored)
 
     async def async_remove(self) -> None:
         """Delete the stored records."""
@@ -176,7 +205,7 @@ class TankkeeperService:
     def log_light(self, *events: LightEvent) -> None:
         """Add to the on/off log straight away, keeping only the last LOG_DAYS days, and save it."""
         log = prune_log([*self.light_log(), *events], self._clock())
-        self.state.light_log = [event.to_json() for event in log]
+        self._state.light_log = [event.to_json() for event in log]
         self.hass.async_create_task(self._async_save(), eager_start=False)
 
     def light_status(self, light_id: str) -> LightStatus:
@@ -196,9 +225,13 @@ class TankkeeperService:
 
     @callback
     def notify(self) -> None:
-        """Tell the listeners that something changed."""
-        for listener in list(self._listeners):
-            listener()
+        """Tell the listeners that something changed. They read the stored records, not a draft."""
+        token = _DRAFT.set(None)
+        try:
+            for listener in list(self._listeners):
+                listener()
+        finally:
+            _DRAFT.reset(token)
 
     def stage(self) -> Stage | None:
         """Whether the tank is cycling, from the tank details. None when it is not set."""
@@ -273,6 +306,21 @@ class TankkeeperService:
         finished = self.task(task_id).finish(status, note, self._clock())
         return await self.async_set([(Collection.TASKS, task_id, finished.to_record())], actor, summary_for(finished))
 
+    def tank_is_empty(self) -> bool:
+        """Whether the tank has nothing that setup fills in yet."""
+        return tank_is_empty(self._state)
+
+    def batch(self, actor: Actor) -> Proposal:
+        """The person's pending batch in the conversation, or NotFoundError."""
+        batch = find_batch(self._state, user_id=actor.user_id, conversation_id=actor.conversation_id)
+        if batch is None:
+            raise NotFoundError("No batch is waiting in this conversation. Call tankkeeper__start_batch")
+        return batch
+
+    def batch_records(self, batch: Proposal) -> TankState:
+        """The records as the batch would leave them."""
+        return batch_view(self._state, batch)
+
     def pending_proposals(self) -> list[Proposal]:
         """Proposals waiting for a yes, oldest first."""
         return [proposal for proposal in self.state.proposals.values() if proposal.state is ProposalState.PENDING]
@@ -311,8 +359,8 @@ class TankkeeperService:
         """Set records straight away, keeping the old versions in the history."""
         self._check_conversation(actor)
         entry = apply_changes(
-            self.state,
-            plan_changes(self.state, targets),
+            self._state,
+            plan_changes(self._state, targets),
             history_id=ulid_now(),
             now=self._clock(),
             source=actor.source,
@@ -332,11 +380,25 @@ class TankkeeperService:
         reason: str,
         evidence: str | None,
     ) -> Proposal:
-        """Store a proposal for the targets. Nothing changes until it is applied."""
+        """Store a proposal for the targets, or add them to the person's batch. Nothing changes until it is applied."""
         self._check_conversation(actor)
+        batch = find_batch(self._state, user_id=actor.user_id, conversation_id=actor.conversation_id)
+        if batch is not None:
+            added = add_to_batch(
+                self._state,
+                batch.id,
+                targets,
+                now=self._clock(),
+                tool=tool,
+                summary=summary,
+                reason=reason,
+                evidence=evidence,
+            )
+            await self._async_save()
+            return added
         proposal = propose(
-            self.state,
-            plan_changes(self.state, targets),
+            self._state,
+            plan_changes(self._state, targets),
             proposal_id=ulid_now(),
             code=self._code_factory(),
             now=self._clock(),
@@ -353,7 +415,7 @@ class TankkeeperService:
 
     async def async_propose_undo(self, history_id: str, actor: Actor, reason: str) -> Proposal:
         """Propose putting back what a history entry changed."""
-        entry = self.state.history_entry(history_id)
+        entry = self._state.history_entry(history_id)
         targets = [(change.collection, change.record_id, change.after) for change in undo_changes(entry)]
         return await self.async_propose(
             targets, actor, tool="undo_change", summary=f"Undo: {entry.summary}", reason=reason, evidence=None
@@ -363,7 +425,7 @@ class TankkeeperService:
         """Apply a proposal with its confirm code. A wrong code is saved as a failed attempt."""
         try:
             entry = apply_proposal(
-                self.state,
+                self._state,
                 proposal_id,
                 code,
                 history_id=ulid_now(),
@@ -376,9 +438,45 @@ class TankkeeperService:
             await self._async_save()
         return entry
 
+    async def async_start_batch(self, actor: Actor, *, summary: str, reason: str, setup: bool) -> Proposal:
+        """Open a batch for the person in the conversation, or return the open one."""
+        self._check_conversation(actor)
+        batch = start_batch(
+            self._state,
+            proposal_id=ulid_now(),
+            code=self._code_factory(),
+            now=self._clock(),
+            source=actor.source,
+            user_id=actor.user_id,
+            conversation_id=actor.conversation_id,
+            summary=summary,
+            reason=reason,
+            setup=setup,
+        )
+        await self._async_save()
+        return batch
+
+    async def async_accept(self, proposal_id: str, user_id: str | None) -> HistoryEntry:
+        """Apply a proposal from its notification, recording who accepted it."""
+        entry = accept_proposal(self._state, proposal_id, history_id=ulid_now(), now=self._clock(), user_id=user_id)
+        await self._async_save()
+        return entry
+
+    async def async_decline(self, proposal_id: str, user_id: str | None) -> Proposal:
+        """Reject a proposal from its notification, recording who rejected it."""
+        proposal = reject_proposal(self._state, proposal_id, now=self._clock(), user_id=user_id, any_user=True)
+        await self._async_save()
+        return proposal
+
+    async def async_mark_notified(self, proposal_ids: Iterable[str]) -> None:
+        """Remember that the proposals were sent, so they are sent once."""
+        for proposal_id in proposal_ids:
+            self._state.proposals[proposal_id] = replace(self._state.proposal(proposal_id), notified=True)
+        await self._async_save()
+
     async def async_reject(self, proposal_id: str, actor: Actor) -> Proposal:
         """Close a proposal without applying it."""
-        proposal = reject_proposal(self.state, proposal_id, now=self._clock(), user_id=actor.user_id)
+        proposal = reject_proposal(self._state, proposal_id, now=self._clock(), user_id=actor.user_id)
         await self._async_save()
         return proposal
 
@@ -392,10 +490,10 @@ class TankkeeperService:
         messages: Iterable[Message],
     ) -> Conversation:
         """Start a conversation, or add to one."""
-        if conversation_id is not None and conversation_id not in self.state.conversations:
+        if conversation_id is not None and conversation_id not in self._state.conversations:
             raise NotFoundError(f"No conversation with id {conversation_id}")
         conversation = save_conversation(
-            self.state,
+            self._state,
             conversation_id=conversation_id or ulid_now(),
             now=self._clock(),
             source=actor.source,
@@ -409,8 +507,8 @@ class TankkeeperService:
 
     def _check_conversation(self, actor: Actor) -> None:
         if actor.conversation_id is not None:
-            self.state.conversation(actor.conversation_id)
+            self._state.conversation(actor.conversation_id)
 
     async def _async_save(self) -> None:
-        await self._store.async_save(self.state.to_json())
+        await self._store.async_save(self._state.to_json())
         self.notify()

@@ -17,7 +17,7 @@ Tankkeeper will be a Home Assistant integration for a planted aquarium. You tell
 You don't fill in forms. You have a conversation.
 
 > [!IMPORTANT]
-> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, and the rules and status work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
+> Tankkeeper is early. Records, tools, conversations, history and undo, the plan calendar, reminders, the light, decisions, the rules and status, and batch proposals and setup work today; see [what the integration does now](docs/integration.md). The rest is in the [design](docs/design.html). [Open an issue](https://github.com/markwallsgrove/tankkeeper/issues/new) if you have ideas or want to help test it.
 
 ## 🤔 The problem
 
@@ -70,6 +70,8 @@ Saved. Tankkeeper is live.
 **Never miss a dose.** Tankkeeper owns a calendar and sends a reminder for each task. Press and hold the notification to Complete or Skip.
 
 **Change anything, any time.** Added a plant, swapped a fertiliser, moved a rock? Just say so. Claude reads the change back, you say yes, it's done.
+
+**Set up in one go.** Claude builds the whole tank in one draft, asking one thing at a time or reading your notes, then reads it back. One yes saves it all; one undo takes it all back. A change still waiting goes to your phone with Accept, Reject and Discuss.
 
 **Ask anything.** "Should I do a water change?" "Why is my pH dropping?" "Is it safe to add fish yet?" Claude answers from your records and your decisions, not a generic guide.
 

@@ -16,6 +16,7 @@ from . import decisions as dec
 from .const import DOMAIN
 from .decisions import Decision, DecisionStatus
 from .domain import (
+    SETUP_COLLECTIONS,
     TANK_ID,
     WATER_ID,
     Change,
@@ -30,6 +31,7 @@ from .domain import (
     ProposalState,
     Record,
     Source,
+    Step,
     TankkeeperError,
     dose_for_volume,
     dosing_within_tank,
@@ -93,7 +95,24 @@ tankkeeper__set_rules and whether the tank is cycling with tankkeeper__set_tank.
 proposals made with tankkeeper__set_decision. The answers to decisions come from the owner.
 - To move the owner's earlier notes in, read them yourself and pass their content to \
 tankkeeper__import_decisions and tankkeeper__import_log. Both are proposals.
+- For several related changes, call tankkeeper__start_batch first. Every later change in the same \
+conversation joins that one proposal, with one code. Read the whole batch back with \
+tankkeeper__get_batch and apply it once, after one yes. The code lasts 15 minutes after the last change, \
+and at most 2 hours. If a change returns batch_expired, call tankkeeper__start_batch again: it carries \
+the changes into a new batch.
+- When tankkeeper__get_tank says empty is true, set the tank up with tankkeeper__start_setup and build \
+the whole plan in that one draft: products, contents, tasks, lights and decisions. In Assist, ask the \
+owner one thing at a time. In Claude Code, read the notes the owner points to. Then read the whole \
+draft back with tankkeeper__get_batch and apply it after one yes.
+- A proposal still waiting 10 minutes after its last change goes to the owner's phone, where they can \
+accept or reject it.
 - Mark guesses as assumptions. Never invent a dose: use the product's label and the tank's records."""
+
+SINGLE_STEP = "Read the changes back to the owner. Call tankkeeper__apply_change with the code only after they say yes."
+BATCH_STEP = (
+    "More changes in this conversation join this batch. When it is complete, read the whole batch back "
+    "with tankkeeper__get_batch and call tankkeeper__apply_change with the code only after the owner says yes."
+)
 
 READ = ToolAnnotations(read_only=True, destructive=False, idempotent=True, open_world=False)
 RECORD = ToolAnnotations(destructive=False, open_world=False)
@@ -212,6 +231,7 @@ class TankkeeperTool(Tool):
         self.annotations = spec.annotations
         self._handler = spec.handler
         self._service = service
+        self._drafts = spec.annotations is PROPOSE
 
     @override
     async def async_call(self, hass: HomeAssistant, tool_input: ToolInput, llm_context: LLMContext) -> ToolResult:
@@ -226,7 +246,10 @@ class TankkeeperTool(Tool):
             conversation_id=_optional_str(data, "conversation_id"),
         )
         try:
-            return ToolResult(data=await self._handler(self._service, data, actor))
+            if not self._drafts:
+                return ToolResult(data=await self._handler(self._service, data, actor))
+            with self._service.drafting(actor):
+                return ToolResult(data=await self._handler(self._service, data, actor))
         except TankkeeperError as err:
             return ToolResult(data={"error": err.key, "message": err.message}, error=True)
 
@@ -243,6 +266,7 @@ async def get_tank(service: TankkeeperService, data: Record, actor: Actor) -> Js
         "water": service.records(Collection.WATER).get(WATER_ID),
         "counts": {collection.value: len(service.records(collection)) for collection in Collection},
         "proposals_waiting": len(service.pending_proposals()),
+        "empty": service.tank_is_empty(),
     }
 
 
@@ -515,6 +539,27 @@ async def undo_change(service: TankkeeperService, data: Record, actor: Actor) ->
     """Propose putting back what an earlier change did."""
     proposal = await service.async_propose_undo(_str(data, "history_id"), actor, _str(data, "reason"))
     return _proposal_json(proposal, with_code=True)
+
+
+async def start_batch(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Open a batch that the change tools in this conversation add to."""
+    batch = await service.async_start_batch(
+        actor, summary=_str(data, "summary"), reason=_str(data, "reason"), setup=False
+    )
+    return _batch_json(service, batch)
+
+
+async def start_setup(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Open the setup draft for a new or empty tank."""
+    batch = await service.async_start_batch(
+        actor, summary=f"Set up {service.tank_name()}", reason=_str(data, "reason"), setup=True
+    )
+    return _batch_json(service, batch)
+
+
+async def get_batch(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The batch waiting in this conversation, with every change, to read back."""
+    return _batch_json(service, service.batch(actor))
 
 
 async def apply_change(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -1111,6 +1156,28 @@ def _history_json(entry: HistoryEntry) -> JsonObjectType:
     }
 
 
+def _batch_json(service: TankkeeperService, batch: Proposal) -> JsonObjectType:
+    is_open = batch.is_open(service.now())
+    result = _proposal_json(batch, with_code=is_open)
+    result["open"] = is_open
+    if batch.setup:
+        records = service.batch_records(batch).records
+        result["still_empty"] = [collection.value for collection in SETUP_COLLECTIONS if not records[collection]]
+    return result
+
+
+def _step_json(step: Step) -> JsonObjectType:
+    result: JsonObjectType = {
+        "time": step.time.isoformat(),
+        "tool": step.tool,
+        "summary": step.summary,
+        "reason": step.reason,
+    }
+    if step.evidence is not None:
+        result["evidence"] = step.evidence
+    return result
+
+
 def _proposal_json(proposal: Proposal, *, with_code: bool = False) -> JsonObjectType:
     result: JsonObjectType = {
         "proposal_id": proposal.id,
@@ -1123,13 +1190,17 @@ def _proposal_json(proposal: Proposal, *, with_code: bool = False) -> JsonObject
         "reason": proposal.reason,
         "evidence": proposal.evidence,
         "changes": [_change_json(change) for change in proposal.changes],
+        "batch": proposal.batch,
+        "decided_by": proposal.decided_by,
     }
+    if proposal.batch:
+        result["setup"] = proposal.setup
+        result["updated"] = proposal.last_change().isoformat()
+        result["steps"] = [_step_json(step) for step in proposal.steps]
     if with_code and proposal.state is ProposalState.PENDING:
         result["code"] = proposal.code
         result["code_expires"] = proposal.code_expires().isoformat()
-        result["next_step"] = (
-            "Read the changes back to the owner. Call tankkeeper__apply_change with the code only after they say yes."
-        )
+        result["next_step"] = BATCH_STEP if proposal.batch else SINGLE_STEP
     return result
 
 
@@ -1432,6 +1503,45 @@ SPECS: tuple[Spec, ...] = (
         },
     ),
     Spec(
+        name="start_batch",
+        title="Start a batch",
+        annotations=PROPOSE,
+        handler=start_batch,
+        description="Open a batch in this conversation. Every change tool you call in it afterwards adds to the "
+        "one batch, building on its earlier changes, under one confirm code. The code lasts 15 minutes after the "
+        "last change and 2 hours at most. If the batch expired, calling this again carries its changes into a "
+        "new batch with a new code. Returns the open batch if there is one.",
+        schema={
+            p.Required("summary", description="What the batch does, in a line the owner will read"): NON_EMPTY,
+            p.Required("reason", description="Why, in a sentence the owner will read"): NON_EMPTY,
+            p.Required("conversation_id", description="The id from tankkeeper__save_conversation"): NON_EMPTY,
+        },
+    ),
+    Spec(
+        name="start_setup",
+        title="Start setup",
+        annotations=PROPOSE,
+        handler=start_setup,
+        description="Open the setup draft for a new or empty tank: one with no products, contents, tasks, lights "
+        "or decisions (tankkeeper__get_tank shows empty). It is a batch: every change tool you call in this "
+        "conversation fills it. still_empty lists what the draft does not have yet.",
+        schema={
+            p.Optional(
+                "reason", default="Set up the tank from the owner's answers", description="Why, for the owner"
+            ): NON_EMPTY,
+            p.Required("conversation_id", description="The id from tankkeeper__save_conversation"): NON_EMPTY,
+        },
+    ),
+    Spec(
+        name="get_batch",
+        title="Get the batch",
+        annotations=READ,
+        handler=get_batch,
+        description="The batch waiting in this conversation, with every change and the step that made it, to read "
+        "back to the owner before they say yes. Gives the code while the batch is open.",
+        schema={**CONVERSATION},
+    ),
+    Spec(
         name="apply_change",
         title="Apply a change",
         annotations=APPLY,
@@ -1530,9 +1640,10 @@ SPECS: tuple[Spec, ...] = (
         "code; nothing changes until tankkeeper__apply_change.",
         schema={
             p.Optional("notify", description="Notify services for reminders, such as mobile_app_phone"): [NON_EMPTY],
-            p.Optional("status_notify", description="Notify services that get an alert when the status changes"): [
-                NON_EMPTY
-            ],
+            p.Optional(
+                "status_notify",
+                description="Notify services that get an alert when the status changes or a proposal is still waiting",
+            ): [NON_EMPTY],
             p.Optional("task_time"): NON_EMPTY,
             p.Optional("dose_time"): NON_EMPTY,
             p.Optional("resend_time"): NON_EMPTY,
