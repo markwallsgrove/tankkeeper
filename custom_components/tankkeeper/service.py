@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import partial
 from pathlib import Path
 import secrets
@@ -80,7 +80,24 @@ from .photos import (
     remove_unused,
     without_old_photos,
 )
-from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
+from .plan import (
+    FOLLOW_UP_DAYS,
+    REMINDERS_ID,
+    REPEAT_DAYS,
+    PlanUpdate,
+    Reminders,
+    Scope,
+    Series,
+    Task,
+    TaskEdit,
+    TaskStatus,
+    change_summary,
+    edit_series,
+    parse_occurrence_id,
+    remove_from_series,
+    remove_summary,
+    summary_for,
+)
 from .reviews import Review, comments_on, kept
 from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
@@ -186,13 +203,85 @@ class TankkeeperService:
         """The tank's name."""
         return str(self.state.records[Collection.TANK].get(TANK_ID, {}).get("name") or DOMAIN.capitalize())
 
-    def tasks(self) -> list[Task]:
-        """Every task in the plan."""
-        return [Task.from_record(task_id, record) for task_id, record in self.state.records[Collection.TASKS].items()]
+    def today(self) -> date:
+        """The local date now."""
+        return dt_util.as_local(self._clock()).date()
+
+    def tasks(self, start: date | None = None, end: date | None = None) -> list[Task]:
+        """Every stored task, and the repeating tasks' occurrences from start to end.
+
+        Without a range, occurrences are made from FOLLOW_UP_DAYS ago to REPEAT_DAYS ahead. A stored task with an
+        occurrence's id is that occurrence changed, done or moved, and takes its place.
+        """
+        today = self.today()
+        first = today - timedelta(days=FOLLOW_UP_DAYS) if start is None else start
+        last = today + timedelta(days=REPEAT_DAYS) if end is None else end
+        stored = {
+            task_id: Task.from_record(task_id, record)
+            for task_id, record in self.state.records[Collection.TASKS].items()
+        }
+        occurrences = [
+            occurrence
+            for series in self.series()
+            for day in series.dates(first, last)
+            if (occurrence := series.occurrence(day)).id not in stored
+        ]
+        return [*stored.values(), *occurrences]
 
     def task(self, task_id: str) -> Task:
-        """One task, or NotFoundError."""
-        return Task.from_record(task_id, self.state.require(Collection.TASKS, task_id))
+        """One task, stored or a repeating task's occurrence, or NotFoundError."""
+        record = self.state.get(Collection.TASKS, task_id)
+        if record is not None:
+            return Task.from_record(task_id, record)
+        parsed = parse_occurrence_id(task_id)
+        if parsed is not None:
+            series_id, day = parsed
+            series = self.state.get(Collection.SERIES, series_id)
+            if series is not None and (found := Series.from_record(series_id, series)).occurs_on(day):
+                return found.occurrence(day)
+        raise NotFoundError(f"No {Collection.TASKS.value} record with id {task_id}")
+
+    def series(self) -> list[Series]:
+        """Every repeating task."""
+        return [
+            Series.from_record(series_id, record) for series_id, record in self.state.records[Collection.SERIES].items()
+        ]
+
+    def task_change(self, task_id: str, edit: TaskEdit, scope: Scope) -> tuple[list[Target], str]:
+        """The records that change a task, or an occurrence and every later one, and the history summary.
+
+        Raises NotFoundError, InvalidInputError for a change the scope can't make, or NothingToChangeError.
+        """
+        current = self.task(task_id)
+        if scope is Scope.FUTURE:
+            series, day = self._series_of(current)
+            return _plan_targets(edit_series(series, day, self.tasks(), edit, ulid_now()))
+        if edit.repeats:
+            raise InvalidInputError("Change how a task repeats for this and future occurrences")
+        changed = current.edit(
+            now=self._clock(), text=edit.text, day=edit.day, slot=edit.slot, status=edit.status, note=edit.note
+        )
+        if changed == current:
+            raise NothingToChangeError("The records already look like that")
+        return [(Collection.TASKS, changed.id, changed.to_record())], change_summary(changed)
+
+    def task_removal(self, task_id: str, scope: Scope) -> tuple[list[Target], str]:
+        """The records that take a task, or an occurrence and every later one, out of the plan, and the summary."""
+        current = self.task(task_id)
+        if scope is Scope.THIS and (
+            current.series_id is None or self.state.get(Collection.SERIES, current.series_id) is None
+        ):
+            return [(Collection.TASKS, current.id, None)], remove_summary(current)
+        series, day = self._series_of(current)
+        return _plan_targets(remove_from_series(series, day, scope, self.tasks()))
+
+    def _series_of(self, task: Task) -> tuple[Series, date]:
+        """The repeating task an occurrence belongs to and the day it was planned for."""
+        parsed = parse_occurrence_id(task.id)
+        record = None if task.series_id is None else self.state.get(Collection.SERIES, task.series_id)
+        if task.series_id is None or record is None or parsed is None:
+            raise InvalidInputError(f"The task {task.text} does not repeat")
+        return Series.from_record(task.series_id, record), parsed[1]
 
     def reminders(self) -> Reminders:
         """The reminder settings."""
@@ -347,6 +436,7 @@ class TankkeeperService:
             stage=self.stage(),
             readings=tuple(self.readings()),
             tasks=tuple(self.tasks()),
+            series=tuple(self.series()),
             lights=tuple(
                 LightCheck(
                     name=light.model,
@@ -822,6 +912,17 @@ class TankkeeperService:
     async def _async_save(self) -> None:
         await self._store.async_save(self._state.to_json())
         self.notify()
+
+
+def _plan_targets(update: PlanUpdate) -> tuple[list[Target], str]:
+    targets: list[Target] = [
+        (Collection.SERIES, series_id, None if series is None else series.to_record())
+        for series_id, series in update.series
+    ]
+    targets.extend(
+        (Collection.TASKS, task_id, None if task is None else task.to_record()) for task_id, task in update.tasks
+    )
+    return targets, update.summary
 
 
 def light_target(hass: HomeAssistant, light: Light, others: Iterable[Light]) -> Target:

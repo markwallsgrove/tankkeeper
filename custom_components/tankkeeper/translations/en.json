@@ -630,7 +630,7 @@
       "message": "{message}"
     },
     "repeat_not_supported": {
-      "message": "TankKeeper tasks can't repeat. Add one task for each day"
+      "message": "The calendar can't make a repeating task. Add it in the TankKeeper panel or ask TankKeeper"
     }
   },
   "issues": {

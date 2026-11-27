@@ -141,7 +141,10 @@ async def test_repeating_events_are_refused(
     result = await _ws(hass_ws_client, hass, {"type": "calendar/event/create", "event": event})
 
     assert not result["success"]
-    assert result["error"]["message"] == "TankKeeper tasks can't repeat. Add one task for each day"
+    assert (
+        result["error"]["message"]
+        == "The calendar can't make a repeating task. Add it in the TankKeeper panel or ask TankKeeper"
+    )
     assert _tasks(loaded_entry) == []
 
 
@@ -234,7 +237,10 @@ async def test_update_errors_are_translated(
 
     assert missing["error"]["message"] == "No tasks record with id missing"
     assert same["error"]["message"] == "The records already look like that"
-    assert repeat["error"]["message"] == "TankKeeper tasks can't repeat. Add one task for each day"
+    assert (
+        repeat["error"]["message"]
+        == "The calendar can't make a repeating task. Add it in the TankKeeper panel or ask TankKeeper"
+    )
 
 
 async def test_delete_from_the_calendar_ui(

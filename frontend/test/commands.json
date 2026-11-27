@@ -147,15 +147,27 @@
   },
   "add_task": {
     "required": ["text"],
-    "optional": ["date", "evidence", "note", "reason", "slot"]
+    "optional": ["date", "every_days", "evidence", "note", "reason", "slot", "until", "weekdays"]
   },
   "update_task": {
     "required": ["task_id"],
-    "optional": ["date", "evidence", "note", "reason", "slot", "state", "text"]
+    "optional": [
+      "date",
+      "every_days",
+      "evidence",
+      "note",
+      "reason",
+      "scope",
+      "slot",
+      "state",
+      "text",
+      "until",
+      "weekdays"
+    ]
   },
   "remove_task": {
     "required": ["task_id"],
-    "optional": ["evidence", "reason"]
+    "optional": ["evidence", "reason", "scope"]
   },
   "set_reminders": {
     "required": [],

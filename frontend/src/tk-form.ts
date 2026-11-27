@@ -4,6 +4,26 @@ import type { Field, Values } from "./types";
 
 type Input = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
+export const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+function capitalised(word: string): string {
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}
+
+function ticked(form: HTMLFormElement, name: string): string[] {
+  return [...form.querySelectorAll<HTMLInputElement>(`input[name="${name}"]`)]
+    .filter((box) => box.checked)
+    .map((box) => box.value);
+}
+
+function read(field: Field, form: HTMLFormElement): unknown {
+  if (field.type === "weekdays") return ticked(form, field.name);
+  const input = form.elements.namedItem(field.name) as Input;
+  return field.type === "checkbox"
+    ? (input as HTMLInputElement).checked
+    : parsed(field, input.value);
+}
+
 function shown(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (Array.isArray(value)) return value.map(String).join("\n");
@@ -39,9 +59,7 @@ function empty(value: unknown): boolean {
 export function readForm(fields: Field[], form: HTMLFormElement, values: Values): Values {
   const changed: Values = {};
   for (const field of fields) {
-    const input = form.elements.namedItem(field.name) as Input;
-    const value =
-      field.type === "checkbox" ? (input as HTMLInputElement).checked : parsed(field, input.value);
+    const value = read(field, form);
     const before = values[field.name];
     if (empty(value) && (before === undefined || before === null)) continue;
     if (JSON.stringify(value) !== JSON.stringify(before)) changed[field.name] = value;
@@ -113,7 +131,45 @@ export class TkForm extends LitElement {
     .error {
       color: var(--error-color);
     }
+    fieldset {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 12px;
+      margin: 0;
+      padding: 0;
+      border: none;
+      font-size: 0.9em;
+      color: var(--secondary-text-color);
+    }
+    legend {
+      padding: 0 0 2px;
+    }
+    label.day {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--primary-text-color);
+    }
   `;
+
+  private weekdays(field: Field): TemplateResult {
+    const value = this.values[field.name];
+    const chosen = Array.isArray(value) ? value.map(String) : [];
+    return html`<fieldset>
+      <legend>${field.label}</legend>
+      ${WEEKDAYS.map(
+        (day) =>
+          html`<label class="day"
+            ><input
+              name=${field.name}
+              type="checkbox"
+              value=${day}
+              .checked=${chosen.includes(day)}
+            />${capitalised(day)}</label
+          >`,
+      )}
+    </fieldset>`;
+  }
 
   private input(field: Field): TemplateResult {
     const value = shown(this.values[field.name]);
@@ -169,7 +225,11 @@ export class TkForm extends LitElement {
         this.submit(event);
       }}
     >
-      ${this.fields.map((field) => html`<label>${field.label} ${this.input(field)}</label>`)}
+      ${this.fields.map((field) =>
+        field.type === "weekdays"
+          ? this.weekdays(field)
+          : html`<label>${field.label} ${this.input(field)}</label>`,
+      )}
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
       <button type="submit" ?disabled=${this.busy}>${this.submitLabel}</button>
     </form>`;

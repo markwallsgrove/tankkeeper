@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import "../src/tk-form";
 import type { TkForm } from "../src/tk-form";
 import type { Field, Values } from "../src/types";
-import { find, mount, settle } from "./fake";
+import { find, findAll, mount, settle, text } from "./fake";
 
 const fields: Field[] = [
   { name: "name", label: "Name", type: "text", required: true },
@@ -135,5 +135,57 @@ describe("tk-form", () => {
     find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
 
     expect(saved).toEqual([{}, { on: false }]);
+  });
+
+  it("sends the weekdays ticked as a list, only when they changed", async () => {
+    const element = mount<TkForm>("tk-form", {
+      fields: [{ name: "weekdays", label: "Repeat on", type: "weekdays" }],
+      values: { weekdays: ["mon", "thu"] },
+    });
+    const saved: Values[] = [];
+    element.addEventListener("tk-save", (event) =>
+      saved.push((event as CustomEvent<Values>).detail),
+    );
+    await settle(element);
+    const boxes = findAll(element, "input[name=weekdays]") as HTMLInputElement[];
+    expect(boxes.map((box) => box.value)).toEqual([
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri",
+      "sat",
+      "sun",
+    ]);
+    expect(boxes.filter((box) => box.checked).map((box) => box.value)).toEqual(["mon", "thu"]);
+    expect(text(element)).toContain("Mon");
+
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+    const [monday, , , , , saturday] = boxes;
+    if (monday === undefined || saturday === undefined) throw new Error("No weekday boxes");
+    monday.checked = false;
+    saturday.checked = true;
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+    boxes.forEach((box) => {
+      box.checked = false;
+    });
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved).toEqual([{}, { weekdays: ["thu", "sat"] }, { weekdays: [] }]);
+  });
+
+  it("leaves out weekdays left empty on a new record", async () => {
+    const element = mount<TkForm>("tk-form", {
+      fields: [{ name: "weekdays", label: "Repeat on", type: "weekdays" }],
+    });
+    const saved: Values[] = [];
+    element.addEventListener("tk-save", (event) =>
+      saved.push((event as CustomEvent<Values>).detail),
+    );
+    await settle(element);
+
+    find(element, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+
+    expect(saved).toEqual([{}]);
   });
 });

@@ -45,6 +45,7 @@ class Collection(StrEnum):
     LOG = "log"
     NOTES = "notes"
     TASKS = "tasks"
+    SERIES = "series"
     SETTINGS = "settings"
     LIGHTS = "lights"
     DECISIONS = "decisions"
@@ -54,6 +55,7 @@ SETUP_COLLECTIONS = (
     Collection.PRODUCTS,
     Collection.CONTENTS,
     Collection.TASKS,
+    Collection.SERIES,
     Collection.LIGHTS,
     Collection.DECISIONS,
 )

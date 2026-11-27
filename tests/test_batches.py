@@ -235,7 +235,7 @@ async def test_setup_fills_one_draft(call: Caller) -> None:
     draft = await call.ok("start_setup", conversation_id=conversation_id)
     assert draft["setup"] is True
     assert draft["summary"] == "Set up Nano"
-    assert draft["still_empty"] == ["products", "contents", "tasks", "lights", "decisions"]
+    assert draft["still_empty"] == ["products", "contents", "tasks", "series", "lights", "decisions"]
 
     await call.ok("set_tank", temperature_c=24, reason="Shrimp", conversation_id=conversation_id)
     await call.ok("add_product", name="Easy Green", reason="Fertiliser", conversation_id=conversation_id)
@@ -269,7 +269,7 @@ async def test_setup_fills_one_draft(call: Caller) -> None:
     read_back = await call.ok("get_batch", conversation_id=conversation_id)
     assert read_back["open"] is True
     assert read_back["code"] == draft["code"]
-    assert read_back["still_empty"] == ["contents", "lights"]
+    assert read_back["still_empty"] == ["contents", "series", "lights"]
     assert len(list_of(read_back["steps"])) == 6
     assert (await call.ok("get_tank"))["empty"] is True
 

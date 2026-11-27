@@ -71,6 +71,7 @@ async def test_get_plan_shows_the_next_week_with_slot_times(call: Caller) -> Non
             "state": "open",
             "note": "",
             "done_at": None,
+            "series_id": None,
         },
         {
             "id": task,
@@ -81,6 +82,7 @@ async def test_get_plan_shows_the_next_week_with_slot_times(call: Caller) -> Non
             "state": "open",
             "note": "",
             "done_at": None,
+            "series_id": None,
         },
     ]
     assert plan["reminders"] == {

@@ -8,16 +8,21 @@ from hegel import generators as gs
 
 from custom_components.tankkeeper.plan import (
     FOLLOW_UP_DAYS,
+    MAX_EVERY_DAYS,
     PlanEvent,
     Reminders,
+    Series,
     Slot,
     Task,
     TaskStatus,
+    Weekday,
     action_for,
     format_time,
     import_tasks,
     is_dose,
+    occurrence_id,
     parse_action,
+    parse_occurrence_id,
     parse_summary,
     parse_time,
     split_tasks,
@@ -122,3 +127,36 @@ def test_import_never_duplicates_and_a_second_import_adds_nothing(tc: hegel.Test
     assert len(set(keys[len(existing) :])) == len(imported)
     assert not {(task.day, task.text.casefold()) for task in existing} & set(keys[len(existing) :])
     assert import_tasks([*existing, *imported], events, ["abc"], lambda: f"n{next(counter)}") == []
+
+
+@hegel.composite
+def series(tc: hegel.TestCase) -> Series:
+    """A repeating task around today, every some days or weekly."""
+    start = tc.draw(days)
+    weekly = tc.draw(gs.booleans())
+    chosen: list[Weekday] = tc.draw(gs.lists(gs.sampled_from(list(Weekday)), min_size=1, max_size=7))
+    skipped: list[date] = tc.draw(gs.lists(days, max_size=4))
+    until = tc.draw(gs.one_of(gs.just(None), gs.temporal.dates(min_value=start, max_value=start + timedelta(days=60))))
+    return Series(
+        id=tc.draw(gs.text(alphabet="0123456789ABC@", min_size=1, max_size=8)),
+        start=start,
+        slot=Slot.TASK,
+        text="Water change",
+        every_days=None if weekly else tc.draw(gs.integers(min_value=1, max_value=MAX_EVERY_DAYS)),
+        weekdays=tuple(chosen) if weekly else (),
+        until=until,
+        skipped=tuple(skipped),
+    )
+
+
+@hegel.test
+def test_series_dates_are_the_days_it_occurs_on_and_it_round_trips(tc: hegel.TestCase) -> None:
+    repeating = tc.draw(series())
+    first = tc.draw(days)
+    last = first + timedelta(days=tc.draw(gs.integers(min_value=0, max_value=60)))
+
+    every_day = [first + timedelta(days=step) for step in range((last - first).days + 1)]
+
+    assert repeating.dates(first, last) == [day for day in every_day if repeating.occurs_on(day)]
+    assert Series.from_record(repeating.id, repeating.to_record()) == repeating
+    assert all(parse_occurrence_id(occurrence_id(repeating.id, day)) == (repeating.id, day) for day in every_day)

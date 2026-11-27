@@ -30,7 +30,8 @@ export type Values = Record<string, unknown>;
 export interface Field {
   name: string;
   label: string;
-  type: "text" | "textarea" | "number" | "date" | "time" | "select" | "list" | "checkbox";
+  type:
+    "text" | "textarea" | "number" | "date" | "time" | "select" | "list" | "checkbox" | "weekdays";
   options?: string[];
   required?: boolean;
   step?: string;
@@ -116,6 +117,21 @@ export interface Task {
   text: string;
   state: "open" | "complete" | "skip";
   note: string | null;
+  series_id: string | null;
+}
+
+/** A repeating task. Its occurrences are the tasks with its id as series_id. */
+export interface Series {
+  id: string;
+  start: string;
+  slot: string;
+  text: string;
+  note: string;
+  every_days: number | null;
+  weekdays: string[];
+  until: string | null;
+  skipped: string[];
+  repeat: string;
 }
 
 export interface Reminders {
@@ -140,6 +156,7 @@ export interface Plan {
   start: string;
   end: string;
   tasks: Task[];
+  series: Series[];
   reminders: Reminders;
 }
 

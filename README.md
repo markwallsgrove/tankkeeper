@@ -67,7 +67,7 @@ Saved. TankKeeper is live.
 
 **Get feedback after every test.** Log your readings and get the rules' result straight away (free), plus an optional comment from Claude on what the numbers mean for your tank.
 
-**Never miss a dose.** TankKeeper owns a calendar and sends a reminder for each task. Press and hold the notification to Complete or Skip.
+**Never miss a dose.** TankKeeper owns a calendar and sends a reminder for each task. A task can repeat every few days or on set weekdays. Press and hold the notification to Complete or Skip.
 
 **Change anything, any time.** Added a plant, swapped a fertiliser, moved a rock? Just say so. Claude reads the change back, you say yes, it's done.
 

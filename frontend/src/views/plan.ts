@@ -6,7 +6,10 @@ import { addDays, isoDate } from "../format";
 import { facts, historyDetails } from "../settings";
 import { saveAndClear } from "../tk-form";
 import "../tk-history";
-import type { Field, Plan, Task, Values } from "../types";
+import type { Field, Plan, Series, Task, Values } from "../types";
+
+/** mdiRepeat from @mdi/js. */
+export const REPEAT = "M17,17H7V14L3,18L7,22V19H19V13H17M7,7H17V10L21,6L17,2V5H5V11H7V7Z";
 
 export const PLAN_DAYS = 28;
 
@@ -16,11 +19,27 @@ const TASK_DETAILS: Field[] = [
   { name: "slot", label: "Slot", type: "select", options: ["task", "dose"] },
 ];
 const NOTE: Field = { name: "note", label: "Note", type: "text" };
-const TASK_FIELDS: Field[] = [...TASK_DETAILS, NOTE];
+const REPEAT_FIELDS: Field[] = [
+  { name: "every_days", label: "Repeat every N days", type: "number", step: "1" },
+  { name: "weekdays", label: "Or repeat weekly on", type: "weekdays" },
+  { name: "until", label: "Repeat until", type: "date" },
+];
+const TASK_FIELDS: Field[] = [...TASK_DETAILS, NOTE, ...REPEAT_FIELDS];
 const EDIT_FIELDS: Field[] = [
   ...TASK_DETAILS,
   { name: "state", label: "State", type: "select", options: ["open", "complete", "skip"] },
   NOTE,
+];
+const OCCURRENCE_FIELDS: Field[] = [
+  ...EDIT_FIELDS,
+  {
+    name: "scope",
+    label: "Apply to (the repeat changes only for this and later ones)",
+    type: "select",
+    options: ["this", "future"],
+    required: true,
+  },
+  ...REPEAT_FIELDS,
 ];
 
 const REMINDER_FIELDS: Field[] = [
@@ -31,7 +50,10 @@ const REMINDER_FIELDS: Field[] = [
   { name: "resend_time", label: "Resend open tasks at", type: "time" },
 ];
 
-/** The plan for the next four weeks: tasks by day, add, edit and remove them, and the reminder settings read-only. */
+/**
+ * The plan for the next four weeks: tasks by day, add, edit and remove them, and the reminder settings read-only.
+ * A repeating task's occurrence is changed or removed alone, or with every later one.
+ */
 export class TkPlan extends TkView {
   static override properties = {
     ...TkView.properties,
@@ -57,15 +79,24 @@ export class TkPlan extends TkView {
 
   private async save(tool: string, values: Values, taskId?: string): Promise<boolean> {
     if (taskId === undefined && Object.keys(values).length === 0) return false;
-    const args = taskId === undefined ? values : { task_id: taskId, ...values };
+    const sent = Object.fromEntries(
+      Object.entries(values).filter(([, value]) => !Array.isArray(value) || value.length > 0),
+    );
+    const args = taskId === undefined ? sent : { task_id: taskId, ...sent };
     const saved = await this.run((api) => api.call(tool, args));
     if (saved) this.changed();
     return saved;
   }
 
   private renderTask(task: Task): TemplateResult {
+    const series = this.plan?.series.find((item) => item.id === task.series_id);
     return html`<li data-task=${task.id}>
       <div class="row">
+        ${
+          series === undefined
+            ? nothing
+            : html`<ha-svg-icon class="repeat" .path=${REPEAT} title="Repeats"></ha-svg-icon>`
+        }
         <span class="grow">${task.time ?? ""} ${task.text}</span>
         <button
           class="remove"
@@ -74,15 +105,28 @@ export class TkPlan extends TkView {
         >
           Remove
         </button>
+        ${
+          series === undefined
+            ? nothing
+            : html`<button
+                class="remove remove-future"
+                ?disabled=${this.busy}
+                @click=${() => this.save("remove_task", { scope: "future" }, task.id)}
+              >
+                Remove this and later
+              </button>`
+        }
       </div>
       <div class="muted">
-        ${[task.state, task.note].filter((part) => part !== null && part !== "").join(" · ")}
+        ${[task.state, task.note, series?.repeat]
+          .filter((part) => part !== undefined && part !== null && part !== "")
+          .join(" · ")}
       </div>
       <details>
         <summary>Edit and history</summary>
         <tk-form
-          .fields=${EDIT_FIELDS}
-          .values=${task}
+          .fields=${series === undefined ? EDIT_FIELDS : OCCURRENCE_FIELDS}
+          .values=${series === undefined ? task : occurrenceValues(task, series)}
           .busy=${this.busy}
           @tk-save=${(event: CustomEvent<Values>) => this.save("update_task", event.detail, task.id)}
         ></tk-form>
@@ -138,6 +182,17 @@ export class TkPlan extends TkView {
       }
     `;
   }
+}
+
+/** An occurrence's fields with its repeating task's repeat, changed for this one unless the scope says future. */
+function occurrenceValues(task: Task, series: Series): Values {
+  return {
+    ...task,
+    scope: "this",
+    every_days: series.every_days,
+    weekdays: series.weekdays,
+    until: series.until,
+  };
 }
 
 customElements.define("tk-plan", TkPlan);

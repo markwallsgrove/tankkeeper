@@ -59,17 +59,20 @@ from .lights import (
 )
 from .photos import MAX_KEEP_DAYS, PHOTO_PATH, CameraSettings, CheckReason, PhotoCheck
 from .plan import (
+    MAX_EVERY_DAYS,
     PlanEvent,
     Reminders,
+    Scope,
+    Series,
     Slot,
     Task,
+    TaskEdit,
     TaskStatus,
+    Weekday,
     add_summary,
-    change_summary,
     format_time,
     import_tasks,
     parse_time,
-    remove_summary,
     slot_for,
     sort_tasks,
 )
@@ -172,6 +175,15 @@ NOTE_FIELDS: dict[p.Marker, object] = {
 LIMIT: dict[p.Marker, object] = {p.Optional("limit", default=20): p.All(int, p.Range(min=1, max=200))}
 CONTENT_TYPES = ["plant", "rock", "wood", "substrate", "decoration", "fish", "other"]
 DAYS = p.All(int, p.Range(min=0, max=365))
+REPEAT: dict[p.Marker, object] = {
+    p.Optional("every_days", description="Repeat every this many days"): p.All(int, p.Range(min=1, max=MAX_EVERY_DAYS)),
+    p.Optional("weekdays", description="Repeat weekly on these days"): p.All([p.In(list(Weekday))], p.Length(min=1)),
+}
+SCOPE: dict[p.Marker, object] = {
+    p.Optional(
+        "scope", default=Scope.THIS.value, description="this for one occurrence, future for it and every later one"
+    ): p.In(list(Scope)),
+}
 DECISION_NUMBER = p.All(int, p.Range(min=1, max=9999))
 PPM = p.All(p.Coerce(float), p.Range(min=0, min_included=False))
 RULE_FIELDS: dict[p.Marker, object] = {
@@ -738,61 +750,77 @@ async def get_plan(service: TankkeeperService, data: Record, actor: Actor) -> Js
     end = _day(data, "end", start + timedelta(days=PLAN_DAYS - 1))
     _check_range(start, end)
     reminders_on = service.reminders_on
-    tasks = sort_tasks((task for task in service.tasks() if start <= task.day <= end), reminders_on)
+    tasks = sort_tasks((task for task in service.tasks(start, end) if start <= task.day <= end), reminders_on)
     return {
         "start": start.isoformat(),
         "end": end.isoformat(),
         "tasks": [_task_json(task, reminders_on(task.day)) for task in tasks],
+        "series": [_series_json(series) for series in sorted(service.series(), key=lambda item: (item.start, item.id))],
         "reminders": service.reminders().to_json(),
     }
 
 
 async def add_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Propose a new task. The slot defaults to dose for a product and amount in ml."""
+    """Propose a new task, or a repeating task. The slot defaults to dose for a product and amount in ml."""
     text = _str(data, "text").strip()
     slot = _optional_str(data, "slot")
-    task = Task(
+    day = _day(data, "date", dt_util.now().date())
+    chosen_slot = slot_for(text, service.product_names()) if slot is None else Slot(slot)
+    note = _optional_str(data, "note") or ""
+    weekdays = _weekdays(data)
+    every_days = cast(int | None, data.get("every_days"))
+    if every_days is None and weekdays is None:
+        if "until" in data:
+            raise InvalidInputError("An end day needs every_days or weekdays")
+        task = Task(id=ulid_now(), day=day, slot=chosen_slot, text=text, note=note)
+        return await _propose(
+            service, data, actor, tool="add_task", summary=add_summary(task), targets=[_task_target(task)]
+        )
+    until = _optional_day(data, "until")
+    series = Series(
         id=ulid_now(),
-        day=_day(data, "date", dt_util.now().date()),
-        slot=slot_for(text, service.product_names()) if slot is None else Slot(slot),
+        start=day,
+        slot=chosen_slot,
         text=text,
-        note=_optional_str(data, "note") or "",
+        note=note,
+        every_days=every_days,
+        weekdays=weekdays or (),
+        until=until,
     )
-    return await _propose(
-        service, data, actor, tool="add_task", summary=add_summary(task), targets=[_task_target(task)]
-    )
-
-
-async def update_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Propose changes to a task."""
-    current = service.task(_str(data, "task_id"))
-    slot = _optional_str(data, "slot")
-    state = _optional_str(data, "state")
-    text = _optional_str(data, "text")
-    task = current.edit(
-        now=service.now(),
-        text=None if text is None else text.strip(),
-        day=None if "date" not in data else _day(data, "date", current.day),
-        slot=None if slot is None else Slot(slot),
-        status=None if state is None else TaskStatus(state),
-        note=_optional_str(data, "note"),
-    )
-    return await _propose(
-        service, data, actor, tool="update_task", summary=change_summary(task), targets=[_task_target(task)]
-    )
-
-
-async def remove_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Propose taking a task out of the plan."""
-    task = service.task(_str(data, "task_id"))
     return await _propose(
         service,
         data,
         actor,
-        tool="remove_task",
-        summary=remove_summary(task),
-        targets=[(Collection.TASKS, task.id, None)],
+        tool="add_task",
+        summary=f"Add the repeating task {text} {series.repeat_text()} from {day.isoformat()}",
+        targets=[(Collection.SERIES, series.id, series.to_record())],
     )
+
+
+async def update_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose changes to a task, or to an occurrence of a repeating task and every later one."""
+    slot = _optional_str(data, "slot")
+    state = _optional_str(data, "state")
+    text = _optional_str(data, "text")
+    edit = TaskEdit(
+        text=None if text is None else text.strip(),
+        day=_optional_day(data, "date"),
+        slot=None if slot is None else Slot(slot),
+        status=None if state is None else TaskStatus(state),
+        note=_optional_str(data, "note"),
+        every_days=cast(int | None, data.get("every_days")),
+        weekdays=_weekdays(data),
+        until=_optional_day(data, "until"),
+        endless="until" in data and _cleared(data, "until") is None,
+    )
+    targets, summary = service.task_change(_str(data, "task_id"), edit, Scope(_str(data, "scope")))
+    return await _propose(service, data, actor, tool="update_task", summary=summary, targets=targets)
+
+
+async def remove_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose taking a task, or an occurrence of a repeating task and every later one, out of the plan."""
+    targets, summary = service.task_removal(_str(data, "task_id"), Scope(_str(data, "scope")))
+    return await _propose(service, data, actor, tool="remove_task", summary=summary, targets=targets)
 
 
 async def complete_task(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -1398,7 +1426,24 @@ def _task_json(task: Task, reminders: Reminders) -> JsonObjectType:
         "state": record["state"],
         "note": record["note"],
         "done_at": record["done_at"],
+        "series_id": task.series_id,
     }
+
+
+def _series_json(series: Series) -> JsonObjectType:
+    return {"id": series.id, **series.to_record(), "repeat": series.repeat_text()}
+
+
+def _weekdays(data: Record) -> tuple[Weekday, ...] | None:
+    value = data.get("weekdays")
+    return None if value is None else tuple(Weekday(str(day)) for day in cast(list[JsonValue], value))
+
+
+def _optional_day(data: Record, key: str) -> date | None:
+    """The ISO date, or None when it is missing, empty or null."""
+    if _cleared(data, key) is None:
+        return None
+    return _day(data, key, date.min)
 
 
 def _day(data: Record, key: str, default: date) -> date:
@@ -1981,8 +2026,9 @@ SPECS: tuple[Spec, ...] = (
         title="Get the plan",
         annotations=READ,
         handler=get_plan,
-        description="Tasks from start to end, by day and slot time, with their state and note, and the reminder "
-        "settings. start defaults to today and end to six days later.",
+        description="Tasks from start to end, by day and slot time, with their state and note, the repeating tasks "
+        "and the reminder settings. An occurrence of a repeating task has a series_id and an id of the series id, @ "
+        "and its planned day. start defaults to today and end to six days later.",
         schema={
             p.Optional("start", description="ISO date"): NON_EMPTY,
             p.Optional("end", description="ISO date"): NON_EMPTY,
@@ -2010,13 +2056,17 @@ SPECS: tuple[Spec, ...] = (
         annotations=PROPOSE,
         handler=add_task,
         description="Propose a task on a day. The slot defaults to dose for a product name and an amount in ml, "
-        "such as Bio-CO2 1.5 ml, and to task for anything else. Returns a confirm code; nothing changes until "
-        "tankkeeper__apply_change.",
+        "such as Bio-CO2 1.5 ml, and to task for anything else. Give every_days or weekdays to make it repeat from "
+        "the date, with an optional until. Returns a confirm code; nothing changes until tankkeeper__apply_change.",
         schema={
             p.Required("text"): NON_EMPTY,
-            p.Optional("date", description="ISO date. Defaults to today"): NON_EMPTY,
+            p.Optional("date", description="ISO date. Defaults to today. The first day of a repeating task"): NON_EMPTY,
             p.Optional("slot"): p.In(list(Slot)),
             p.Optional("note"): str,
+            **REPEAT,
+            p.Optional("until", description="ISO date a repeating task ends on. Leave out to repeat with no end"): (
+                NON_EMPTY
+            ),
             **REASON,
             **CONVERSATION,
         },
@@ -2026,15 +2076,22 @@ SPECS: tuple[Spec, ...] = (
         title="Propose task changes",
         annotations=PROPOSE,
         handler=update_task,
-        description="Propose changes to a task, such as a new day, text or state. Returns a confirm code; nothing "
-        "changes until tankkeeper__apply_change.",
+        description="Propose changes to a task, such as a new day, text or state. For an occurrence of a repeating "
+        "task, scope this changes only that one; scope future changes it and every later one, and is the only way "
+        "to change every_days, weekdays or until. A state is for one occurrence only. Returns a confirm code; "
+        "nothing changes until tankkeeper__apply_change.",
         schema={
             p.Required("task_id"): NON_EMPTY,
+            **SCOPE,
             p.Optional("text"): NON_EMPTY,
-            p.Optional("date", description="ISO date"): NON_EMPTY,
+            p.Optional("date", description="ISO date. With scope future, the day the changed series starts"): (
+                NON_EMPTY
+            ),
             p.Optional("slot"): p.In(list(Slot)),
             p.Optional("state"): p.In(list(TaskStatus)),
             p.Optional("note"): str,
+            **REPEAT,
+            p.Optional("until", description="ISO date the repeating task ends on. Empty to repeat with no end"): str,
             **REASON,
             **CONVERSATION,
         },
@@ -2044,9 +2101,10 @@ SPECS: tuple[Spec, ...] = (
         title="Propose removing a task",
         annotations=PROPOSE,
         handler=remove_task,
-        description="Propose taking a task out of the plan. Returns a confirm code; nothing changes until "
-        "tankkeeper__apply_change.",
-        schema={p.Required("task_id"): NON_EMPTY, **REASON, **CONVERSATION},
+        description="Propose taking a task out of the plan. For an occurrence of a repeating task, scope this takes "
+        "out only that one; scope future ends the repeat the day before, keeping the ones already done. Returns a "
+        "confirm code; nothing changes until tankkeeper__apply_change.",
+        schema={p.Required("task_id"): NON_EMPTY, **SCOPE, **REASON, **CONVERSATION},
     ),
     Spec(
         name="set_reminders",
