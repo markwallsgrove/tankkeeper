@@ -106,7 +106,7 @@ Tankkeeper installs through [HACS][hacs] as a custom repository:
 
 1. In HACS, open the menu, choose **Custom repositories**, and add `https://github.com/markwallsgrove/tankkeeper` as an **Integration**.
 2. Download **Tankkeeper**, then restart Home Assistant.
-3. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**.
+3. Go to **Settings > Devices & services > Add integration** and choose **Tankkeeper**. The dialog asks for the tank, then the tap water, products, contents, light and reminders. Skip any step after the tank: Claude can fill it in later.
 
 See [the integration docs](docs/integration.md) for the tools.
 
@@ -118,7 +118,7 @@ After you add Tankkeeper, its device page shows a few sensors, a calendar and a 
 2. **Connect Claude.** Add Home Assistant's MCP server to Claude Code or Claude Desktop. The [Model Context Protocol docs](https://www.home-assistant.io/integrations/mcp_server/) show how.
 3. **Start a new Claude session.** Claude loads the tools when a session starts, so a session that was open before you installed Tankkeeper can't see them.
 4. **Check it works.** Ask Claude *"show me my tank"*. It should answer with the name and volumes you gave.
-5. **Tell Claude about your tank.** Say *"set up my tank"* and tell Claude about your tap water, your products and doses, and your plants, wood and rocks. Already keep notes? Point Claude Code at them.
+5. **Tell Claude about your tank.** If you skipped steps in the dialog, say *"set up my tank"* and tell Claude about your tap water, your products and doses, and your plants, wood and rocks. Already keep notes? Point Claude Code at them.
 
 Then use it as you go:
 

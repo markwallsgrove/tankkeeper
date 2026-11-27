@@ -1,4 +1,4 @@
-"""Set up a tank, change its name and volumes later, and set the reminders and lights in the options."""
+"""Set up a tank step by step, change its name and volumes later, and set the reminders and lights in the options."""
 
 from typing import Any, cast
 
@@ -9,7 +9,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.core import callback
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.selector import (
     ColorRGBSelector,
     DateSelector,
@@ -23,13 +23,16 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     TextSelector,
+    TextSelectorConfig,
     TimeSelector,
 )
+from homeassistant.util.ulid import ulid_now
 import probatio as p
 
-from .const import CONF_DOSING_VOLUME, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
+from .const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .domain import (
     TANK_ID,
+    WATER_ID,
     Collection,
     NothingToChangeError,
     Record,
@@ -39,10 +42,10 @@ from .domain import (
     merge_record,
 )
 from .lights import SWITCH_DOMAINS, Control, Light
-from .plan import Reminders, format_time, parse_time
+from .plan import REMINDERS_ID, Reminders, format_time, parse_time
 from .rules import RuleSettings, Stage
-from .service import Actor, TankkeeperService
-from .tools import planned_light
+from .service import Actor, TankkeeperService, light_target
+from .tools import CONTENT_TYPES, new_content, new_light, new_product, planned_light
 
 NOTIFY_DOMAIN = "notify"
 NOT_DEVICES = frozenset({"send_message", "persistent_notification"})
@@ -62,7 +65,10 @@ CONF_BRIGHTNESS = "brightness_pct"
 CONF_RAMP = "ramp_minutes"
 CONF_RGB = "rgb_color"
 CONF_DATE = "date"
+CONF_TEMPERATURE = "temperature_c"
+CONF_NOTES = "notes"
 LIGHT_STEPS = ["change_light", "one_day", "remove_light"]
+NONE_ADDED = "-"
 
 VOLUME = NumberSelector(
     NumberSelectorConfig(min=1, max=100000, step=1, unit_of_measurement="L", mode=NumberSelectorMode.BOX)
@@ -121,12 +127,72 @@ SCHEMA = p.Schema(
         p.Required(CONF_DOSING_VOLUME): VOLUME,
     }
 )
+NOTES = TextSelector(TextSelectorConfig(multiline=True))
+USER_SCHEMA = SCHEMA.extend(
+    {
+        p.Optional(CONF_TEMPERATURE): NumberSelector(
+            NumberSelectorConfig(min=0, max=40, step=0.5, unit_of_measurement="°C", mode=NumberSelectorMode.BOX)
+        ),
+        p.Optional(CONF_NOTES): NOTES,
+    }
+)
+NOT_NEGATIVE = NumberSelector(NumberSelectorConfig(min=0, max=1000, step="any", mode=NumberSelectorMode.BOX))
+WATER_SCHEMA = p.Schema(
+    {
+        p.Optional("source"): SelectSelector(
+            SelectSelectorConfig(options=["supplier", "tap_test"], translation_key="water_source")
+        ),
+        p.Optional("ph"): PH,
+        p.Optional("gh"): NOT_NEGATIVE,
+        p.Optional("kh"): NOT_NEGATIVE,
+        p.Optional("nitrate"): NOT_NEGATIVE,
+        p.Optional("phosphate"): NOT_NEGATIVE,
+        p.Optional(CONF_NOTES): NOTES,
+    }
+)
+PRODUCT_SCHEMA = p.Schema(
+    {
+        p.Required("name"): TextSelector(),
+        p.Optional("purpose"): TextSelector(),
+        p.Optional("label_amount_ml"): NumberSelector(
+            NumberSelectorConfig(min=0, max=1000, step="any", unit_of_measurement="ml", mode=NumberSelectorMode.BOX)
+        ),
+        p.Optional("label_per_litres"): NumberSelector(
+            NumberSelectorConfig(min=1, max=100000, step="any", unit_of_measurement="L", mode=NumberSelectorMode.BOX)
+        ),
+        p.Optional("label_frequency"): TextSelector(),
+        p.Optional("your_dose"): TextSelector(),
+        p.Optional(CONF_NOTES): NOTES,
+    }
+)
+CONTENT_SCHEMA = p.Schema(
+    {
+        p.Required("type"): SelectSelector(SelectSelectorConfig(options=CONTENT_TYPES, translation_key="content_type")),
+        p.Required("name"): TextSelector(),
+        p.Optional("count"): NumberSelector(
+            NumberSelectorConfig(min=0, max=10000, step=1, mode=NumberSelectorMode.BOX)
+        ),
+        p.Optional("where"): TextSelector(),
+        p.Optional(CONF_NOTES): NOTES,
+    }
+)
 
 
 class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
-    """Ask for the tank's name and volumes."""
+    """Set up a tank in steps: tank, water, products, contents, light and reminders.
+
+    Every step after the tank can be skipped, and Claude can fill in the rest in a conversation.
+    The steps are kept as a draft in the entry, and setup stores them as one panel change.
+    """
 
     VERSION = 1
+
+    def __init__(self) -> None:
+        """Nothing is entered yet."""
+        self._tank: dict[str, Any] = {}
+        self._targets: list[list[Any]] = []
+        self._products: list[str] = []
+        self._contents: list[str] = []
 
     @staticmethod
     @callback
@@ -138,9 +204,136 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         """Start a new tank."""
         errors = _errors(user_input)
         if user_input is not None and not errors:
-            return self.async_create_entry(title=user_input[CONF_TANK_NAME], data=user_input)
+            self._tank = {key: user_input[key] for key in (CONF_TANK_NAME, CONF_VOLUME, CONF_DOSING_VOLUME)}
+            extra = {key: user_input[key] for key in (CONF_TEMPERATURE, CONF_NOTES) if key in user_input}
+            if extra:
+                tank: Record = {
+                    "name": self._tank[CONF_TANK_NAME],
+                    "volume_litres": self._tank[CONF_VOLUME],
+                    "dosing_volume_litres": self._tank[CONF_DOSING_VOLUME],
+                    "temperature_c": None,
+                    "notes": "",
+                    **extra,
+                }
+                self._add(Collection.TANK, TANK_ID, tank)
+            return await self.async_step_how()
         return self.async_show_form(
-            step_id="user", data_schema=self.add_suggested_values_to_schema(SCHEMA, user_input or {}), errors=errors
+            step_id="user",
+            data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input or {}),
+            errors=errors,
+        )
+
+    async def async_step_how(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Go on step by step, or leave the rest to Claude."""
+        return self.async_show_menu(step_id="how", menu_options=["water", "finish"])
+
+    async def async_step_water(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """The tap water values, from the supplier or a test. Leave it empty to skip."""
+        if user_input is None:
+            return self.async_show_form(step_id="water", data_schema=WATER_SCHEMA)
+        if user_input:
+            self._add(Collection.WATER, WATER_ID, dict(user_input))
+        return await self.async_step_products()
+
+    async def async_step_products(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the products added so far."""
+        return self._menu("products", "add_product", "contents", self._products)
+
+    async def async_step_add_product(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a product the tank gets."""
+        if user_input is not None and not str(user_input["name"]).strip():
+            return self._name_required("add_product", PRODUCT_SCHEMA, user_input)
+        if user_input is not None:
+            try:
+                product = new_product(dict(user_input))
+            except TankkeeperError:
+                return self.async_show_form(
+                    step_id="add_product",
+                    data_schema=self.add_suggested_values_to_schema(PRODUCT_SCHEMA, user_input),
+                    errors={"base": "label_dose_incomplete"},
+                )
+            self._add(Collection.PRODUCTS, ulid_now(), product)
+            self._products.append(str(product["name"]))
+            return await self.async_step_products()
+        return self.async_show_form(step_id="add_product", data_schema=PRODUCT_SCHEMA)
+
+    async def async_step_contents(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the contents added so far."""
+        return self._menu("contents", "add_content", "light", self._contents)
+
+    async def async_step_add_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a plant, fish, rock or anything else in the tank."""
+        if user_input is not None and not str(user_input["name"]).strip():
+            return self._name_required("add_content", CONTENT_SCHEMA, user_input)
+        if user_input is not None:
+            data = dict(user_input)
+            if "count" in data:
+                data["count"] = int(data["count"])
+            content = new_content(data)
+            self._add(Collection.CONTENTS, ulid_now(), content)
+            self._contents.append(str(content["name"]))
+            return await self.async_step_contents()
+        return self.async_show_form(step_id="add_content", data_schema=CONTENT_SCHEMA)
+
+    async def async_step_light(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer to add the tank light."""
+        return self.async_show_menu(step_id="light", menu_options=["add_light", "reminders"])
+
+    async def async_step_add_light(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add the tank light. Tankkeeper switches it on its schedule."""
+        if user_input is not None:
+            try:
+                target = light_target(self.hass, new_light(_light_data(user_input)), [])
+            except TankkeeperError as err:
+                return self.async_show_form(
+                    step_id="add_light",
+                    data_schema=self.add_suggested_values_to_schema(LIGHT_SCHEMA, user_input),
+                    errors={"base": "invalid_light"},
+                    description_placeholders={"error": err.message},
+                )
+            self._add(*target)
+            return await self.async_step_reminders()
+        return self.async_show_form(step_id="add_light", data_schema=LIGHT_SCHEMA)
+
+    async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Offer to set the reminders."""
+        return self.async_show_menu(step_id="reminders", menu_options=["set_reminders", "finish"])
+
+    async def async_step_set_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Which devices get reminders, and when."""
+        if user_input is not None:
+            self._add(Collection.SETTINGS, REMINDERS_ID, _reminders_from(user_input).to_json())
+            return await self.async_step_finish()
+        current = Reminders()
+        return self.async_show_form(
+            step_id="set_reminders",
+            data_schema=self.add_suggested_values_to_schema(
+                _reminders_schema(_notify_devices(self.hass, current)), _reminder_values(current)
+            ),
+        )
+
+    async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create the tank. Setup stores the steps as one change."""
+        data = dict(self._tank)
+        if self._targets:
+            data[CONF_SETUP] = self._targets
+        return self.async_create_entry(title=self._tank[CONF_TANK_NAME], data=data)
+
+    def _name_required(self, step_id: str, schema: p.Schema, user_input: dict[str, Any]) -> ConfigFlowResult:
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(schema, user_input),
+            errors={"name": "name_required"},
+        )
+
+    def _add(self, collection: Collection, record_id: str, record: Record | None) -> None:
+        self._targets.append([collection.value, record_id, record])
+
+    def _menu(self, step_id: str, add: str, next_step: str, added: list[str]) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id=step_id,
+            menu_options=[add, next_step],
+            description_placeholders={"added": ", ".join(added) or NONE_ADDED},
         )
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -198,44 +391,15 @@ class TankkeeperOptionsFlow(OptionsFlow):
         service = self._service()
         current = service.reminders()
         if user_input is not None:
-            reminders = Reminders(
-                notify=tuple(user_input[CONF_NOTIFY]),
-                task_time=parse_time(user_input[CONF_TASK_TIME]),
-                dose_time=parse_time(user_input[CONF_DOSE_TIME]),
-                resend_time=parse_time(user_input[CONF_RESEND_TIME]),
-                status_notify=tuple(user_input.get(CONF_STATUS_NOTIFY, [])),
-            )
+            reminders = _reminders_from(user_input)
             try:
                 await service.async_set(service.reminder_targets(reminders), _panel(), "Change the reminders")
             except NothingToChangeError:
                 return self.async_abort(reason="nothing_changed")
             return self.async_create_entry(data={})
-        devices = sorted(
-            set(self.hass.services.async_services_for_domain(NOTIFY_DOMAIN)) - NOT_DEVICES
-            | set(current.notify)
-            | set(current.status_notify)
-        )
-        pick_devices = SelectSelector(
-            SelectSelectorConfig(options=devices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
-        )
-        schema = p.Schema(
-            {
-                p.Required(CONF_NOTIFY): pick_devices,
-                p.Required(CONF_TASK_TIME): TimeSelector(),
-                p.Required(CONF_DOSE_TIME): TimeSelector(),
-                p.Required(CONF_RESEND_TIME): TimeSelector(),
-                p.Optional(CONF_STATUS_NOTIFY): pick_devices,
-            }
-        )
-        suggested = {
-            CONF_NOTIFY: list(current.notify),
-            CONF_TASK_TIME: format_time(current.task_time),
-            CONF_DOSE_TIME: format_time(current.dose_time),
-            CONF_RESEND_TIME: format_time(current.resend_time),
-            CONF_STATUS_NOTIFY: list(current.status_notify),
-        }
+        schema = _reminders_schema(_notify_devices(self.hass, current))
         return self.async_show_form(
-            step_id="reminders", data_schema=self.add_suggested_values_to_schema(schema, suggested)
+            step_id="reminders", data_schema=self.add_suggested_values_to_schema(schema, _reminder_values(current))
         )
 
     async def async_step_rules(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -359,6 +523,50 @@ class TankkeeperOptionsFlow(OptionsFlow):
                 description_placeholders={"error": err.message},
             )
         return self.async_create_entry(data={})
+
+
+def _notify_devices(hass: HomeAssistant, current: Reminders) -> list[str]:
+    """The notify services that can get reminders, and the ones already picked."""
+    return sorted(
+        set(hass.services.async_services_for_domain(NOTIFY_DOMAIN)) - NOT_DEVICES
+        | set(current.notify)
+        | set(current.status_notify)
+    )
+
+
+def _reminders_schema(devices: list[str]) -> p.Schema:
+    pick_devices = SelectSelector(
+        SelectSelectorConfig(options=devices, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+    )
+    return p.Schema(
+        {
+            p.Required(CONF_NOTIFY): pick_devices,
+            p.Required(CONF_TASK_TIME): TimeSelector(),
+            p.Required(CONF_DOSE_TIME): TimeSelector(),
+            p.Required(CONF_RESEND_TIME): TimeSelector(),
+            p.Optional(CONF_STATUS_NOTIFY): pick_devices,
+        }
+    )
+
+
+def _reminder_values(current: Reminders) -> dict[str, Any]:
+    return {
+        CONF_NOTIFY: list(current.notify),
+        CONF_TASK_TIME: format_time(current.task_time),
+        CONF_DOSE_TIME: format_time(current.dose_time),
+        CONF_RESEND_TIME: format_time(current.resend_time),
+        CONF_STATUS_NOTIFY: list(current.status_notify),
+    }
+
+
+def _reminders_from(user_input: dict[str, Any]) -> Reminders:
+    return Reminders(
+        notify=tuple(user_input[CONF_NOTIFY]),
+        task_time=parse_time(user_input[CONF_TASK_TIME]),
+        dose_time=parse_time(user_input[CONF_DOSE_TIME]),
+        resend_time=parse_time(user_input[CONF_RESEND_TIME]),
+        status_notify=tuple(user_input.get(CONF_STATUS_NOTIFY, [])),
+    )
 
 
 def _panel() -> Actor:

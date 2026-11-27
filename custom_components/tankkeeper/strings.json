@@ -3,16 +3,20 @@
     "step": {
       "user": {
         "title": "Your tank",
-        "description": "Name the tank and give its two volumes. Claude can fill in the rest in a conversation.",
+        "description": "Step 1 of 6. Name the tank and give its two volumes. Every later step can be skipped: Claude can fill in the rest in a conversation.",
         "data": {
           "tank_name": "Name",
           "volume_litres": "What's the volume of your tank?",
-          "dosing_volume_litres": "What's the volume of water in your tank?"
+          "dosing_volume_litres": "What's the volume of water in your tank?",
+          "temperature_c": "Temperature",
+          "notes": "Notes"
         },
         "data_description": {
           "tank_name": "What you call the tank, for example Office tank.",
           "volume_litres": "In litres, as given on the box or by the maker.",
-          "dosing_volume_litres": "In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank."
+          "dosing_volume_litres": "In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank.",
+          "temperature_c": "The target temperature, in °C. Leave empty if you don't know it.",
+          "notes": "Anything Claude should know about the tank, in your own words."
         }
       },
       "reconfigure": {
@@ -28,10 +32,146 @@
           "volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::volume_litres%]",
           "dosing_volume_litres": "[%key:component::tankkeeper::config::step::user::data_description::dosing_volume_litres%]"
         }
+      },
+      "how": {
+        "title": "Go on, or leave it to Claude",
+        "description": "Add the water, products, contents, light and reminders now, or finish and let Claude ask about them in a conversation.",
+        "menu_options": {
+          "water": "Go on step by step",
+          "finish": "Finish now"
+        }
+      },
+      "water": {
+        "title": "Tap water",
+        "description": "Step 2 of 6. The values of the water you fill the tank with, from your water supplier or a test. Leave everything empty to skip.",
+        "data": {
+          "source": "Where the values come from",
+          "ph": "pH",
+          "gh": "GH",
+          "kh": "KH",
+          "nitrate": "Nitrate",
+          "phosphate": "Phosphate",
+          "notes": "Notes"
+        },
+        "data_description": {
+          "gh": "General hardness, in dGH.",
+          "kh": "Carbonate hardness, in dKH.",
+          "nitrate": "In mg/l.",
+          "phosphate": "In mg/l."
+        }
+      },
+      "products": {
+        "title": "Products",
+        "description": "Step 3 of 6. Fertilisers, water conditioners and other products the tank gets. Added: {added}",
+        "menu_options": {
+          "add_product": "Add a product",
+          "contents": "Next: contents"
+        }
+      },
+      "add_product": {
+        "title": "Add a product",
+        "description": "Give the dose from the label to have doses worked out for your tank.",
+        "data": {
+          "name": "Name",
+          "purpose": "What it is for",
+          "label_amount_ml": "Label dose",
+          "label_per_litres": "For this much water",
+          "label_frequency": "How often",
+          "your_dose": "Your dose",
+          "notes": "Notes"
+        },
+        "data_description": {
+          "label_amount_ml": "The dose on the label, in ml. Give both label values or neither.",
+          "label_per_litres": "The volume of water the label dose is for, in litres.",
+          "label_frequency": "How often the label says to dose, for example weekly.",
+          "your_dose": "The dose you use, in your own words, if it is not the label dose."
+        }
+      },
+      "contents": {
+        "title": "Contents",
+        "description": "Step 4 of 6. Plants, fish, rocks, wood and anything else in the tank. Added: {added}",
+        "menu_options": {
+          "add_content": "Add something",
+          "light": "Next: light"
+        }
+      },
+      "add_content": {
+        "title": "Add something in the tank",
+        "data": {
+          "type": "Type",
+          "name": "Name",
+          "count": "How many",
+          "where": "Where",
+          "notes": "Notes"
+        },
+        "data_description": {
+          "where": "Where it sits in the tank, for example back left."
+        }
+      },
+      "light": {
+        "title": "Light",
+        "description": "Step 5 of 6. Tankkeeper can switch the tank light on a schedule.",
+        "menu_options": {
+          "add_light": "Add the light",
+          "reminders": "Skip: no light"
+        }
+      },
+      "add_light": {
+        "title": "Add the light",
+        "description": "Tankkeeper switches the light on its schedule.",
+        "data": {
+          "entity_id": "Entity",
+          "model": "Model",
+          "control": "Control",
+          "on": "On",
+          "off": "Off",
+          "brightness_pct": "Brightness",
+          "ramp_minutes": "Ramp",
+          "rgb_color": "Colour"
+        },
+        "data_description": {
+          "entity_id": "The light or switch that powers the tank light.",
+          "model": "The light's make and model.",
+          "control": "On/off works with a switch. Dimmable and colour need a light entity.",
+          "on": "When the light turns on each day.",
+          "off": "When the light turns off, on the same day.",
+          "brightness_pct": "Dimmable and colour lights only. Leave empty for the light's own brightness.",
+          "ramp_minutes": "Dimmable and colour lights only. Minutes to fade in at on and fade out at off.",
+          "rgb_color": "Colour lights only. Leave empty for the light's own colour."
+        }
+      },
+      "reminders": {
+        "title": "Reminders",
+        "description": "Step 6 of 6. Tankkeeper can send reminders for tasks and doses, with Complete and Skip buttons.",
+        "menu_options": {
+          "set_reminders": "Set the reminders",
+          "finish": "Skip and finish"
+        }
+      },
+      "set_reminders": {
+        "title": "Reminders",
+        "description": "Which devices get reminders, and when.",
+        "data": {
+          "notify": "Devices",
+          "task_time": "Task time",
+          "dose_time": "Dose time",
+          "resend_time": "Resend time",
+          "status_notify": "Status alert devices"
+        },
+        "data_description": {
+          "notify": "Notify services that get a reminder with Complete and Skip buttons. Use the Home Assistant app on a phone or tablet for the buttons.",
+          "task_time": "When tasks are due. Open tasks from the last week are followed up at this time.",
+          "dose_time": "When doses are due when no light is set. With a light, doses are due when the light turns on.",
+          "resend_time": "When tasks still open today are sent again.",
+          "status_notify": "Notify services that get a message when the status changes to Watch or Act, once when it is back on course, and when a proposal is still waiting."
+        }
       }
     },
     "error": {
-      "dosing_above_volume": "The volume of water can't be larger than the volume of the tank."
+      "dosing_above_volume": "The volume of water can't be larger than the volume of the tank.",
+      "label_dose_incomplete": "The label dose needs both the dose in ml and the volume of water it is for.",
+      "invalid_light": "{error}",
+      "name_required": "Give a name."
     },
     "abort": {
       "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]",
@@ -250,6 +390,23 @@
       "options": {
         "cycling": "Cycling",
         "cycled": "Cycled"
+      }
+    },
+    "water_source": {
+      "options": {
+        "supplier": "Water supplier",
+        "tap_test": "My own test"
+      }
+    },
+    "content_type": {
+      "options": {
+        "plant": "Plant",
+        "rock": "Rock",
+        "wood": "Wood",
+        "substrate": "Substrate",
+        "decoration": "Decoration",
+        "fish": "Fish",
+        "other": "Other"
       }
     }
   }

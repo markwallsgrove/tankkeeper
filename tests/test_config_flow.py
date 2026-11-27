@@ -35,7 +35,8 @@ async def test_user_step_creates_the_tank(hass: HomeAssistant) -> None:
     assert form["type"] is FlowResultType.FORM
     assert form["step_id"] == "user"
 
-    result = await hass.config_entries.flow.async_configure(form["flow_id"], NEW_DETAILS)
+    menu = await hass.config_entries.flow.async_configure(form["flow_id"], NEW_DETAILS)
+    result = await hass.config_entries.flow.async_configure(menu["flow_id"], {"next_step_id": "finish"})
     await hass.async_block_till_done()
 
     assert result["type"] is FlowResultType.CREATE_ENTRY

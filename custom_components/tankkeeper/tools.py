@@ -407,9 +407,9 @@ async def record_test(service: TankkeeperService, data: Record, actor: Actor) ->
     return {**recorded, "status": service.status().to_json()}
 
 
-async def add_content(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Add a plant, rock or anything else that went into the tank."""
-    content: Record = {
+def new_content(data: Record) -> Record:
+    """A contents record from add_content arguments. Setup uses it too."""
+    return {
         "type": data["type"],
         "name": data["name"],
         "count": data.get("count"),
@@ -418,6 +418,11 @@ async def add_content(service: TankkeeperService, data: Record, actor: Actor) ->
         "removed": None,
         "notes": data.get("notes", ""),
     }
+
+
+async def add_content(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Add a plant, rock or anything else that went into the tank."""
+    content = new_content(data)
     return _recorded(await service.async_record(Collection.CONTENTS, content, actor, f"Added {data['name']}"))
 
 
@@ -475,8 +480,8 @@ async def set_water(service: TankkeeperService, data: Record, actor: Actor) -> J
     )
 
 
-async def add_product(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """Propose a new product."""
+def new_product(data: Record) -> Record:
+    """A product record from add_product arguments, or InvalidInputError. Setup uses it too."""
     product: Record = {
         "name": data["name"],
         "purpose": "",
@@ -485,7 +490,12 @@ async def add_product(service: TankkeeperService, data: Record, actor: Actor) ->
         "notes": "",
         "links": [],
     }
-    product = _product_with(product, data)
+    return _product_with(product, data)
+
+
+async def add_product(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Propose a new product."""
+    product = new_product(data)
     return await _propose(
         service,
         data,
@@ -970,7 +980,7 @@ def planned_light(service: TankkeeperService, data: Record) -> tuple[Light, str]
     """The light after a set_light action, and the summary of the change. The options flow uses it too."""
     action = _str(data, "action")
     if action == "add":
-        light = _new_light(data)
+        light = new_light(data)
         return light, light_add_summary(light)
     light_id = _optional_str(data, "light_id")
     if light_id is None:
@@ -978,7 +988,8 @@ def planned_light(service: TankkeeperService, data: Record) -> tuple[Light, str]
     return _changed_light(service.light(light_id), action, data)
 
 
-def _new_light(data: Record) -> Light:
+def new_light(data: Record) -> Light:
+    """A light from set_light add arguments, or InvalidInputError. Setup uses it too."""
     missing = [key for key in ("entity_id", "model", "on", "off") if key not in data]
     if missing:
         raise InvalidInputError(f"A new light needs {', '.join(missing)}")
