@@ -122,9 +122,7 @@ describe("tk-camera", () => {
 
     expect(text(element)).toContain("No camera is set.");
     expect(findAll(element, "button.check")).toEqual([]);
-    expect(find(element, "#camera ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit camera settings",
-    );
+    expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
   });
 
   it("checks now and tells the other views", async () => {
@@ -202,16 +200,14 @@ describe("tk-camera", () => {
     expect(findAll(element, "button.photos").length).toBe(1);
   });
 
-  it("shows the settings read-only, with a cog and their history", async () => {
+  it("shows the settings read-only, with their history and no cog", async () => {
     const element = await view(connection());
 
     const card = find(element, "#camera");
     expect(text(card)).toContain("Camera entity, such as a Tapo C100 camera.tapo_c100");
     expect(text(card)).toContain("Alert me about issues");
     expect(findAll(card, "tk-form")).toEqual([]);
-    expect(find(card, "ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit camera settings",
-    );
+    expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
     const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
     expect([history.collection, history.recordId]).toEqual(["settings", "camera"]);
   });

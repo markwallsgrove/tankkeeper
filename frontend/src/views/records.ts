@@ -2,7 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
-import { cog, historyDetails } from "../settings";
+import { historyDetails } from "../settings";
 import { saveAndClear } from "../tk-form";
 import "../tk-history";
 import type { Field, Values } from "../types";
@@ -25,7 +25,6 @@ interface Edit {
 /** A kind of record. A setting changes in the options and is read-only here; the rest carry an Edit. */
 interface Kind {
   title: string;
-  setting?: string;
   edit?: Edit;
   collection: string;
   list: string;
@@ -52,7 +51,6 @@ function labelDose(item: Item): LabelDose {
 const KINDS: Record<string, Kind> = {
   products: {
     title: "Products",
-    setting: "product",
     collection: "products",
     list: "list_products",
     key: "products",
@@ -78,7 +76,6 @@ const KINDS: Record<string, Kind> = {
   },
   contents: {
     title: "Contents",
-    setting: "content",
     collection: "contents",
     list: "list_contents",
     key: "contents",
@@ -234,7 +231,6 @@ export class TkRecords extends TkView {
       <section>
         <div class="row">
           <h2 class="grow">${config.title}</h2>
-          ${config.setting === undefined ? nothing : cog(config.setting, this.api)}
           ${
             config.canShowRemoved
               ? html`<label class="muted"

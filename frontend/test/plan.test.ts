@@ -138,7 +138,7 @@ describe("tk-plan", () => {
     expect(conn.types()).not.toContain("tankkeeper/add_task");
   });
 
-  it("shows the reminders read-only, with a cog and their history", async () => {
+  it("shows the reminders read-only, with their history and no cog", async () => {
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
     await settle(element);
 
@@ -147,9 +147,7 @@ describe("tk-plan", () => {
     expect(text(card)).toContain("Notify services for status alerts Not set");
     expect(text(card)).toContain("Task reminder time 09:00");
     expect(findAll(card, "tk-form")).toEqual([]);
-    expect(find(card, "ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit reminder settings",
-    );
+    expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
     const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
     expect([history.collection, history.recordId]).toEqual(["settings", "reminders"]);
   });

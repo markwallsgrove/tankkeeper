@@ -4,7 +4,7 @@ import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
 import { cycleChart, lightRows, parameterCharts, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
-import { facts, historyDetails, settingsHeader } from "../settings";
+import { facts, historyDetails } from "../settings";
 import "./camera";
 import type {
   Field,
@@ -130,19 +130,18 @@ export class TkOverview extends TkView {
     if (await this.run(action)) this.changed();
   }
 
-  /** A card of settings, read-only, with a cog to change them and their history. */
+  /** A card of settings, read-only, with their history. */
   private settingsCard(
     id: string,
     title: string,
-    what: string,
     fields: Field[],
     values: object,
     collection: string,
     recordId: string,
   ): TemplateResult {
     return html`<section id=${id}>
-      ${settingsHeader(title, what, this.api)} ${facts(fields, values)}
-      ${historyDetails(this.api, collection, recordId, this.version)}
+      <h2>${title}</h2>
+      ${facts(fields, values)} ${historyDetails(this.api, collection, recordId, this.version)}
     </section>`;
   }
 
@@ -323,10 +322,10 @@ export class TkOverview extends TkView {
           )}
         </ul>
       </section>
-      ${this.settingsCard("tank", "Tank", "tank", TANK_FIELDS, tank.tank, "tank", "tank")}
-      ${this.settingsCard("water", "Water", "water", WATER_FIELDS, tank.water ?? {}, "water", "water")}
+      ${this.settingsCard("tank", "Tank", TANK_FIELDS, tank.tank, "tank", "tank")}
+      ${this.settingsCard("water", "Water", WATER_FIELDS, tank.water ?? {}, "water", "water")}
       <section id="light">
-        ${settingsHeader("Light", "light", this.api)}
+        <h2>Light</h2>
         ${lights.lights.length === 0 ? html`<p class="muted">No lights yet</p>` : nothing}
         ${
           lights.next_change === null
@@ -341,7 +340,7 @@ export class TkOverview extends TkView {
           )}
         </ul>
       </section>
-      ${this.settingsCard("rules", "Rule limits", "rule", RULE_FIELDS, status.settings, "settings", "rules")}
+      ${this.settingsCard("rules", "Rule limits", RULE_FIELDS, status.settings, "settings", "rules")}
       <tk-camera .api=${this.api} .stamp=${this.version}></tk-camera>
     `;
   }

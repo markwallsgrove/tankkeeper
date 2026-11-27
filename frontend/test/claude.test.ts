@@ -63,9 +63,7 @@ describe("tk-claude", () => {
       recordId: string;
     };
     expect([history.collection, history.recordId]).toEqual(["settings", "claude"]);
-    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit Claude settings",
-    );
+    expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
   });
 
   it("shows why the settings could not load", async () => {

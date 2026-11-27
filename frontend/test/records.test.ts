@@ -93,15 +93,13 @@ describe("tk-records for products", () => {
     expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
-  it("shows products read-only, with a cog and each product's history", async () => {
+  it("shows products read-only, with each product's history and no cog", async () => {
     const conn = connection();
     const element = await records("products", conn);
 
     expect(findAll(element, "tk-form, button")).toEqual([]);
     expect(text(element)).not.toContain("Add");
-    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit product settings",
-    );
+    expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
     const history = find(element, "li[data-id=p1] tk-history") as unknown as {
       collection: string;
       recordId: string;
@@ -191,9 +189,7 @@ describe("tk-records for contents and notes", () => {
     expect(text(element)).toContain("Fern");
     expect(text(element)).toContain("plant · 2 · Back · added 2026-11-20");
     expect(findAll(element, "tk-form, button")).toEqual([]);
-    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
-      "Edit content settings",
-    );
+    expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
   });
 
   it("adds, edits and removes notes with the panel's actions", async () => {

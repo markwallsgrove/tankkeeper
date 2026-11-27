@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { afterEach, describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
-import { COG, facts, openSettings, settingsHeader, settingsUrl } from "../src/settings";
+import { COG, facts, openSettings, settingsButton, settingsUrl } from "../src/settings";
 import type { Field } from "../src/types";
 import { FakeConnection } from "./fake";
 
@@ -17,18 +17,23 @@ const FIELDS: Field[] = [
   { name: "dose", label: "Dose", type: "text" },
 ];
 
+const listeners: EventListener[] = [];
+
 function navigations(): string[] {
   const seen: string[] = [];
-  window.addEventListener("location-changed", (event) => {
+  const listen = (event: Event): void => {
     const detail = (event as CustomEvent<{ replace: boolean }>).detail;
     seen.push(
       `${window.location.pathname}${window.location.hash} replace=${String(detail.replace)}`,
     );
-  });
+  };
+  window.addEventListener("location-changed", listen);
+  listeners.push(listen);
   return seen;
 }
 
 afterEach(() => {
+  for (const listen of listeners.splice(0)) window.removeEventListener("location-changed", listen);
   history.replaceState(null, "", "/");
 });
 
@@ -59,17 +64,16 @@ describe("openSettings", () => {
   });
 });
 
-describe("settingsHeader", () => {
-  it("is the card title with a cog that opens the tank's settings", () => {
+describe("settingsButton", () => {
+  it("is a cog that opens the tank's settings", () => {
     const seen = navigations();
     const host = document.createElement("div");
     const api = new TankkeeperApi(new FakeConnection(), "UTC", "entry1");
 
-    render(settingsHeader("Tank", "tank", api), host);
+    render(settingsButton(api), host);
     const cog = host.querySelector("ha-icon-button.settings");
 
-    expect(host.querySelector("h2")?.textContent).toBe("Tank");
-    expect(cog?.getAttribute("label")).toBe("Edit tank settings");
+    expect(cog?.getAttribute("label")).toBe("TankKeeper settings");
     expect((cog as unknown as { path: string }).path).toBe(COG);
     (cog as HTMLElement).click();
     expect(seen.at(-1)).toBe(
@@ -81,7 +85,7 @@ describe("settingsHeader", () => {
     const seen = navigations();
     const host = document.createElement("div");
 
-    render(settingsHeader("Rules", "rule", undefined), host);
+    render(settingsButton(undefined), host);
     host.querySelector<HTMLElement>("ha-icon-button")?.click();
 
     expect(seen.at(-1)).toBe("/config/integrations/integration/tankkeeper replace=false");
