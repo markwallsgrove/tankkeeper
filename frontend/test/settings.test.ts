@@ -128,4 +128,15 @@ describe("facts", () => {
     ]);
     expect(host.querySelectorAll("input, textarea, select, button").length).toBe(0);
   });
+
+  it("puts long text under its label, across the whole width", () => {
+    const host = document.createElement("div");
+
+    render(facts(FIELDS, { name: "Nano", notes: "Cycling since 21 Nov" }), host);
+
+    const wide = [...host.querySelectorAll(".wide")].map(
+      (item) => `${item.tagName}:${item.textContent}`,
+    );
+    expect(wide).toEqual(["DT:Notes", "DD:Cycling since 21 Nov"]);
+  });
 });
