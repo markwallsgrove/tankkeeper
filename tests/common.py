@@ -6,6 +6,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.helpers.llm import LLMContext, ToolInput, ToolResult
 from homeassistant.util.json import JsonObjectType, JsonValueType
+from pytest_homeassistant_custom_component.typing import MockHAClientWebSocket
 
 from custom_components.tankkeeper.const import API_ID
 
@@ -114,3 +115,38 @@ def str_of(value: JsonValueType) -> str:
 async def apply(caller: Caller, proposal: JsonObjectType) -> JsonObjectType:
     """Apply a proposal with its code, as after the owner says yes."""
     return await caller.ok("apply_change", proposal_id=proposal["proposal_id"], code=proposal["code"])
+
+
+class Panel:
+    """Sends commands the way the panel does, one id after another."""
+
+    def __init__(self, client: MockHAClientWebSocket) -> None:
+        """Talk over one connection."""
+        self.client = client
+
+    async def response(self, command: str, message: JsonObjectType) -> JsonObjectType:
+        """Send a command and return the whole response."""
+        await self.client.send_json_auto_id({"type": f"tankkeeper/{command}", **message})
+        return dict_of(await self.client.receive_json())
+
+    async def ok(self, command: str, /, **args: JsonValueType) -> JsonObjectType:
+        """Call a tool that must succeed, and return its result."""
+        return await self.ok_message(command, {"args": args})
+
+    async def ok_message(self, command: str, message: JsonObjectType) -> JsonObjectType:
+        """Send a panel command that must succeed, and return its result."""
+        response = await self.response(command, message)
+        assert response["success"], response
+        return dict_of(response["result"])
+
+    async def error(self, command: str, /, **args: JsonValueType) -> str:
+        """Call a tool that must fail, and return the error code."""
+        return await self.error_message(command, {"args": args})
+
+    async def error_message(self, command: str, message: JsonObjectType) -> str:
+        """Send a panel command that must fail, and return the error code."""
+        response = await self.response(command, message)
+        assert not response["success"], response
+        error = dict_of(response["error"])
+        assert isinstance(error["message"], str)
+        return str_of(error["code"])

@@ -1,6 +1,7 @@
 """Shared fixtures."""
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
@@ -18,6 +19,12 @@ pytest_plugins = ["pytest_homeassistant_custom_component"]
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Let Home Assistant load Tankkeeper from custom_components."""
+
+
+@pytest.fixture(autouse=True)
+def own_config_dir(hass: HomeAssistant, tmp_path: Path) -> None:
+    """Keep each test's files, such as photos, in its own folder."""
+    hass.config.config_dir = str(tmp_path)
 
 
 @pytest.fixture(autouse=True)

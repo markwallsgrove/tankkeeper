@@ -11,10 +11,12 @@ from homeassistant.helpers.llm import async_register_api
 from homeassistant.helpers.typing import ConfigType
 
 from . import panel, websocket
+from .camera_runner import CameraRunner
 from .const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, DOMAIN
 from .domain import Collection, NothingToChangeError, Record, Source
 from .light_control import LightRunner
 from .llm import TankkeeperAPI
+from .photo_view import PhotoView
 from .proposal_notify import ProposalNotifier
 from .reminders import ReminderSender
 from .reviewer import ReviewRunner
@@ -35,8 +37,9 @@ type TankkeeperConfigEntry = ConfigEntry[TankkeeperService]
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the panel's websocket commands."""
+    """Register the panel's websocket commands and the photo view."""
     websocket.async_register(hass)
+    hass.http.register_view(PhotoView())
     return True
 
 
@@ -61,6 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(StatusRunner(hass, service).start())
     entry.async_on_unload(ReviewRunner(hass, service).start())
     entry.async_on_unload(ProposalNotifier(hass, service).start())
+    entry.async_on_unload(CameraRunner(hass, service).start())
     entry.async_on_unload(await panel.async_register(hass))
     return True
 

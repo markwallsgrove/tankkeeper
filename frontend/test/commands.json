@@ -205,6 +205,30 @@
       "review_on"
     ]
   },
+  "get_camera": {
+    "required": [],
+    "optional": []
+  },
+  "set_camera": {
+    "required": [],
+    "optional": ["after_test", "alerts", "camera", "check_time", "evidence", "keep_days", "reason"]
+  },
+  "check_now": {
+    "required": [],
+    "optional": []
+  },
+  "get_photo": {
+    "required": [],
+    "optional": []
+  },
+  "list_photos": {
+    "required": [],
+    "optional": ["limit"]
+  },
+  "dismiss_finding": {
+    "required": ["check_id"],
+    "optional": []
+  },
   "list_decisions": {
     "required": [],
     "optional": ["status"]

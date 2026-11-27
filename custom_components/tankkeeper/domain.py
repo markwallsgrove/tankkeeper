@@ -59,6 +59,7 @@ class Source(StrEnum):
     RULE = "rule"
     NOTIFICATION = "notification"
     REVIEW = "review"
+    CAMERA = "camera"
 
 
 class ProposalState(StrEnum):
@@ -96,6 +97,18 @@ class InvalidInputError(TankkeeperError):
     """An argument the schema accepts but the records can't use."""
 
     key = "invalid_input"
+
+
+class LightsOffError(TankkeeperError):
+    """Every tank light is off, and the camera sees nothing in the dark."""
+
+    key = "lights_off"
+
+
+class FindingClosedError(TankkeeperError):
+    """The photo check has no open issue."""
+
+    key = "finding_closed"
 
 
 class RecordChangedError(TankkeeperError):
@@ -440,7 +453,7 @@ class Conversation:
 
 @dataclass(slots=True)
 class TankState:
-    """Every record, the history, proposals, conversations and reviews of one tank, and the lights' on/off log."""
+    """Every record of one tank, with its history, proposals, conversations, reviews, photo checks and light log."""
 
     records: dict[Collection, dict[str, Record]] = field(
         default_factory=lambda: {collection: {} for collection in Collection}
@@ -450,6 +463,7 @@ class TankState:
     conversations: dict[str, Conversation] = field(default_factory=dict)
     light_log: list[Record] = field(default_factory=list)
     reviews: list[Record] = field(default_factory=list)
+    photo_checks: list[Record] = field(default_factory=list)
 
     def get(self, collection: Collection, record_id: str) -> Record | None:
         """The record, or None when it does not exist."""
@@ -492,6 +506,7 @@ class TankState:
             "conversations": [conversation.to_json() for conversation in self.conversations.values()],
             "light_log": list(self.light_log),
             "reviews": list(self.reviews),
+            "photo_checks": list(self.photo_checks),
         }
 
     @classmethod
@@ -513,6 +528,7 @@ class TankState:
             conversations={conversation.id: conversation for conversation in conversations},
             light_log=[_record(item) for item in _list(data.get("light_log", []))],
             reviews=[_record(item) for item in _list(data.get("reviews", []))],
+            photo_checks=[_record(item) for item in _list(data.get("photo_checks", []))],
         )
 
 
@@ -734,6 +750,7 @@ def batch_view(state: TankState, proposal: Proposal) -> TankState:
         conversations=state.conversations,
         light_log=state.light_log,
         reviews=state.reviews,
+        photo_checks=state.photo_checks,
     )
 
 
@@ -898,10 +915,15 @@ def changes_in_conversation(state: TankState, conversation_id: str) -> list[Hist
 
 def without_codes(value: JsonValue) -> JsonValue:
     """The value with every confirm code, its expiry and the step that uses it left out, at any depth."""
+    return without_keys(value, CODE_KEYS)
+
+
+def without_keys(value: JsonValue, keys: frozenset[str]) -> JsonValue:
+    """The value with the given keys left out, at any depth."""
     if isinstance(value, dict):
-        return {key: without_codes(item) for key, item in value.items() if key not in CODE_KEYS}
+        return {key: without_keys(item, keys) for key, item in value.items() if key not in keys}
     if isinstance(value, list):
-        return [without_codes(item) for item in value]
+        return [without_keys(item, keys) for item in value]
     return value
 
 

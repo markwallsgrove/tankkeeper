@@ -1,6 +1,6 @@
 """Set up a tank step by step and change its name and volumes later.
 
-The options set the reminders, the rules, Claude and the lights.
+The options set the reminders, the rules, Claude, the camera and the lights.
 """
 
 from typing import Any, cast
@@ -49,6 +49,7 @@ from .domain import (
     merge_record,
 )
 from .lights import SWITCH_DOMAINS, Control, Light
+from .photos import CAMERA_DOMAIN, MAX_KEEP_DAYS, CameraSettings
 from .plan import REMINDERS_ID, Reminders, format_time, parse_time
 from .rules import RuleSettings, Stage
 from .service import Actor, TankkeeperService, light_target
@@ -80,6 +81,11 @@ CONF_RGB = "rgb_color"
 CONF_DATE = "date"
 CONF_TEMPERATURE = "temperature_c"
 CONF_NOTES = "notes"
+CONF_CAMERA = "camera"
+CONF_CHECK_TIME = "check_time"
+CONF_AFTER_TEST = "after_test"
+CONF_ALERTS = "alerts"
+CONF_KEEP_DAYS = "keep_days"
 LIGHT_STEPS = ["change_light", "one_day", "remove_light"]
 NONE_ADDED = "-"
 
@@ -412,7 +418,7 @@ class TankkeeperOptionsFlow(OptionsFlow):
         if self.config_entry.state is not ConfigEntryState.LOADED:
             return self.async_abort(reason="not_loaded")
         service: TankkeeperService = self.config_entry.runtime_data
-        steps = ["reminders", "rules", "claude", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
+        steps = ["reminders", "rules", "claude", "camera", "add_light", *(LIGHT_STEPS if service.has_lights() else [])]
         return self.async_show_menu(step_id="init", menu_options=steps)
 
     async def async_step_reminders(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -541,6 +547,29 @@ class TankkeeperOptionsFlow(OptionsFlow):
             return _claude_form(self, "claude", user_input, err)
         return self.async_create_entry(data={})
 
+    async def async_step_camera(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Show the camera settings, and store them through the service layer."""
+        service = self._service()
+        if user_input is None:
+            return self._camera_form(_camera_values(service.camera()))
+        try:
+            await service.async_set(
+                service.camera_targets(_camera_from(user_input)), _panel(), "Change the camera settings"
+            )
+        except NothingToChangeError:
+            return self.async_abort(reason="nothing_changed")
+        except TankkeeperError as err:
+            return self._camera_form(user_input, err)
+        return self.async_create_entry(data={})
+
+    def _camera_form(self, values: dict[str, Any], error: TankkeeperError | None = None) -> ConfigFlowResult:
+        return self.async_show_form(
+            step_id="camera",
+            data_schema=self.add_suggested_values_to_schema(CAMERA_SCHEMA, values),
+            errors=None if error is None else {"base": "invalid_camera"},
+            description_placeholders=None if error is None else {"error": error.message},
+        )
+
     def _service(self) -> TankkeeperService:
         service: TankkeeperService = self.config_entry.runtime_data
         return service
@@ -665,6 +694,40 @@ def _claude_from(user_input: dict[str, Any]) -> ClaudeSettings:
         comments=bool(user_input[CONF_COMMENTS]),
         daily_time=when,
         daily_cap=int(user_input[CONF_DAILY_CAP]),
+    )
+
+
+CAMERA_SCHEMA = p.Schema(
+    {
+        p.Optional(CONF_CAMERA): EntitySelector(EntitySelectorConfig(domain=CAMERA_DOMAIN)),
+        p.Optional(CONF_CHECK_TIME): TimeSelector(),
+        p.Required(CONF_AFTER_TEST): BooleanSelector(),
+        p.Required(CONF_ALERTS): BooleanSelector(),
+        p.Required(CONF_KEEP_DAYS): NumberSelector(
+            NumberSelectorConfig(min=1, max=MAX_KEEP_DAYS, step=1, mode=NumberSelectorMode.BOX)
+        ),
+    }
+)
+
+
+def _camera_values(settings: CameraSettings) -> dict[str, Any]:
+    """The settings as form values. Settings not set are left out, so their fields show empty."""
+    return {key: value for key, value in settings.to_json().items() if value is not None}
+
+
+def _camera_from(user_input: dict[str, Any]) -> CameraSettings:
+    """The settings in the form. Raises InvalidInputError for a time that is not in HH:MM."""
+    check_time = user_input.get(CONF_CHECK_TIME)
+    try:
+        when = parse_time(check_time) if check_time else None
+    except ValueError as err:
+        raise InvalidInputError(str(err)) from None
+    return CameraSettings(
+        camera=user_input.get(CONF_CAMERA) or None,
+        check_time=when,
+        after_test=bool(user_input[CONF_AFTER_TEST]),
+        alerts=bool(user_input[CONF_ALERTS]),
+        keep_days=int(user_input[CONF_KEEP_DAYS]),
     )
 
 

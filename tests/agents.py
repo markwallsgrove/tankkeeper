@@ -4,12 +4,14 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Literal, override
 
-from homeassistant.components import ai_task, conversation
+from homeassistant.components import ai_task, camera, conversation
 from homeassistant.components.conversation.models import AbstractConversationAgent
 from homeassistant.config_entries import ConfigEntry, ConfigFlow
 from homeassistant.const import MATCH_ALL, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent, llm
+from homeassistant.setup import async_setup_component
 from homeassistant.util.json import JsonObjectType
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -23,6 +25,8 @@ from custom_components.tankkeeper.const import API_ID
 
 CLAUDE = "conversation.claude_conversation"
 AI_TASK = "ai_task.claude_ai_task"
+CAMERA = "camera.tank_camera"
+PHOTO = b"\xff\xd8\xff\xe0 a photo of the tank \xff\xd9"
 SIMPLE = "simple_agent"
 FAILING = "failing_agent"
 
@@ -96,13 +100,16 @@ class FakeAITask(ai_task.AITaskEntity):
     """Answers like the Anthropic AI task entity: it reads the prompt, calls tools in the chat log, then answers."""
 
     _attr_name = "Claude AI Task"
-    _attr_supported_features = ai_task.AITaskEntityFeature.GENERATE_DATA
+    _attr_supported_features = (
+        ai_task.AITaskEntityFeature.GENERATE_DATA | ai_task.AITaskEntityFeature.SUPPORT_ATTACHMENTS
+    )
 
     def __init__(self) -> None:
         """Start with no answers planned and no tasks seen."""
         self._attr_unique_id = "claude_ai_task"
         self.answers: list[Answer] = []
         self.tasks: list[ai_task.GenDataTask] = []
+        self.images: list[tuple[str, bytes]] = []
         self.prompts: list[str] = []
         self.results: list[llm.ToolResult] = []
         self.error: Exception | None = None
@@ -116,6 +123,9 @@ class FakeAITask(ai_task.AITaskEntity):
         system = chat_log.content[0]
         assert isinstance(system, conversation.SystemContent)
         self.prompts.append(system.content)
+        for attachment in task.attachments or []:
+            data = await self.hass.async_add_executor_job(attachment.path.read_bytes)
+            self.images.append((attachment.mime_type, data))
         if self.gate is not None:
             await self.gate.wait()
         if self.error is not None:
@@ -132,6 +142,25 @@ class FakeAITask(ai_task.AITaskEntity):
                 assert isinstance(content, conversation.ToolResultContent)
                 self.results.append(content.result)
         return ai_task.GenDataTaskResult(conversation_id=chat_log.conversation_id, data=answer.data)
+
+
+class FakeCamera(camera.Camera):
+    """A camera that returns a fixed photo, or fails like a camera that is offline."""
+
+    _attr_name = "Tank camera"
+
+    def __init__(self) -> None:
+        """Return a JPEG photo until told otherwise."""
+        super().__init__()
+        self._attr_unique_id = "tank_camera"
+        self.photo: bytes | None = PHOTO
+        self.error: HomeAssistantError | None = None
+
+    @override
+    async def async_camera_image(self, width: int | None = None, height: int | None = None) -> bytes | None:
+        if self.error is not None:
+            raise self.error
+        return self.photo
 
 
 class SimpleAgent(AbstractConversationAgent):
@@ -184,6 +213,16 @@ async def async_add_claude(hass: HomeAssistant) -> FakeClaude:
     await hass.async_block_till_done()
     assert claude.ai_task.entity_id == AI_TASK
     return claude
+
+
+async def async_add_camera(hass: HomeAssistant) -> FakeCamera:
+    """Load a camera entity, as a camera integration such as Tapo does."""
+    fake = FakeCamera()
+    setup_test_component_platform(hass, Platform.CAMERA, [fake])
+    assert await async_setup_component(hass, Platform.CAMERA, {Platform.CAMERA: {"platform": "test"}})
+    await hass.async_block_till_done()
+    assert fake.entity_id == CAMERA
+    return fake
 
 
 def add_simple_agent(hass: HomeAssistant) -> None:

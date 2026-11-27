@@ -18,7 +18,7 @@ import probatio as p
 from .const import DOMAIN
 from .domain import Record, Source, TankkeeperError
 from .service import Actor, TankkeeperService
-from .tools import NON_EMPTY, SPECS, Spec, proposal_json
+from .tools import NON_EMPTY, SPECS, Spec, photo_json, proposal_json
 
 type Message = dict[str, Any]
 type Command = Callable[[TankkeeperService, Message, Actor], Awaitable[JsonObjectType]]
@@ -27,7 +27,7 @@ CONVERSATION_ONLY = frozenset(
     {"save_conversation", "start_batch", "start_setup", "get_batch", "apply_change", "reject_change"}
 )
 PANEL_REASON = "Changed in the Tankkeeper panel"
-PANEL_ONLY = ("accept_proposal", "reject_proposal", "delete_conversation")
+PANEL_ONLY = ("accept_proposal", "reject_proposal", "delete_conversation", "accept_finding", "reject_finding")
 PANEL_COMMANDS = frozenset(
     f"{DOMAIN}/{name}" for name in (*(spec.name for spec in SPECS if spec.name not in CONVERSATION_ONLY), *PANEL_ONLY)
 )
@@ -43,6 +43,8 @@ def async_register(hass: HomeAssistant) -> None:
     async_register_command(hass, accept_proposal)
     async_register_command(hass, reject_proposal)
     async_register_command(hass, delete_conversation)
+    async_register_command(hass, accept_finding)
+    async_register_command(hass, reject_finding)
 
 
 def panel_args(spec: Spec) -> dict[p.Marker, object]:
@@ -104,6 +106,14 @@ async def _delete(service: TankkeeperService, msg: Message, actor: Actor) -> Jso
     return {"deleted": True}
 
 
+async def _accept_finding(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
+    return photo_json(service, await service.async_accept_finding(msg["check_id"], actor.user_id, Source.PANEL))
+
+
+async def _reject_finding(service: TankkeeperService, msg: Message, actor: Actor) -> JsonObjectType:
+    return photo_json(service, await service.async_reject_finding(msg["check_id"], actor.user_id))
+
+
 accept_proposal = websocket_command(
     {p.Required("type"): f"{DOMAIN}/accept_proposal", p.Required("proposal_id"): NON_EMPTY}
 )(_command(_accept))
@@ -113,3 +123,9 @@ reject_proposal = websocket_command(
 delete_conversation = websocket_command(
     {p.Required("type"): f"{DOMAIN}/delete_conversation", p.Required("conversation_id"): NON_EMPTY}
 )(_command(_delete))
+accept_finding = websocket_command({p.Required("type"): f"{DOMAIN}/accept_finding", p.Required("check_id"): NON_EMPTY})(
+    _command(_accept_finding)
+)
+reject_finding = websocket_command({p.Required("type"): f"{DOMAIN}/reject_finding", p.Required("check_id"): NON_EMPTY})(
+    _command(_reject_finding)
+)
