@@ -85,7 +85,12 @@ async def test_a_test_starts_a_review_after_a_short_wait(
         {
             "title": "Nano: Watch",
             "message": WATCH,
-            "data": {"tag": "tankkeeper-status", "url": "/tankkeeper", "clickAction": "/tankkeeper"},
+            "data": {
+                "tag": "tankkeeper-status",
+                "url": "/tankkeeper",
+                "clickAction": "/tankkeeper",
+                "actions": [{"action": "URI", "title": "Discuss", "uri": f"/tankkeeper?review={review['id']}"}],
+            },
         }
     ]
 

@@ -22,7 +22,7 @@ from homeassistant.util.ulid import ulid_now
 import probatio as p
 
 from .claude import Trigger
-from .const import DOMAIN
+from .const import DOMAIN, PANEL_URI, discuss_action
 from .domain import Collection, LightsOffError, NotFoundError, Source, TankkeeperError
 from .photos import (
     AREAS,
@@ -37,7 +37,7 @@ from .photos import (
     write_photo,
 )
 from .reminders import ACTION_EVENT
-from .reviewer import API_PROMPT, COMMENT_TIMEOUT, DELAY_SECONDS, PANEL_URI, ReviewAPI
+from .reviewer import API_PROMPT, COMMENT_TIMEOUT, DELAY_SECONDS, ReviewAPI
 from .reviews import event_triggers, result_text
 from .rules import LEVEL_TITLES
 from .service import Actor, TankkeeperService
@@ -328,7 +328,7 @@ class CameraRunner:
                 "clickAction": PANEL_URI,
                 "image": photo,
                 "actions": [
-                    {"action": "URI", "title": "Discuss", "uri": PANEL_URI},
+                    discuss_action("photo", check.id),
                     {"action": "URI", "title": "Open in panel", "uri": PANEL_URI},
                     {"action": f"{DISMISS}|{check.id}", "title": "Not a problem"},
                 ],
