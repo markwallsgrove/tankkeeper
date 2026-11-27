@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 from custom_components.tankkeeper.tools import SPECS
 from custom_components.tankkeeper.websocket import CONVERSATION_ONLY, PANEL_COMMANDS, panel_args
 
-from .agents import CLAUDE, FakeClaude
+from .agents import CLAUDE, FakeClaude, add_simple_agent
 from .common import Caller, Panel, apply, dict_of, list_of, str_of
 
 pytestmark = pytest.mark.freeze_time("2026-11-26T12:00:00+00:00")
@@ -198,11 +198,22 @@ async def test_chat_agent_names_the_tanks_agent_and_whether_it_can_answer(
 ) -> None:
     agent_id = er.async_get(hass).async_get_entity_id("conversation", "tankkeeper", "entry1_agent")
 
-    assert await panel.ok_message("chat_agent", {}) == {"agent_id": agent_id, "ready": False}
+    claude_only = {"agent_id": agent_id, "ready": True, "chat_agent": CLAUDE, "chat_agent_name": "Claude conversation"}
+
+    assert await panel.ok_message("chat_agent", {}) == claude_only
+
+    add_simple_agent(hass)
+
+    assert await panel.ok_message("chat_agent", {}) == {
+        "agent_id": agent_id,
+        "ready": False,
+        "chat_agent": None,
+        "chat_agent_name": None,
+    }
 
     await apply(call, await call.ok("set_claude", agent=CLAUDE, reason="Chat through Claude"))
 
-    assert await panel.ok_message("chat_agent", {}) == {"agent_id": agent_id, "ready": True}
+    assert await panel.ok_message("chat_agent", {}) == claude_only
     assert "tankkeeper/chat_agent" in PANEL_COMMANDS
 
 

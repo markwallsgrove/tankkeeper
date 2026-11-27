@@ -883,7 +883,8 @@ async def set_rules(service: TankkeeperService, data: Record, actor: Actor) -> J
 
 async def get_claude(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """The Claude settings, and where the models are set."""
-    return {**service.claude().to_json(), "model_note": MODEL_NOTE}
+    agent = service.chat_agent()
+    return {**service.claude().to_json(), "chat_agent": None if agent is None else agent.id, "model_note": MODEL_NOTE}
 
 
 async def get_reviews(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -2151,9 +2152,10 @@ SPECS: tuple[Spec, ...] = (
         title="Get the Claude settings",
         annotations=READ,
         handler=get_claude,
-        description="The conversation agent TankKeeper's Assist agent passes chat to, the AI task entity that writes "
-        "review comments, what starts a review, whether reviews get a comment, the daily review time and the daily "
-        "cap on comments.",
+        description="The conversation agent chosen for TankKeeper's Assist agent to pass chat to, the agent it "
+        "passes chat to now (chat_agent: the chosen one, or without a choice the only agent other than TankKeeper's "
+        "and Home Assistant's own), the AI task entity that writes review comments, what starts a review, whether "
+        "reviews get a comment, the daily review time and the daily cap on comments.",
         schema={},
     ),
     Spec(

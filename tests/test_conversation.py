@@ -87,6 +87,18 @@ async def test_without_a_chosen_agent_it_says_how_to_choose_one(
     assert (await call.ok("list_conversations"))["conversations"] == []
 
 
+async def test_without_a_chosen_agent_the_only_other_agent_answers(
+    hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
+) -> None:
+    await _set_up(call)
+    claude.turns = [Turn(reply="Hello from Claude.")]
+
+    result = await _say(hass, agent_id, "Hello")
+
+    assert _speech(result) == "Hello from Claude."
+    assert len(claude.prompts) == 1
+
+
 async def test_a_removed_agent_is_treated_as_not_chosen(
     hass: HomeAssistant, call: Caller, claude: FakeClaude, agent_id: str
 ) -> None:
