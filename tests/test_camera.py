@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import time
+import io
 from pathlib import Path
 
 from freezegun.api import FrozenDateTimeFactory
@@ -13,6 +14,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType, JsonValueType
+from PIL import Image
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed, async_mock_service
 from pytest_homeassistant_custom_component.typing import WebSocketGenerator
@@ -373,6 +375,46 @@ async def test_a_camera_that_fails_is_noted(
     assert (check["asked"], check["content_type"], check["photo_url"], check["embed"]) == (False, None, None, None)
     assert check["note"] == f"The camera did not give a photo: {reason}"
     assert camera_on.ai_task.tasks == []
+
+
+@pytest.mark.parametrize(
+    ("size", "kept"), [((2560, 1440), (1568, 882)), ((1440, 2560), (882, 1568)), ((640, 480), (640, 480))]
+)
+async def test_with_a_stream_the_photo_is_a_full_frame_no_bigger_than_claude_reads(
+    *,
+    hass: HomeAssistant,
+    call: Caller,
+    camera_on: FakeClaude,
+    fake_camera: FakeCamera,
+    tmp_path: Path,
+    size: tuple[int, int],
+    kept: tuple[int, int],
+) -> None:
+    frame = tmp_path / "frame.png"
+    Image.new("RGB", size, (20, 120, 60)).save(frame)
+    fake_camera.stream_url = str(frame)
+    camera_on.ai_task.answers.append(Answer(data=CLEAR))
+
+    check = await call.ok("check_now")
+
+    assert check["content_type"] == "image/jpeg"
+    [(content_type, photo)] = camera_on.ai_task.images
+    assert content_type == "image/jpeg"
+    with Image.open(io.BytesIO(photo)) as image:
+        assert (image.format, image.size) == ("JPEG", kept)
+    assert _photo_files(hass) == [f"{check['id']}.jpg"]
+
+
+async def test_a_stream_that_gives_no_frame_falls_back_to_the_camera_photo(
+    call: Caller, camera_on: FakeClaude, fake_camera: FakeCamera, tmp_path: Path
+) -> None:
+    fake_camera.stream_url = str(tmp_path / "gone.mp4")
+    camera_on.ai_task.answers.append(Answer(data=CLEAR))
+
+    check = await call.ok("check_now")
+
+    assert (check["content_type"], check["note"]) == ("image/jpeg", None)
+    assert camera_on.ai_task.images == [("image/jpeg", PHOTO)]
 
 
 async def test_a_photo_in_a_type_tankkeeper_cannot_keep_is_noted(
