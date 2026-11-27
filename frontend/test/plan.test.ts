@@ -38,8 +38,7 @@ function connection(): FakeConnection {
     .on("get_history", { history: [] })
     .on("add_task", { applied: true })
     .on("update_task", { applied: true })
-    .on("remove_task", { applied: true })
-    .on("set_reminders", { applied: true });
+    .on("remove_task", { applied: true });
 }
 
 function save(element: Element, selector: string, detail: Record<string, unknown>): void {
@@ -111,7 +110,7 @@ describe("tk-plan", () => {
     expect(text(element)).toContain("No tasks in the next four weeks");
   });
 
-  it("adds, edits and removes tasks and sets the reminders", async () => {
+  it("adds, edits and removes tasks", async () => {
     const conn = connection();
     const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
@@ -127,17 +126,31 @@ describe("tk-plan", () => {
     find(element, "li[data-task=t1] button.remove").click();
     await settle(element);
     expect(conn.last("remove_task").args).toEqual({ task_id: "t1" });
+  });
 
-    const form = find(element, "tk-form.reminders") as unknown as {
-      values: Record<string, unknown>;
-    };
-    expect(form.values.notify).toEqual(["notify.phone"]);
-    save(element, "tk-form.reminders", { task_time: "08:00" });
+  it("adds nothing when the Add form is empty", async () => {
+    const conn = connection();
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(conn) });
     await settle(element);
-    expect(conn.last("set_reminders").args).toEqual({ task_time: "08:00" });
 
-    save(element, "tk-form.reminders", {});
+    save(element, "tk-form.add", {});
     await settle(element);
-    expect(conn.types().filter((type) => type === "tankkeeper/set_reminders").length).toBe(1);
+    expect(conn.types()).not.toContain("tankkeeper/add_task");
+  });
+
+  it("shows the reminders read-only, with a cog and their history", async () => {
+    const element = mount<TkPlan>("tk-plan", { api: new TankkeeperApi(connection()) });
+    await settle(element);
+
+    const card = find(element, "#reminders");
+    expect(text(card)).toContain("Notify services for reminders notify.phone");
+    expect(text(card)).toContain("Notify services for status alerts Not set");
+    expect(text(card)).toContain("Task reminder time 09:00");
+    expect(findAll(card, "tk-form")).toEqual([]);
+    expect(find(card, "ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit reminder settings",
+    );
+    const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
+    expect([history.collection, history.recordId]).toEqual(["settings", "reminders"]);
   });
 });

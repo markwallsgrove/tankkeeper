@@ -1,28 +1,17 @@
 import { html, nothing, type TemplateResult } from "lit";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
-import "../tk-form";
 import { shortTime } from "../format";
-import "../tk-history";
-import type { ClaudeSettings, Field, Review, Values } from "../types";
+import { facts, historyDetails, settingsHeader } from "../settings";
+import type { ClaudeSettings, Field, Review } from "../types";
 
 const CLAUDE_FIELDS: Field[] = [
   { name: "agent", label: "Conversation agent TankKeeper chats through", type: "text" },
   { name: "ai_task", label: "AI task entity for review comments", type: "text" },
-  {
-    name: "review_on",
-    label: "Review after, one per line: test, task, status",
-    type: "list",
-  },
+  { name: "review_on", label: "Review after", type: "list" },
   { name: "comments", label: "Claude comments on reviews", type: "checkbox" },
   { name: "daily_time", label: "Daily review at", type: "time" },
-  {
-    name: "daily_cap",
-    label: "Claude comments a day, at most",
-    type: "number",
-    step: "1",
-    required: true,
-  },
+  { name: "daily_cap", label: "Claude comments a day, at most", type: "number" },
 ];
 
 const REVIEWS_SHOWN = 20;
@@ -52,7 +41,7 @@ function reviewItem(review: Review): TemplateResult {
   </li>`;
 }
 
-/** The Claude settings: the agent TankKeeper chats through, and when and how Claude reviews the tank. */
+/** The Claude settings, read-only, and the latest reviews. The settings change in the options. */
 export class TkClaude extends TkView {
   static override properties = {
     ...TkView.properties,
@@ -82,33 +71,17 @@ export class TkClaude extends TkView {
     };
   }
 
-  private async save(values: Values): Promise<void> {
-    if (Object.keys(values).length === 0) return;
-    if (await this.run((api) => api.call("set_claude", values))) this.changed();
-  }
-
   override render(): TemplateResult {
     const settings = this.settings;
     return html`<section>
-      <h2>Claude</h2>
+      ${settingsHeader("Claude", "Claude", this.api)}
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
       ${
         settings === undefined
           ? nothing
           : html`<p class="muted note">${settings.model_note}</p>
-              <tk-form
-                class="claude"
-                .fields=${CLAUDE_FIELDS}
-                .values=${settings}
-                .busy=${this.busy}
-                @tk-save=${(event: CustomEvent<Values>) => this.save(event.detail)}
-              ></tk-form>
-              <tk-history
-                .api=${this.api}
-                .collection=${"settings"}
-                .recordId=${"claude"}
-                .stamp=${this.version}
-              ></tk-history>`
+              ${facts(CLAUDE_FIELDS, settings)}
+              ${historyDetails(this.api, "settings", "claude", this.version)}`
       }
       <h3>Reviews</h3>
       ${

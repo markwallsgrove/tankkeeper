@@ -9,6 +9,11 @@ export interface HassConnection {
   sendMessagePromise<T>(message: Message): Promise<T>;
 }
 
+/** The panel Home Assistant registered. TankKeeper puts its config entry id in config. */
+export interface PanelInfo {
+  config?: { entry_id?: string };
+}
+
 export interface HomeAssistant {
   connection: HassConnection;
   config?: { time_zone: string };
@@ -139,7 +144,7 @@ export interface Tank {
 }
 
 export interface Water {
-  source?: string;
+  source?: string | null;
   ph?: number | null;
   gh?: number | null;
   kh?: number | null;

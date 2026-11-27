@@ -11,8 +11,15 @@ const product = {
   label_dose: { amount_ml: 5, per_litres: 100, frequency: "weekly" },
   label_dose_for_tank_ml: 2.7,
   your_dose: "1 ml daily",
-  notes: "",
-  links: [],
+  notes: "Shake first",
+  links: ["https://example.com/easy-green"],
+};
+const note = {
+  id: "n1",
+  kind: "question",
+  topic: "CO2",
+  text: "Is CO2 needed?",
+  how_to_resolve: null,
 };
 
 function connection(): FakeConnection {
@@ -23,11 +30,11 @@ function connection(): FakeConnection {
         : { products: [product] },
     )
     .on("list_contents", { contents: [] })
-    .on("list_notes", { notes: [] })
+    .on("list_notes", { notes: [note] })
     .on("get_history", { history: [] })
-    .on("add_product", { applied: true })
-    .on("update_product", { applied: true })
-    .on("remove_product", { applied: true });
+    .on("add_note", { applied: true })
+    .on("update_note", { applied: true })
+    .on("remove_note", { applied: true });
 }
 
 async function records(kind: string, conn = connection()): Promise<TkRecords> {
@@ -53,6 +60,9 @@ describe("tk-records for products", () => {
     expect(text(element)).toContain("Fertiliser");
     expect(text(element)).toContain("Label: 5 ml per 100 l, weekly (2.7 ml for this tank)");
     expect(text(element)).toContain("Your dose: 1 ml daily");
+    expect(text(element)).toContain("Shake first");
+    expect(text(element)).toContain("https://example.com/easy-green");
+    expect(findAll(element, "a")).toEqual([]);
   });
 
   it("lists a product without a label dose, or without a dose for the tank", async () => {
@@ -65,7 +75,6 @@ describe("tk-records for products", () => {
           label_dose: null,
           your_dose: "",
           notes: "",
-          links: [],
         },
         { ...product, id: "p4", name: "No volume", label_dose_for_tank_ml: undefined },
       ],
@@ -74,10 +83,6 @@ describe("tk-records for products", () => {
     expect(text(find(element, "li[data-id=p3]"))).not.toContain("Label");
     expect(text(find(element, "li[data-id=p4]"))).toContain("Label: 5 ml per 100 l, weekly");
     expect(text(find(element, "li[data-id=p4]"))).not.toContain("for this tank");
-    const form = find(element, "li[data-id=p3] tk-form") as unknown as {
-      values: Record<string, unknown>;
-    };
-    expect(form.values.label_amount_ml).toBeUndefined();
   });
 
   it("shows when the records cannot be loaded", async () => {
@@ -88,48 +93,20 @@ describe("tk-records for products", () => {
     expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
-  it("adds, edits and removes a product with the panel's actions", async () => {
+  it("shows products read-only, with a cog and each product's history", async () => {
     const conn = connection();
     const element = await records("products", conn);
 
-    save(element, "tk-form.add", { name: "Seachem", label_amount_ml: 5, label_per_litres: 100 });
-    await settle(element);
-    expect(conn.last("add_product").args).toEqual({
-      name: "Seachem",
-      label_amount_ml: 5,
-      label_per_litres: 100,
-    });
-
-    const form = find(element, "li[data-id=p1] tk-form");
-    expect((form as unknown as { values: Record<string, unknown> }).values).toMatchObject({
-      name: "Easy Green",
-      label_amount_ml: 5,
-      label_per_litres: 100,
-      label_frequency: "weekly",
-    });
-    save(element, "li[data-id=p1] tk-form", { your_dose: "2 ml" });
-    await settle(element);
-    expect(conn.last("update_product").args).toEqual({ product_id: "p1", your_dose: "2 ml" });
-
-    find(element, "li[data-id=p1] button.remove").click();
-    await settle(element);
-    expect(conn.last("remove_product").args).toEqual({ product_id: "p1" });
-
+    expect(findAll(element, "tk-form, button")).toEqual([]);
+    expect(text(element)).not.toContain("Add");
+    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit product settings",
+    );
     const history = find(element, "li[data-id=p1] tk-history") as unknown as {
       collection: string;
       recordId: string;
     };
     expect([history.collection, history.recordId]).toEqual(["products", "p1"]);
-  });
-
-  it("does nothing when a form has no changes", async () => {
-    const conn = connection();
-    const element = await records("products", conn);
-
-    save(element, "li[data-id=p1] tk-form", {});
-    await settle(element);
-
-    expect(conn.types()).not.toContain("tankkeeper/update_product");
   });
 
   it("shows removed products when asked", async () => {
@@ -141,29 +118,9 @@ describe("tk-records for products", () => {
     await settle(element);
 
     expect(text(element)).toContain("Removed 2026-11-01");
-    expect(findAll(element, "li[data-id=p2] button.remove")).toEqual([]);
   });
 
-  it("clears the Add form once the product is saved, and keeps it when saving fails", async () => {
-    const conn = connection();
-    const element = await records("products", conn);
-    const form = find(element, "tk-form.add");
-    const name = find(form, "[name=name]") as HTMLInputElement;
-
-    name.value = "Seachem";
-    find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(element);
-    expect(conn.last("add_product").args).toEqual({ name: "Seachem" });
-    expect(name.value).toBe("");
-
-    conn.fail("add_product", "already_exists", "Seachem already exists");
-    name.value = "Seachem";
-    find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
-    await settle(element);
-    expect(name.value).toBe("Seachem");
-  });
-
-  it("keeps an open edit with its record when the list changes order", async () => {
+  it("keeps open details with their record when the list changes order", async () => {
     const other = { ...product, id: "p2", name: "Prime" };
     const conn = connection().on("list_products", { products: [product, other] });
     const element = await records("products", conn);
@@ -211,43 +168,100 @@ describe("tk-records for products", () => {
     expect(text(element)).not.toContain("Easy Green");
     expect(element.error).toBe("");
   });
-
-  it("shows a failed change", async () => {
-    const conn = connection().fail("add_product", "already_exists", "Easy Green already exists");
-    const element = await records("products", conn);
-
-    save(element, "tk-form.add", { name: "Easy Green" });
-    await settle(element);
-
-    expect(find(element, ".error").textContent).toBe("Easy Green already exists");
-  });
 });
 
 describe("tk-records for contents and notes", () => {
   it("shows contents with their count and place", async () => {
-    const conn = connection()
-      .on("list_contents", {
-        contents: [
-          {
-            id: "c1",
-            type: "plant",
-            name: "Fern",
-            count: 2,
-            where: "Back",
-            added: "2026-11-20",
-            removed: null,
-            notes: "",
-          },
-        ],
-      })
-      .on("update_content", { applied: true });
+    const conn = connection().on("list_contents", {
+      contents: [
+        {
+          id: "c1",
+          type: "plant",
+          name: "Fern",
+          count: 2,
+          where: "Back",
+          added: "2026-11-20",
+          removed: null,
+          notes: "",
+        },
+      ],
+    });
     const element = await records("contents", conn);
 
     expect(text(element)).toContain("Fern");
     expect(text(element)).toContain("plant · 2 · Back · added 2026-11-20");
-    save(element, "li[data-id=c1] tk-form", { count: 3 });
+    expect(findAll(element, "tk-form, button")).toEqual([]);
+    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit content settings",
+    );
+  });
+
+  it("adds, edits and removes notes with the panel's actions", async () => {
+    const conn = connection();
+    const element = await records("notes", conn);
+    expect(findAll(element, "ha-icon-button")).toEqual([]);
+
+    save(element, "tk-form.add", { kind: "assumption", topic: "Light", text: "6 hours" });
     await settle(element);
-    expect(conn.last("update_content").args).toEqual({ content_id: "c1", count: 3 });
+    expect(conn.last("add_note").args).toEqual({
+      kind: "assumption",
+      topic: "Light",
+      text: "6 hours",
+    });
+
+    save(element, "li[data-id=n1] tk-form", { text: "Is CO2 worth it?" });
+    await settle(element);
+    expect(conn.last("update_note").args).toEqual({ note_id: "n1", text: "Is CO2 worth it?" });
+
+    find(element, "li[data-id=n1] button.remove").click();
+    await settle(element);
+    expect(conn.last("remove_note").args).toEqual({ note_id: "n1" });
+
+    const history = find(element, "li[data-id=n1] tk-history") as unknown as {
+      collection: string;
+      recordId: string;
+    };
+    expect([history.collection, history.recordId]).toEqual(["notes", "n1"]);
+  });
+
+  it("does nothing when a form has no changes", async () => {
+    const conn = connection();
+    const element = await records("notes", conn);
+
+    save(element, "li[data-id=n1] tk-form", {});
+    await settle(element);
+
+    expect(conn.types()).not.toContain("tankkeeper/update_note");
+  });
+
+  it("clears the Add form once the note is saved, and keeps it when saving fails", async () => {
+    const conn = connection();
+    const element = await records("notes", conn);
+    const form = find(element, "tk-form.add");
+    const kind = find(form, "[name=kind]") as HTMLSelectElement;
+    const topic = find(form, "[name=topic]") as HTMLInputElement;
+    const text = find(form, "[name=text]") as HTMLTextAreaElement;
+
+    kind.value = "question";
+    topic.value = "CO2";
+    text.value = "Is CO2 needed?";
+    find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(element);
+    expect(conn.last("add_note").args).toEqual({
+      kind: "question",
+      topic: "CO2",
+      text: "Is CO2 needed?",
+    });
+    expect(text.value).toBe("");
+
+    conn.fail("add_note", "invalid_input", "A note needs text");
+    kind.value = "question";
+    topic.value = "CO2";
+    text.value = "Is CO2 needed?";
+    find(form, "form").dispatchEvent(new Event("submit", { cancelable: true }));
+    await settle(element);
+    expect(text.value).toBe("Is CO2 needed?");
+    expect(find(element, ".error").textContent).toBe("A note needs text");
   });
 
   it("renders note text as text, never as markup", async () => {

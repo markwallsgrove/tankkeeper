@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { TankkeeperApi } from "./api";
-import type { HomeAssistant } from "./types";
+import type { HomeAssistant, PanelInfo } from "./types";
 import "./views/claude";
 import "./views/conversations";
 import "./views/decisions";
@@ -22,10 +22,11 @@ const TABS: [string, string][] = [
   ["claude", "Claude"],
 ];
 
-/** The TankKeeper sidebar panel. Home Assistant sets hass and narrow. */
+/** The TankKeeper sidebar panel. Home Assistant sets hass, panel and narrow. */
 export class TankkeeperPanel extends LitElement {
   static override properties = {
     hass: { attribute: false },
+    panel: { attribute: false },
     narrow: { type: Boolean },
     tab: { state: true },
     api: { state: true },
@@ -82,6 +83,7 @@ export class TankkeeperPanel extends LitElement {
   `;
 
   declare hass: HomeAssistant | undefined;
+  declare panel: PanelInfo | undefined;
   declare narrow: boolean;
   declare tab: string;
   declare api: TankkeeperApi | undefined;
@@ -89,20 +91,19 @@ export class TankkeeperPanel extends LitElement {
   constructor() {
     super();
     this.hass = undefined;
+    this.panel = undefined;
     this.narrow = false;
     this.tab = "overview";
     this.api = undefined;
   }
 
   protected override willUpdate(changed: PropertyValues<this>): void {
-    if (
-      changed.has("hass") &&
-      this.hass !== undefined &&
-      this.connection !== this.hass.connection
-    ) {
-      this.connection = this.hass.connection;
-      this.api = new TankkeeperApi(this.hass.connection, this.hass.config?.time_zone);
-    }
+    const hass = this.hass;
+    if (hass === undefined || !(changed.has("hass") || changed.has("panel"))) return;
+    const entryId = this.panel?.config?.entry_id;
+    if (this.connection === hass.connection && this.api?.entryId === entryId) return;
+    this.connection = hass.connection;
+    this.api = new TankkeeperApi(hass.connection, hass.config?.time_zone, entryId);
   }
 
   private connection: HomeAssistant["connection"] | undefined = undefined;

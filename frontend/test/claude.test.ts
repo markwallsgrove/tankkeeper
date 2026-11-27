@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
 import "../src/views/claude";
 import type { TkClaude } from "../src/views/claude";
-import type { TkForm } from "../src/tk-form";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const settings = {
@@ -44,61 +43,37 @@ function connection(listed: unknown[] = reviews): FakeConnection {
   return new FakeConnection()
     .on("get_claude", settings)
     .on("get_reviews", { reviews: listed })
-    .on("get_history", { history: [] })
-    .on("set_claude", { applied: true });
-}
-
-function save(element: Element, detail: Record<string, unknown>): void {
-  find(element, "tk-form.claude").dispatchEvent(
-    new CustomEvent("tk-save", { detail, bubbles: true, composed: true }),
-  );
+    .on("get_history", { history: [] });
 }
 
 describe("tk-claude", () => {
-  it("shows the settings, the model note and their history", async () => {
+  it("shows the settings read-only, the model note and their history", async () => {
     const element = mount<TkClaude>("tk-claude", { api: new TankkeeperApi(connection()) });
     await settle(element);
 
     expect(text(element)).toContain("Choose the model in the Anthropic integration.");
-    const form = find(element, "tk-form.claude") as unknown as { values: Record<string, unknown> };
-    expect(form.values.agent).toBe("conversation.claude_conversation");
-    expect(findAll(element, "tk-history").length).toBe(1);
+    expect(text(element)).toContain(
+      "Conversation agent TankKeeper chats through conversation.claude_conversation",
+    );
+    expect(text(element)).toContain("Claude comments on reviews No");
+    expect(text(element)).toContain("Review after test, status");
+    expect(findAll(element, "tk-form")).toEqual([]);
+    const history = find(element, "tk-history") as unknown as {
+      collection: string;
+      recordId: string;
+    };
+    expect([history.collection, history.recordId]).toEqual(["settings", "claude"]);
+    expect(find(element, "ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit Claude settings",
+    );
   });
 
-  it("needs a daily cap", async () => {
-    const element = mount<TkClaude>("tk-claude", { api: new TankkeeperApi(connection()) });
-    await settle(element);
-
-    const form = find(element, "tk-form.claude") as TkForm;
-    await settle(form);
-    const cap = find(form, "input[name=daily_cap]") as HTMLInputElement;
-    expect(cap.required).toBe(true);
-  });
-
-  it("saves what changed and loads the settings again", async () => {
-    const conn = connection();
+  it("shows why the settings could not load", async () => {
+    const conn = connection().fail("get_claude", "not_loaded", "TankKeeper is not loaded");
     const element = mount<TkClaude>("tk-claude", { api: new TankkeeperApi(conn) });
     await settle(element);
 
-    save(element, { comments: true, daily_time: "20:00" });
-    await settle(element);
-    expect(conn.last("set_claude").args).toEqual({ comments: true, daily_time: "20:00" });
-    expect(conn.types().filter((type) => type === "tankkeeper/get_claude").length).toBe(2);
-
-    save(element, {});
-    await settle(element);
-    expect(conn.types().filter((type) => type === "tankkeeper/set_claude").length).toBe(1);
-  });
-
-  it("shows why the settings could not be saved", async () => {
-    const conn = connection().fail("set_claude", "invalid_input", "No AI task entity ai_task.gone");
-    const element = mount<TkClaude>("tk-claude", { api: new TankkeeperApi(conn) });
-    await settle(element);
-
-    save(element, { ai_task: "ai_task.gone" });
-    await settle(element);
-
-    expect(find(element, ".error").textContent).toBe("No AI task entity ai_task.gone");
+    expect(find(element, ".error").textContent).toBe("TankKeeper is not loaded");
   });
 
   it("lists the latest reviews with Claude's comments and notes", async () => {

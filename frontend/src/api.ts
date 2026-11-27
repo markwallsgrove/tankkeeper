@@ -2,10 +2,14 @@ import type { HassConnection, Message } from "./types";
 
 /** Calls TankKeeper's websocket commands, which use the same service layer as the tools. */
 export class TankkeeperApi {
-  /** timeZone is Home Assistant's, so "today" is the same day the backend uses. */
+  /**
+   * timeZone is Home Assistant's, so "today" is the same day the backend uses.
+   * entryId is the tank's config entry, which the settings links open.
+   */
   constructor(
     private readonly connection: HassConnection,
     readonly timeZone: string = Intl.DateTimeFormat().resolvedOptions().timeZone,
+    readonly entryId?: string,
   ) {}
 
   call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {

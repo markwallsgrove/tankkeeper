@@ -103,6 +103,48 @@ describe("tankkeeper-panel", () => {
     expect(element.api?.timeZone).toBe("Pacific/Kiritimati");
   });
 
+  it("gives the views the tank's config entry, for the settings links", async () => {
+    const conn = connection();
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(conn),
+      narrow: false,
+    });
+    await settle(element);
+    expect(element.api?.entryId).toBeUndefined();
+
+    element.panel = { config: { entry_id: "entry1" } };
+    await settle(element);
+
+    expect(element.api?.entryId).toBe("entry1");
+    expect((find(element, "tk-overview") as unknown as { api: unknown }).api).toBe(element.api);
+  });
+
+  it("keeps the API when Home Assistant sets the same panel again", async () => {
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(connection()),
+      panel: { config: { entry_id: "entry1" } },
+      narrow: false,
+    });
+    await settle(element);
+    const api = element.api;
+
+    element.panel = { config: { entry_id: "entry1" } };
+    await settle(element);
+
+    expect(element.api).toBe(api);
+  });
+
+  it("has no entry for a panel without config", async () => {
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(connection()),
+      panel: {},
+      narrow: false,
+    });
+    await settle(element);
+
+    expect(element.api?.entryId).toBeUndefined();
+  });
+
   it("keeps one connection while Home Assistant updates hass", async () => {
     const conn = connection();
     const element = mount<TankkeeperPanel>("tankkeeper-panel", {
