@@ -79,7 +79,6 @@ function connection(answer: CameraInfo = info): FakeConnection {
     .on("get_camera", answer)
     .on("list_proposals", { proposals: pending })
     .on("get_history", { history: [] })
-    .on("set_camera", { applied: true })
     .on("check_now", issue)
     .on("list_photos", { photos: [issue, quiet] })
     .on("dismiss_finding", { id: "c2" })
@@ -95,12 +94,6 @@ async function view(conn: FakeConnection): Promise<TkCamera> {
 
 function count(conn: FakeConnection, type: string): number {
   return conn.types().filter((sent) => sent === `tankkeeper/${type}`).length;
-}
-
-function save(element: Element, detail: Record<string, unknown>): void {
-  find(element, "tk-form.camera").dispatchEvent(
-    new CustomEvent("tk-save", { detail, bubbles: true, composed: true }),
-  );
 }
 
 describe("tk-camera", () => {
@@ -128,7 +121,9 @@ describe("tk-camera", () => {
 
     expect(text(element)).toContain("No camera is set.");
     expect(findAll(element, "button.check")).toEqual([]);
-    expect(findAll(element, "tk-form.camera").length).toBe(1);
+    expect(find(element, "#camera ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit camera settings",
+    );
   });
 
   it("checks now and tells the other views", async () => {
@@ -196,30 +191,28 @@ describe("tk-camera", () => {
     await settle(element);
 
     conn.on("get_camera", { ...info, camera: null, latest: null, open: [] });
-    save(element, { camera: "" });
+    element.stamp = 1;
     await settle(element);
     conn.on("get_camera", info);
-    element.stamp = 1;
+    element.stamp = 2;
     await settle(element);
 
     expect(findAll(element, "li.photo-check")).toEqual([]);
     expect(findAll(element, "button.photos").length).toBe(1);
   });
 
-  it("saves what changed in the settings", async () => {
-    const conn = connection();
-    const element = await view(conn);
-    const form = find(element, "tk-form.camera") as unknown as { values: Record<string, unknown> };
-    expect(form.values.camera).toBe("camera.tapo_c100");
-    expect(findAll(element, "tk-history").length).toBe(1);
+  it("shows the settings read-only, with a cog and their history", async () => {
+    const element = await view(connection());
 
-    save(element, { check_time: "15:00", keep_days: 14 });
-    await settle(element);
-    expect(conn.last("set_camera").args).toEqual({ check_time: "15:00", keep_days: 14 });
-
-    save(element, {});
-    await settle(element);
-    expect(count(conn, "set_camera")).toBe(1);
+    const card = find(element, "#camera");
+    expect(text(card)).toContain("Camera entity, such as a Tapo C100 camera.tapo_c100");
+    expect(text(card)).toContain("Alert me about issues");
+    expect(findAll(card, "tk-form")).toEqual([]);
+    expect(find(card, "ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit camera settings",
+    );
+    const history = find(card, "tk-history") as unknown as { collection: string; recordId: string };
+    expect([history.collection, history.recordId]).toEqual(["settings", "camera"]);
   });
 
   it("loads again when the stamp changes", async () => {

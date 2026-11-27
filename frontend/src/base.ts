@@ -129,6 +129,36 @@ export const shared = css`
     border-radius: 50%;
     margin-right: 4px;
   }
+  .swatch.hollow {
+    box-sizing: border-box;
+    border: 2px solid;
+    background: none;
+  }
+  .charts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .charts h3 {
+    margin-top: 0;
+  }
+  dl.facts {
+    display: grid;
+    grid-template-columns: minmax(120px, max-content) 1fr;
+    gap: 4px 12px;
+    margin: 0 0 8px;
+  }
+  dl.facts dt {
+    color: var(--secondary-text-color);
+  }
+  dl.facts dd {
+    margin: 0;
+    min-width: 0;
+  }
+  ha-icon-button.settings {
+    color: var(--secondary-text-color);
+    margin: -8px -8px -8px 0;
+  }
   .dash {
     display: inline-block;
     width: 14px;

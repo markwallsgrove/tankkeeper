@@ -3,9 +3,8 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openAssist, shared } from "../base";
 import { changeText, shortTime } from "../format";
-import "../tk-form";
-import "../tk-history";
-import type { CameraInfo, Field, PhotoCheck, Proposal, Values } from "../types";
+import { facts, historyDetails, settingsHeader } from "../settings";
+import type { CameraInfo, Field, PhotoCheck, Proposal } from "../types";
 
 export const PHOTOS_SHOWN = 20;
 
@@ -14,7 +13,7 @@ const CAMERA_FIELDS: Field[] = [
   { name: "check_time", label: "Daily check at, only while a light is on", type: "time" },
   { name: "after_test", label: "Check after each test", type: "checkbox" },
   { name: "alerts", label: "Alert me about issues", type: "checkbox" },
-  { name: "keep_days", label: "Keep photos for (days)", type: "number", step: "1", required: true },
+  { name: "keep_days", label: "Keep photos for (days)", type: "number" },
 ];
 
 const REASONS: Record<PhotoCheck["reason"], string> = {
@@ -58,7 +57,7 @@ function finding(check: PhotoCheck): TemplateResult {
   `;
 }
 
-/** The camera: the latest photo, Check now, the photos kept, the issues waiting and the settings. */
+/** The camera: the latest photo, Check now, the photos kept, the issues waiting and the settings read-only. */
 export class TkCamera extends TkView {
   static override properties = {
     ...TkView.properties,
@@ -120,11 +119,6 @@ export class TkCamera extends TkView {
 
   private async act(action: (api: TankkeeperApi) => Promise<unknown>): Promise<void> {
     if (await this.run(action)) this.changed();
-  }
-
-  private async save(values: Values): Promise<void> {
-    if (Object.keys(values).length === 0) return;
-    await this.act((api) => api.call("set_camera", values));
   }
 
   private async showPhotos(): Promise<void> {
@@ -216,25 +210,13 @@ export class TkCamera extends TkView {
   }
 
   private renderSettings(info: CameraInfo): TemplateResult {
-    return html`<details>
+    return html`<details class="settings">
       <summary>Camera settings</summary>
       <p class="muted">
         Each check sends the photo to Anthropic through the AI task entity, uses paid API calls and
         counts toward Claude's comments a day.
       </p>
-      <tk-form
-        class="camera"
-        .fields=${CAMERA_FIELDS}
-        .values=${info}
-        .busy=${this.busy}
-        @tk-save=${(event: CustomEvent<Values>) => this.save(event.detail)}
-      ></tk-form>
-      <tk-history
-        .api=${this.api}
-        .collection=${"settings"}
-        .recordId=${"camera"}
-        .stamp=${this.version}
-      ></tk-history>
+      ${facts(CAMERA_FIELDS, info)} ${historyDetails(this.api, "settings", "camera", this.version)}
     </details>`;
   }
 
@@ -246,18 +228,17 @@ export class TkCamera extends TkView {
     const error = this.error ? html`<p class="error">${this.error}</p>` : nothing;
     if (info.camera === null) {
       return html`<section id="camera">
-        <h2>Camera</h2>
-        ${error}
+        ${settingsHeader("Camera", "camera", this.api)} ${error}
         <p class="muted">
-          No camera is set. Add one, such as a Tapo C100, to have Claude look at the tank.
+          No camera is set. Add one in the settings, such as a Tapo C100, to have Claude look at the
+          tank.
         </p>
         ${this.renderSettings(info)}
       </section>`;
     }
     const latest = info.latest;
     return html`<section id="camera">
-        <h2>Camera</h2>
-        ${error}
+        ${settingsHeader("Camera", "camera", this.api)} ${error}
         ${
           latest === null
             ? html`<p class="muted">No photo yet.</p>`

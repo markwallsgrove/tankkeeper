@@ -2,10 +2,9 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openAssist, shared } from "../base";
-import { chemistryChart, cycleChart, lightRows, renderChart, renderLightChart } from "../charts";
+import { cycleChart, lightRows, parameterCharts, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
-import "../tk-form";
-import "../tk-history";
+import { facts, historyDetails, settingsHeader } from "../settings";
 import "./camera";
 import type {
   Field,
@@ -19,7 +18,6 @@ import type {
   Status,
   Task,
   TankInfo,
-  Values,
 } from "../types";
 
 export const WEEK_DAYS = 7;
@@ -73,15 +71,7 @@ const RULE_FIELDS: Field[] = [
   { name: "plan_act_days", label: "Plan ends within, for Act (days)", type: "number", step: "1" },
 ];
 
-const LIGHT_FIELDS: Field[] = [
-  { name: "model", label: "Make and model", type: "text" },
-  { name: "on", label: "On", type: "time" },
-  { name: "off", label: "Off", type: "time" },
-  { name: "brightness_pct", label: "Brightness (%)", type: "number", step: "1" },
-  { name: "ramp_minutes", label: "Fade (minutes)", type: "number", step: "1" },
-];
-
-/** The tank at a glance: status, tasks, charts, lights and what is waiting for the Member. */
+/** The tank at a glance: status, tasks, charts, settings, lights and what is waiting for the Member. */
 export class TkOverview extends TkView {
   static override properties = {
     ...TkView.properties,
@@ -140,36 +130,20 @@ export class TkOverview extends TkView {
     if (await this.run(action)) this.changed();
   }
 
-  private async save(tool: string, values: Values, extra: Values = {}): Promise<void> {
-    if (Object.keys(values).length === 0) return;
-    await this.act((api) => api.call(tool, { ...extra, ...values }));
-  }
-
-  private editor(
+  /** A card of settings, read-only, with a cog to change them and their history. */
+  private settingsCard(
+    id: string,
     title: string,
-    name: string,
-    tool: string,
+    what: string,
     fields: Field[],
     values: object,
     collection: string,
-    id: string,
+    recordId: string,
   ): TemplateResult {
-    return html`<details>
-      <summary>${title}</summary>
-      <tk-form
-        class=${name}
-        .fields=${fields}
-        .values=${values}
-        .busy=${this.busy}
-        @tk-save=${(event: CustomEvent<Values>) => this.save(tool, event.detail)}
-      ></tk-form>
-      <tk-history
-        .api=${this.api}
-        .collection=${collection}
-        .recordId=${id}
-        .stamp=${this.version}
-      ></tk-history>
-    </details>`;
+    return html`<section id=${id}>
+      ${settingsHeader(title, what, this.api)} ${facts(fields, values)}
+      ${historyDetails(this.api, collection, recordId, this.version)}
+    </section>`;
   }
 
   private renderStatus(status: Status, tank: TankInfo): TemplateResult {
@@ -196,9 +170,6 @@ export class TkOverview extends TkView {
               </li>`,
           )}
       </ul>
-      ${this.editor("Edit tank", "tank", "set_tank", TANK_FIELDS, tank.tank, "tank", "tank")}
-      ${this.editor("Edit water", "water", "set_water", WATER_FIELDS, tank.water ?? {}, "water", "water")}
-      ${this.editor("Edit rule limits", "rules", "set_rules", RULE_FIELDS, status.settings, "settings", "rules")}
     </section>`;
   }
 
@@ -233,13 +204,6 @@ export class TkOverview extends TkView {
       <div class="row">
         <strong class="grow">${light.model}</strong>
         <span class="muted">${light.state ?? "unknown"}</span>
-        <button
-          class="remove"
-          ?disabled=${this.busy}
-          @click=${() => this.act((api) => api.call("set_light", { action: "remove", light_id: light.id }))}
-        >
-          Remove
-        </button>
       </div>
       <div>
         ${light.on} to
@@ -248,22 +212,30 @@ export class TkOverview extends TkView {
       <div class="muted">Today ${light.today.on} to ${light.today.off}</div>
       ${light.problem === null ? nothing : html`<div class="error">${light.problem}</div>`}
       ${renderLightChart(lightRows(light.on_periods, today, LIGHT_DAYS, this.api?.timeZone))}
-      <details>
-        <summary>Edit and history</summary>
-        <tk-form
-          .fields=${LIGHT_FIELDS}
-          .values=${light}
-          .busy=${this.busy}
-          @tk-save=${(event: CustomEvent<Values>) => this.save("set_light", event.detail, { action: "update", light_id: light.id })}
-        ></tk-form>
-        <tk-history
-          .api=${this.api}
-          .collection=${"lights"}
-          .recordId=${light.id}
-          .stamp=${this.version}
-        ></tk-history>
-      </details>
+      ${historyDetails(this.api, "lights", light.id, this.version)}
     </li>`;
+  }
+
+  private renderParameters(status: Status, tank: TankInfo): TemplateResult {
+    const { charts, empty } = parameterCharts(
+      this.log,
+      status.settings,
+      tank.tank.temperature_c,
+      tank.water,
+    );
+    return html`<section id="parameters">
+      <h2>Water parameters</h2>
+      <div class="charts">
+        ${charts.map(
+          (item) =>
+            html`<div class="parameter" data-parameter=${item.key}>
+              <h3>${item.label}</h3>
+              ${renderChart(item.chart, item.label)}
+            </div>`,
+        )}
+      </div>
+      ${empty.length === 0 ? nothing : html`<p class="muted">No readings yet for: ${empty.join(", ")}</p>`}
+    </section>`;
   }
 
   private renderProposal(proposal: Proposal): TemplateResult {
@@ -338,11 +310,7 @@ export class TkOverview extends TkView {
         <h2>Cycle</h2>
         ${renderChart(cycleChart(this.log, status.settings), "Cycle")}
       </section>
-      <section id="chemistry">
-        <h2>Water chemistry</h2>
-        ${renderChart(chemistryChart(this.log, tank.water), "Water chemistry")}
-        <p class="muted">Hollow points are tap water.</p>
-      </section>
+      ${this.renderParameters(status, tank)}
       <section id="week">
         <h2>Next 7 days</h2>
         ${week.length === 0 ? html`<p class="muted">No tasks</p>` : nothing}
@@ -355,25 +323,25 @@ export class TkOverview extends TkView {
           )}
         </ul>
       </section>
-      ${
-        lights.lights.length === 0
-          ? nothing
-          : html`<section id="light">
-              <h2>Light</h2>
-              ${
-                lights.next_change === null
-                  ? nothing
-                  : html`<div class="muted">Next change ${shortTime(lights.next_change.time)}</div>`
-              }
-              <ul>
-                ${repeat(
-                  lights.lights,
-                  (light) => light.id,
-                  (light) => this.renderLight(light, lights.today),
-                )}
-              </ul>
-            </section>`
-      }
+      ${this.settingsCard("tank", "Tank", "tank", TANK_FIELDS, tank.tank, "tank", "tank")}
+      ${this.settingsCard("water", "Water", "water", WATER_FIELDS, tank.water ?? {}, "water", "water")}
+      <section id="light">
+        ${settingsHeader("Light", "light", this.api)}
+        ${lights.lights.length === 0 ? html`<p class="muted">No lights yet</p>` : nothing}
+        ${
+          lights.next_change === null
+            ? nothing
+            : html`<div class="muted">Next change ${shortTime(lights.next_change.time)}</div>`
+        }
+        <ul>
+          ${repeat(
+            lights.lights,
+            (light) => light.id,
+            (light) => this.renderLight(light, lights.today),
+          )}
+        </ul>
+      </section>
+      ${this.settingsCard("rules", "Rule limits", "rule", RULE_FIELDS, status.settings, "settings", "rules")}
       <tk-camera .api=${this.api} .stamp=${this.version}></tk-camera>
     `;
   }

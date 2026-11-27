@@ -1,15 +1,29 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import {
-  chemistryChart,
   cycleChart,
   lightRows,
+  parameterCharts,
   renderChart,
   renderLightChart,
 } from "../src/charts";
 import type { LogEntry } from "../src/types";
 
 const log: LogEntry[] = [
+  {
+    id: "4",
+    kind: "test",
+    time: "2026-11-26T13:00:00+00:00",
+    source: "tap",
+    values: { ammonia: 0.2 },
+  },
+  {
+    id: "3b",
+    kind: "test",
+    time: "2026-11-26T12:00:00+00:00",
+    source: "tank",
+    values: { temperature_c: 24.5 },
+  },
   { id: "3", kind: "test", time: "2026-11-26T12:00:00+00:00", source: "tap", values: { ph: 7.6 } },
   {
     id: "2",
@@ -38,6 +52,9 @@ describe("cycleChart", () => {
       ["Ammonia", [2, 1]],
       ["Nitrite", [0.5]],
       ["Nitrate", []],
+      ["Tap ammonia", [0.2]],
+      ["Tap nitrite", []],
+      ["Tap nitrate", []],
     ]);
     expect(chart.lines.map((line) => [line.label, line.value])).toEqual([
       ["Watch", 2],
@@ -46,38 +63,116 @@ describe("cycleChart", () => {
     expect(chart.min).toBe(0);
     expect(chart.max).toBe(4);
   });
+
+  it("keeps tap readings out of the tank lines", () => {
+    const chart = cycleChart(log, {});
+
+    expect(chart.series.map((series) => [series.name, series.joined])).toEqual([
+      ["Ammonia", true],
+      ["Nitrite", true],
+      ["Nitrate", true],
+      ["Tap ammonia", false],
+      ["Tap nitrite", false],
+      ["Tap nitrate", false],
+    ]);
+  });
 });
 
-describe("chemistryChart", () => {
-  it("draws tap readings hollow and the water values as targets", () => {
-    const chart = chemistryChart(log, { ph: 7.4, gh: null, kh: 5 });
+describe("parameterCharts", () => {
+  const settings = { nitrogen_watch: 0.25, nitrogen_act: 1, ph_watch: 6.8, ph_act: 6.4 };
+  const water = { ph: 7.4, kh: 5, gh: null, nitrate: 10, phosphate: 0.1 };
 
-    const ph = chart.series.find((series) => series.name === "pH");
-    expect(ph?.points.map((point) => [point.value, point.hollow])).toEqual([
-      [7.2, false],
-      [7.6, true],
+  it("charts each parameter that has readings, in a fixed order, with units", () => {
+    const { charts, empty } = parameterCharts(log, settings, 25, water);
+
+    expect(charts.map((item) => item.label)).toEqual([
+      "Ammonia (ppm)",
+      "Nitrite (ppm)",
+      "pH",
+      "KH (dKH)",
+      "Temperature (°C)",
     ]);
-    expect(chart.lines.map((line) => [line.label, line.value])).toEqual([
-      ["pH target", 7.4],
-      ["KH target", 5],
+    expect(empty).toEqual(["Nitrate (mg/l)", "GH (dGH)", "Phosphate (mg/l)"]);
+  });
+
+  it("puts tank readings on a line and tap readings in a separate hollow series", () => {
+    const ph = parameterCharts(log, settings, 25, water).charts.find((item) => item.key === "ph");
+
+    expect(
+      ph?.chart.series.map((series) => [
+        series.name,
+        series.joined,
+        series.points.map((point) => point.value),
+      ]),
+    ).toEqual([
+      ["Tank", true, [7.2]],
+      ["Tap", false, [7.6]],
     ]);
   });
 
-  it("has no targets without water values", () => {
-    expect(chemistryChart(log, null).lines).toEqual([]);
+  it("draws the limits, the tap water values and the target temperature", () => {
+    const lines = (key: string): [string, number][] =>
+      parameterCharts(log, settings, 25, water)
+        .charts.find((item) => item.key === key)
+        ?.chart.lines.map((line) => [line.label, line.value]) ?? [];
+
+    expect(lines("ammonia")).toEqual([
+      ["Watch", 0.25],
+      ["Act", 1],
+    ]);
+    expect(lines("nitrite")).toEqual([
+      ["Watch", 0.25],
+      ["Act", 1],
+    ]);
+    expect(lines("ph")).toEqual([
+      ["Watch", 6.8],
+      ["Act", 6.4],
+      ["Tap water", 7.4],
+    ]);
+    expect(lines("kh")).toEqual([["Tap water", 5]]);
+    expect(lines("temperature_c")).toEqual([["Target", 25]]);
+  });
+
+  it("draws the tap water nitrate and phosphate, and no line for an unknown value", () => {
+    const more: LogEntry[] = [
+      {
+        id: "5",
+        kind: "test",
+        time: "2026-11-27T12:00:00+00:00",
+        source: "tank",
+        values: { nitrate: 20, phosphate: 0.5, gh: 6 },
+      },
+    ];
+    const charts = parameterCharts(more, {}, null, water).charts;
+    const lines = (key: string): string[] =>
+      charts.find((item) => item.key === key)?.chart.lines.map((line) => line.label) ?? [];
+
+    expect(lines("nitrate")).toEqual(["Tap water"]);
+    expect(lines("phosphate")).toEqual(["Tap water"]);
+    expect(lines("gh")).toEqual([]);
+  });
+
+  it("draws no lines without rules, water values or a target", () => {
+    const charts = parameterCharts(log, {}, null, null).charts;
+
+    expect(charts.flatMap((item) => item.chart.lines)).toEqual([]);
   });
 });
 
 describe("renderChart", () => {
-  it("draws points, hollow points and dashed target lines", () => {
+  it("joins tank readings with a line and leaves tap readings as hollow points", () => {
     const host = document.createElement("div");
-    render(renderChart(chemistryChart(log, { ph: 7.4 }), "Water chemistry"), host);
+    const ph = parameterCharts(log, {}, null, { ph: 7.4 }).charts.find((item) => item.key === "ph");
+    if (ph === undefined) throw new Error("No pH chart");
+    render(renderChart(ph.chart, ph.label), host);
 
-    expect(host.querySelector("svg")?.getAttribute("aria-label")).toBe("Water chemistry");
+    expect(host.querySelector("svg")?.getAttribute("aria-label")).toBe("pH");
+    expect(host.querySelectorAll("polyline").length).toBe(1);
     expect(host.querySelectorAll("circle.hollow").length).toBe(1);
-    expect(host.querySelectorAll("circle.solid").length).toBe(2);
+    expect(host.querySelectorAll("circle.solid").length).toBe(1);
     expect(host.querySelectorAll("line.target").length).toBe(1);
-    expect(host.textContent).toContain("pH");
+    expect(host.querySelectorAll(".legend .swatch.hollow").length).toBe(1);
+    expect(host.textContent).toContain("Tap water");
   });
 
   it("says when there are no readings", () => {

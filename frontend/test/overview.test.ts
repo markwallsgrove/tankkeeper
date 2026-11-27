@@ -120,18 +120,19 @@ function connection(lights: unknown[] = [light]): FakeConnection {
     .on("get_history", { history: [] })
     .on("skip_task", { applied: true })
     .on("complete_task", { applied: true })
-    .on("set_tank", { applied: true })
-    .on("set_water", { applied: true })
-    .on("set_rules", { applied: true })
-    .on("set_light", { applied: true })
     .on("accept_proposal", { state: "accepted" })
     .on("reject_proposal", { state: "declined" });
 }
 
-function save(element: Element, selector: string, detail: Record<string, unknown>): void {
-  find(element, selector).dispatchEvent(
-    new CustomEvent("tk-save", { detail, bubbles: true, composed: true }),
-  );
+function histories(element: Element, selector: string): [string, string][] {
+  return findAll(element, `${selector} tk-history`).map((item) => {
+    const history = item as unknown as { collection: string; recordId: string };
+    return [history.collection, history.recordId];
+  });
+}
+
+function cogs(element: Element): (string | null)[] {
+  return findAll(element, "ha-icon-button.settings").map((cog) => cog.getAttribute("label"));
 }
 
 async function view(conn: FakeConnection): Promise<TkOverview> {
@@ -166,8 +167,16 @@ describe("tk-overview", () => {
     expect(findAll(element, "#today button.skip").length).toBe(1);
     expect(text(find(element, "#today"))).toContain("complete");
     expect(find(element, "#cycle svg").getAttribute("aria-label")).toBe("Cycle");
-    expect(findAll(element, "#chemistry circle.hollow").length).toBe(1);
-    expect(findAll(element, "#chemistry line.target").length).toBe(2);
+    expect(findAll(element, "#cycle polyline").length).toBe(1);
+    expect(
+      findAll(element, "#parameters svg").map((chart) => chart.getAttribute("aria-label")),
+    ).toEqual(["Ammonia (ppm)", "pH"]);
+    expect(findAll(element, "#parameters polyline").length).toBe(2);
+    expect(findAll(element, "#parameters circle.hollow").length).toBe(1);
+    expect(findAll(element, "#parameters line.target").length).toBe(3);
+    expect(text(find(element, "#parameters .muted"))).toBe(
+      "No readings yet for: Nitrite (ppm), Nitrate (mg/l), KH (dKH), GH (dGH), Phosphate (mg/l), Temperature (°C)",
+    );
     expect(text(find(element, "#week"))).toContain("Trim plants");
     expect(text(find(element, "#week"))).not.toContain("Test water");
     expect(findAll(element, "tk-camera").length).toBe(1);
@@ -189,40 +198,69 @@ describe("tk-overview", () => {
     expect(changes).toBe(2);
   });
 
-  it("edits the tank, the water and the rule limits", async () => {
-    const conn = connection();
-    const element = await view(conn);
+  it("shows the tank, the water and the rule limits read-only, each with history", async () => {
+    const element = await view(connection());
 
-    save(element, "tk-form.tank", { temperature_c: 25 });
-    await settle(element);
-    expect(conn.last("set_tank").args).toEqual({ temperature_c: 25 });
+    expect(findAll(element, "tk-form")).toEqual([]);
+    expect(text(find(element, "#tank"))).toContain("Volume (litres) 60");
+    expect(text(find(element, "#tank"))).toContain("Notes Not set");
+    expect(text(find(element, "#water"))).toContain("pH 7.4");
+    expect(text(find(element, "#water"))).toContain("GH (dGH) Not set");
+    expect(text(find(element, "#rules"))).toContain("Ammonia or nitrite Watch above (ppm) 2");
+    expect(histories(element, "#tank")).toEqual([["tank", "tank"]]);
+    expect(histories(element, "#water")).toEqual([["water", "water"]]);
+    expect(histories(element, "#rules")).toEqual([["settings", "rules"]]);
+  });
 
-    save(element, "tk-form.water", { ph: 7.5 });
-    await settle(element);
-    expect(conn.last("set_water").args).toEqual({ ph: 7.5 });
+  it("has a cog on each settings card that opens the settings", async () => {
+    const element = await view(connection());
 
-    save(element, "tk-form.rules", { nitrogen_watch: 1 });
-    await settle(element);
-    expect(conn.last("set_rules").args).toEqual({ nitrogen_watch: 1 });
-
-    save(element, "tk-form.rules", {});
-    await settle(element);
-    expect(conn.types().filter((type) => type === "tankkeeper/set_rules").length).toBe(1);
-
-    const histories = findAll(element, "#status tk-history").map((item) => {
-      const history = item as unknown as { collection: string; recordId: string };
-      return [history.collection, history.recordId];
-    });
-    expect(histories).toEqual([
-      ["tank", "tank"],
-      ["water", "water"],
-      ["settings", "rules"],
+    expect(cogs(element)).toEqual([
+      "Edit tank settings",
+      "Edit water settings",
+      "Edit light settings",
+      "Edit rule settings",
     ]);
   });
 
-  it("shows the lights with their schedule and a 30-day chart, and edits them", async () => {
-    const conn = connection();
-    const element = await view(conn);
+  it("shows a tank without water values", async () => {
+    const element = await view(connection().on("get_tank", { ...tank, water: null }));
+
+    expect(text(find(element, "#water"))).toContain("pH Not set");
+    expect(findAll(element, "#parameters [data-parameter=ph] line.target")).toEqual([]);
+  });
+
+  it("has no empty list when every parameter has readings", async () => {
+    const values = {
+      ammonia: 0,
+      nitrite: 0,
+      nitrate: 10,
+      ph: 7,
+      kh: 4,
+      gh: 6,
+      phosphate: 0.5,
+      temperature_c: 24,
+    };
+    const entries = [
+      { id: "l9", kind: "test", time: "2026-11-25T12:00:00+00:00", source: "tank", values },
+    ];
+    const element = await view(connection().on("get_log", { entries }));
+
+    expect(findAll(element, "#parameters [data-parameter]").length).toBe(8);
+    expect(text(find(element, "#parameters"))).not.toContain("No readings yet");
+  });
+
+  it("lists every parameter when there are no readings", async () => {
+    const element = await view(connection().on("get_log", { entries: [] }));
+
+    expect(findAll(element, "#parameters svg")).toEqual([]);
+    expect(text(find(element, "#parameters"))).toContain(
+      "No readings yet for: Ammonia (ppm), Nitrite (ppm), Nitrate (mg/l), pH",
+    );
+  });
+
+  it("shows the lights with their schedule and a 30-day chart, read-only", async () => {
+    const element = await view(connection());
 
     const lightText = text(find(element, "#light"));
     expect(lightText).toContain("Chihiros WRGB II");
@@ -231,23 +269,17 @@ describe("tk-overview", () => {
     expect(find(element, "#light svg").getAttribute("aria-label")).toBe(
       "Light on and off, last 30 days",
     );
-
-    save(element, "#light tk-form", { off: "19:00" });
-    await settle(element);
-    expect(conn.last("set_light").args).toEqual({
-      action: "update",
-      light_id: "light1",
-      off: "19:00",
-    });
-
-    find(element, "#light button.remove").click();
-    await settle(element);
-    expect(conn.last("set_light").args).toEqual({ action: "remove", light_id: "light1" });
+    expect(findAll(element, "#light tk-form, #light button")).toEqual([]);
+    expect(histories(element, "#light")).toEqual([["lights", "light1"]]);
   });
 
-  it("hides the light card when there are no lights", async () => {
+  it("shows the light card with its cog when there are no lights", async () => {
     const element = await view(connection([]));
-    expect(findAll(element, "#light")).toEqual([]);
+    expect(text(find(element, "#light"))).toContain("No lights yet");
+    expect(find(element, "#light ha-icon-button.settings").getAttribute("label")).toBe(
+      "Edit light settings",
+    );
+    expect(findAll(element, "#light li")).toEqual([]);
   });
 
   it("accepts, rejects and discusses what is waiting", async () => {

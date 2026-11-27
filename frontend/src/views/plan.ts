@@ -3,6 +3,7 @@ import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
 import { addDays, isoDate } from "../format";
+import { facts, historyDetails, settingsHeader } from "../settings";
 import { saveAndClear } from "../tk-form";
 import "../tk-history";
 import type { Field, Plan, Task, Values } from "../types";
@@ -23,14 +24,14 @@ const EDIT_FIELDS: Field[] = [
 ];
 
 const REMINDER_FIELDS: Field[] = [
-  { name: "notify", label: "Notify services for reminders, one per line", type: "list" },
-  { name: "status_notify", label: "Notify services for status alerts, one per line", type: "list" },
+  { name: "notify", label: "Notify services for reminders", type: "list" },
+  { name: "status_notify", label: "Notify services for status alerts", type: "list" },
   { name: "task_time", label: "Task reminder time", type: "time" },
   { name: "dose_time", label: "Dose reminder time", type: "time" },
   { name: "resend_time", label: "Resend open tasks at", type: "time" },
 ];
 
-/** The plan for the next four weeks: tasks by day, add, edit and remove them, and the reminder settings. */
+/** The plan for the next four weeks: tasks by day, add, edit and remove them, and the reminder settings read-only. */
 export class TkPlan extends TkView {
   static override properties = {
     ...TkView.properties,
@@ -129,21 +130,10 @@ export class TkPlan extends TkView {
       ${
         plan === undefined
           ? nothing
-          : html`<section>
-              <h2>Reminders</h2>
-              <tk-form
-                class="reminders"
-                .fields=${REMINDER_FIELDS}
-                .values=${plan.reminders}
-                .busy=${this.busy}
-                @tk-save=${(event: CustomEvent<Values>) => this.save("set_reminders", event.detail)}
-              ></tk-form>
-              <tk-history
-                .api=${this.api}
-                .collection=${"settings"}
-                .recordId=${"reminders"}
-                .stamp=${this.version}
-              ></tk-history>
+          : html`<section id="reminders">
+              ${settingsHeader("Reminders", "reminder", this.api)}
+              ${facts(REMINDER_FIELDS, plan.reminders)}
+              ${historyDetails(this.api, "settings", "reminders", this.version)}
             </section>`
       }
     `;
