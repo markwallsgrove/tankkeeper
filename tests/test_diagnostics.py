@@ -31,6 +31,7 @@ async def test_diagnostics_count_records_without_their_text(
             "tasks": 0,
             "settings": 0,
             "lights": 0,
+            "decisions": 0,
         },
         "history_entries": 1,
         "proposals": {"pending": 1, "applied": 0, "rejected": 0},

@@ -36,6 +36,7 @@ class Collection(StrEnum):
     TASKS = "tasks"
     SETTINGS = "settings"
     LIGHTS = "lights"
+    DECISIONS = "decisions"
 
 
 class Source(StrEnum):
