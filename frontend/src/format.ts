@@ -7,6 +7,7 @@ const SOURCES: Record<string, string> = {
   notification: "Notification",
   rule: "Rule",
   review: "Review",
+  camera: "Camera",
 };
 
 function pad(value: number): string {
