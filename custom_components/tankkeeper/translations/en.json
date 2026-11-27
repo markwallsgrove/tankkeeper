@@ -255,6 +255,10 @@
       "init": {
         "title": "Options",
         "menu_options": {
+          "tank": "Tank",
+          "water": "Tap water",
+          "products": "Products",
+          "contents": "Contents",
           "reminders": "Reminders",
           "rules": "Rules and status",
           "claude": "Claude",
@@ -263,6 +267,160 @@
           "change_light": "Change a light",
           "one_day": "Change a light for one day",
           "remove_light": "Remove a light"
+        }
+      },
+      "tank": {
+        "title": "Tank",
+        "description": "The tank's name, volumes, temperature and notes. A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "tank_name": "Name",
+          "volume_litres": "What's the volume of your tank?",
+          "dosing_volume_litres": "What's the volume of water in your tank?",
+          "temperature_c": "Temperature",
+          "notes": "Notes"
+        },
+        "data_description": {
+          "tank_name": "What you call the tank, for example Office tank.",
+          "volume_litres": "In litres, as given on the box or by the maker.",
+          "dosing_volume_litres": "In litres. Gravel, rocks and wood take up space, so this is less than the volume of the tank. Doses are worked out for this volume. If you don't know it, use about 10% less than the volume of the tank.",
+          "temperature_c": "The target temperature, in °C. Leave empty if you don't know it.",
+          "notes": "Anything Claude should know about the tank, in your own words."
+        }
+      },
+      "water": {
+        "title": "Tap water",
+        "description": "The values of the water you fill the tank with, from your water supplier or a test. A field left empty is cleared. The old values stay in the history.",
+        "data": {
+          "source": "Where the values come from",
+          "ph": "pH",
+          "gh": "GH",
+          "kh": "KH",
+          "nitrate": "Nitrate",
+          "phosphate": "Phosphate",
+          "notes": "Notes"
+        },
+        "data_description": {
+          "gh": "General hardness, in dGH.",
+          "kh": "Carbonate hardness, in dKH.",
+          "nitrate": "In mg/l.",
+          "phosphate": "In mg/l."
+        }
+      },
+      "products": {
+        "title": "Products",
+        "description": "Fertilisers, water conditioners and other products the tank gets. In use: {listed}",
+        "menu_options": {
+          "add_product": "Add a product",
+          "change_product": "Change a product",
+          "remove_product": "Stop using a product"
+        }
+      },
+      "add_product": {
+        "title": "Add a product",
+        "description": "Give the dose from the label to have doses worked out for your tank.",
+        "data": {
+          "name": "Name",
+          "purpose": "What it is for",
+          "label_amount_ml": "Label dose",
+          "label_per_litres": "For this much water",
+          "label_frequency": "How often",
+          "your_dose": "Your dose",
+          "notes": "Notes",
+          "links": "Links"
+        },
+        "data_description": {
+          "label_amount_ml": "The dose on the label, in ml. Give both label values or neither.",
+          "label_per_litres": "The volume of water the label dose is for, in litres.",
+          "label_frequency": "How often the label says to dose, for example weekly.",
+          "your_dose": "The dose you use, in your own words, if it is not the label dose.",
+          "links": "Web pages about the product, such as the maker's page or the label."
+        }
+      },
+      "change_product": {
+        "title": "Change a product",
+        "data": {
+          "product_id": "Product"
+        }
+      },
+      "edit_product": {
+        "title": "Change a product",
+        "description": "A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "name": "Name",
+          "purpose": "What it is for",
+          "label_amount_ml": "Label dose",
+          "label_per_litres": "For this much water",
+          "label_frequency": "How often",
+          "your_dose": "Your dose",
+          "notes": "Notes",
+          "links": "Links"
+        },
+        "data_description": {
+          "label_amount_ml": "The dose on the label, in ml. Give both label values or neither.",
+          "label_per_litres": "The volume of water the label dose is for, in litres.",
+          "label_frequency": "How often the label says to dose, for example weekly.",
+          "your_dose": "The dose you use, in your own words, if it is not the label dose.",
+          "links": "Web pages about the product, such as the maker's page or the label."
+        }
+      },
+      "remove_product": {
+        "title": "Stop using a product",
+        "description": "The product stays in the records with today's date.",
+        "data": {
+          "product_id": "Product"
+        }
+      },
+      "contents": {
+        "title": "Contents",
+        "description": "Plants, fish, rocks, wood and anything else in the tank. In the tank: {listed}",
+        "menu_options": {
+          "add_content": "Add something",
+          "change_content": "Change something",
+          "remove_content": "Take something out"
+        }
+      },
+      "add_content": {
+        "title": "Add something in the tank",
+        "data": {
+          "type": "Type",
+          "name": "Name",
+          "count": "How many",
+          "where": "Where",
+          "notes": "Notes",
+          "added": "Added"
+        },
+        "data_description": {
+          "where": "Where it sits in the tank, for example back left.",
+          "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
+        }
+      },
+      "change_content": {
+        "title": "Change something in the tank",
+        "data": {
+          "content_id": "Item"
+        }
+      },
+      "edit_content": {
+        "title": "Change something in the tank",
+        "description": "A field left empty is cleared. The old details stay in the history.",
+        "data": {
+          "type": "Type",
+          "name": "Name",
+          "count": "How many",
+          "where": "Where",
+          "notes": "Notes",
+          "added": "Added"
+        },
+        "data_description": {
+          "where": "Where it sits in the tank, for example back left.",
+          "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
+        }
+      },
+      "remove_content": {
+        "title": "Take something out",
+        "description": "The item stays in the records with today's date.",
+        "data": {
+          "content_id": "Item"
         }
       },
       "reminders": {
@@ -434,6 +592,9 @@
       "nothing_changed": "Nothing was changed."
     },
     "error": {
+      "dosing_above_volume": "The volume of water can't be larger than the volume of the tank.",
+      "label_dose_incomplete": "The label dose needs both the dose in ml and the volume of water it is for.",
+      "name_required": "Give a name.",
       "invalid_light": "{error}",
       "invalid_rules": "{error}",
       "invalid_claude": "{error}",

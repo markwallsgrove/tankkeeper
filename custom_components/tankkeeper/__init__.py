@@ -65,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(ReviewRunner(hass, service).start())
     entry.async_on_unload(ProposalNotifier(hass, service).start())
     entry.async_on_unload(CameraRunner(hass, service).start())
-    entry.async_on_unload(await panel.async_register(hass))
+    entry.async_on_unload(await panel.async_register(hass, entry.entry_id))
     return True
 
 

@@ -30,6 +30,14 @@ async def test_the_panel_is_in_the_sidebar_for_admins(
     assert str(custom["module_url"]).startswith(f"/tankkeeper_static/{BUNDLE}?v=")
 
 
+async def test_the_panel_knows_its_entry_for_the_settings_links(
+    hass: HomeAssistant, hass_ws_client: WebSocketGenerator, loaded_entry: MockConfigEntry
+) -> None:
+    panel = dict_of((await _panels(hass, hass_ws_client))[PANEL_PATH])
+
+    assert dict_of(panel["config"])["entry_id"] == loaded_entry.entry_id
+
+
 async def test_people_who_are_not_admins_do_not_see_the_panel(
     hass: HomeAssistant,
     hass_ws_client: WebSocketGenerator,

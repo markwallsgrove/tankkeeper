@@ -20,8 +20,11 @@ def _version() -> str:
     return sha256((FRONTEND / BUNDLE).read_bytes()).hexdigest()[:12]
 
 
-async def async_register(hass: HomeAssistant) -> Callable[[], None]:
-    """Add the panel to the sidebar. The callback removes it."""
+async def async_register(hass: HomeAssistant, entry_id: str) -> Callable[[], None]:
+    """Add the panel to the sidebar. The callback removes it.
+
+    The panel gets the entry id to link to the entry's options, where the settings are changed.
+    """
     if not hass.data.get(STATIC_REGISTERED):
         await hass.http.async_register_static_paths([StaticPathConfig(STATIC_URL, str(FRONTEND), True)])
         hass.data[STATIC_REGISTERED] = True
@@ -34,6 +37,7 @@ async def async_register(hass: HomeAssistant) -> Callable[[], None]:
         sidebar_icon="mdi:fishbowl",
         module_url=f"{STATIC_URL}/{BUNDLE}?v={version}",
         require_admin=True,
+        config={"entry_id": entry_id},
     )
 
     def remove() -> None:
