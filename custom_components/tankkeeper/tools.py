@@ -248,11 +248,7 @@ class TankkeeperTool(Tool):
             data = cast(Record, self.parameters(tool_input.tool_args))
         except p.Invalid as err:
             return ToolResult(data={"error": "invalid_input", "message": str(err)}, error=True)
-        actor = Actor(
-            source=Source.MCP if llm_context.platform == MCP_PLATFORM else Source.ASSIST,
-            user_id=None if llm_context.context is None else llm_context.context.user_id,
-            conversation_id=_optional_str(data, "conversation_id") or _assist_conversation(llm_context),
-        )
+        actor = self.actor(data, llm_context)
         try:
             if not self._drafts:
                 return ToolResult(data=await self._handler(self._service, data, actor))
@@ -260,6 +256,14 @@ class TankkeeperTool(Tool):
                 return ToolResult(data=await self._handler(self._service, data, actor))
         except TankkeeperError as err:
             return ToolResult(data={"error": err.key, "message": err.message}, error=True)
+
+    def actor(self, data: Record, llm_context: LLMContext) -> Actor:
+        """Who calls: the MCP server or Assist, as the signed-in person, in the conversation given or recorded."""
+        return Actor(
+            source=Source.MCP if llm_context.platform == MCP_PLATFORM else Source.ASSIST,
+            user_id=None if llm_context.context is None else llm_context.context.user_id,
+            conversation_id=_optional_str(data, "conversation_id") or _assist_conversation(llm_context),
+        )
 
 
 def _assist_conversation(llm_context: LLMContext) -> str | None:
@@ -776,6 +780,11 @@ async def set_rules(service: TankkeeperService, data: Record, actor: Actor) -> J
 async def get_claude(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """The Claude settings, and where the models are set."""
     return {**service.claude().to_json(), "model_note": MODEL_NOTE}
+
+
+async def get_reviews(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """The newest reviews, with what started each, the rules' result and Claude's comment."""
+    return {"reviews": [review.to_json() for review in service.reviews(_int(data, "limit"))]}
 
 
 async def set_claude(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -1858,6 +1867,16 @@ SPECS: tuple[Spec, ...] = (
         "review comments, what starts a review, whether reviews get a comment, the daily review time and the daily "
         "cap on comments.",
         schema={},
+    ),
+    Spec(
+        name="get_reviews",
+        title="Get the reviews",
+        annotations=READ,
+        handler=get_reviews,
+        description="The newest reviews, newest first. Each has what started it (test, task, status or daily), the "
+        "rules' result, Claude's comment when there is one, a note on why there is none, and the ids of the plan "
+        "changes it proposed.",
+        schema={**LIMIT},
     ),
     Spec(
         name="set_claude",

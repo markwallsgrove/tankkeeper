@@ -10,4 +10,5 @@ mcp==1.28.1
 mypy==2.4.1
 pytest-cov==7.1.0
 pytest-homeassistant-custom-component==0.13.375
+PyTurboJPEG==1.8.3
 ruff==0.17.6

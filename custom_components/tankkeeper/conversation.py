@@ -20,7 +20,7 @@ from homeassistant.helpers.json import json_dumps
 
 from .claude import ASSIST_CONVERSATION
 from .const import DOMAIN
-from .domain import JsonValue, Message, Source
+from .domain import Message, Source, without_codes
 from .entity import tank_device
 from .service import Actor, TankkeeperService
 
@@ -33,7 +33,6 @@ NO_AGENT = "Choose the conversation agent in Tankkeeper's Claude settings first.
 FAILED = "The conversation agent could not answer. Try again later."
 TITLE_PROMPT = "Call tankkeeper__save_conversation once, without messages, to give it a short title."
 PLAIN_ID = re.compile(r"[0-9A-Za-z_-]{1,64}")
-HIDDEN_KEYS = frozenset({"code"})
 SETUP_PROMPT = (
     "The tank is not set up yet. Set it up now: if no setup draft is open, call tankkeeper__start_setup, then ask the "
     "owner the first setup question. Ask one thing at a time."
@@ -146,19 +145,11 @@ def messages_of(content: Iterable[conversation.Content]) -> list[Message]:
             args = json_dumps(calls.get(item.tool_call_id, {}))
             if item.tool_name.startswith(TOOL_PREFIX):
                 name = item.tool_name.removeprefix(TOOL_PREFIX)
-                text = f"{name} {args} → {json_dumps(_without_codes(item.result.data))}"
+                text = f"{name} {args} → {json_dumps(without_codes(item.result.data))}"
             else:
                 text = f"{item.tool_name} {args}"
             messages.append(Message(role="tool", text=_clip(text)))
     return messages
-
-
-def _without_codes(value: JsonValue) -> JsonValue:
-    if isinstance(value, dict):
-        return {key: _without_codes(item) for key, item in value.items() if key not in HIDDEN_KEYS}
-    if isinstance(value, list):
-        return [_without_codes(item) for item in value]
-    return value
 
 
 def _speech(response: intent.IntentResponse) -> str:

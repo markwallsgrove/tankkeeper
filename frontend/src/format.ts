@@ -5,6 +5,8 @@ const SOURCES: Record<string, string> = {
   mcp: "Claude (MCP)",
   assist: "Assist",
   notification: "Notification",
+  rule: "Rule",
+  review: "Review",
 };
 
 function pad(value: number): string {

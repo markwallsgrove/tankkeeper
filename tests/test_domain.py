@@ -409,6 +409,13 @@ def test_from_json_reads_a_store_from_before_the_light_log() -> None:
     assert TankState.from_json(data).light_log == []
 
 
+def test_from_json_reads_a_store_from_before_reviews() -> None:
+    data = TankState().to_json()
+    del data["reviews"]
+
+    assert TankState.from_json(data).reviews == []
+
+
 def test_from_json_reads_history_from_before_the_user() -> None:
     state = _state_with_proposal()
     _apply(state)

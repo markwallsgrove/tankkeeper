@@ -26,6 +26,8 @@ describe("format", () => {
     expect(sourceText("mcp")).toBe("Claude (MCP)");
     expect(sourceText("assist")).toBe("Assist");
     expect(sourceText("notification")).toBe("Notification");
+    expect(sourceText("rule")).toBe("Rule");
+    expect(sourceText("review")).toBe("Review");
     expect(sourceText("other")).toBe("other");
   });
 

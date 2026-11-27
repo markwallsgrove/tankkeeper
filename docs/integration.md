@@ -85,6 +85,7 @@ Every tool name starts with `tankkeeper__`.
 | `get_light` | The lights, today's schedule, the dose time, the next change, the problems, and the on/off log and changes with their reasons. 7 days by default, up to 30. Listed only when a light is set. |
 | `set_light` | Propose adding, changing or removing a light, a change for one day, or cancelling it. No tool switches the light. |
 | `get_claude` | The Claude settings: the agent, the AI task entity, what starts a review, comments, the daily review time and the daily cap, with a note on where the models are set. |
+| `get_reviews` | The latest reviews, newest first: what started each, the rules' result, Claude's comment or why there is none, and the plan changes it proposed. 20 by default. |
 | `set_claude` | Propose new Claude settings. An empty value clears the agent, the AI task entity or the daily review time. |
 | `import_plan` | Propose tasks copied from another calendar, such as `calendar.fish_tank`. `Complete:` and `Skip:` titles keep their state. 7 days back to 30 days ahead by default. |
 
@@ -94,7 +95,7 @@ The **Tankkeeper** panel is in the sidebar. Only admins see it. It works at phon
 
 - **Overview**: the status and the rules that need you, today's tasks with Skip and Complete, the cycle and water chemistry charts, the next 7 days, the light (only when you have one) and the changes waiting for you.
 - **Plan**, **Log**, **Contents**, **Products**, **Decisions** and **Notes**: list, add, edit and remove records. The Log only adds doses and tests.
-- **Claude**: the Claude settings, with their history, and where the models are set.
+- **Claude**: the Claude settings, with their history, where the models are set, and the latest reviews.
 - **Conversations**: list, search, read the messages and the changes made in each, undo a change, and delete a conversation.
 - Each record has its latest changes with Undo. Edit the tank, water, rule limits and lights from the Overview, and reminders from the Plan.
 - On the water chemistry chart, hollow points are tap tests and dashed lines are the water values you gave.
@@ -135,6 +136,16 @@ A batch is one proposal that holds many changes of any kind. After `start_batch`
 - Entities, the calendar and the read tools show the stored records, not the batch, until it is applied.
 
 Setup is a batch for an empty tank: no products, contents, tasks, lights or decisions. Claude asks one thing at a time in Assist, or reads the notes you point to in Claude Code. Then it reads the whole draft back, and one yes applies it.
+
+### Reviews
+
+A review checks the tank after the events chosen in **Review after**: a new test, a task completed or skipped, or a status change. Events less than 2 minutes apart give one review, 2 minutes after the last of them. With a **Daily review** time, a review also runs then each day.
+
+- Each review stores the rules' result in one line, such as `Watch: Ammonia 3 ppm on 26 Nov is above the 2 ppm watch limit.` Tankkeeper keeps the latest 100 reviews, and every review from today.
+- With **Claude comments on reviews** on and an AI task entity set, Tankkeeper asks that entity for a short comment on what the rules can't see. The entity reads the records with the Tankkeeper tools. Codes are left out of what it reads, and it can't apply, reject or undo anything.
+- A plan change Claude suggests in a review is a proposal (add, change or remove a task). It waits for you in the panel, and is sent to you as a [proposal notification](#proposal-notifications).
+- Once the daily cap of comments is reached, reviews still run, without a comment, until midnight. When the entity fails, or takes more than 3 minutes, the review is stored with a note instead of a comment. A review can call at most 20 tools; after that the tools answer with an error asking for the comment.
+- Each review goes to the **Status alert devices**: the rules' result, Claude's comment and how many plan changes wait. It replaces the status alert on the phone, and opens the panel when tapped.
 
 ### Proposal notifications
 
@@ -231,7 +242,7 @@ Open the integration and choose **Configure**. Changes made here apply straight 
 | Task time | When tasks are sent. |
 | Dose time | When doses are sent when no light is set. |
 | Resend time | When tasks still open are sent again. |
-| Status alert devices | The notify services that get a message when the status changes, and proposals still waiting. None means no alerts. |
+| Status alert devices | The notify services that get a message when the status changes, reviews and proposals still waiting. None means no alerts. |
 
 **Rules and status.** The stage (cycling or cycled) and the Watch and Act limit of each rule. Act must be at least as strict as Watch. Claude can propose the same with `set_rules` and `set_tank`.
 
@@ -317,10 +328,12 @@ actions:
 - Conversations and the records Claude reads are sent to Anthropic when you talk to Claude.
 - The Assist agent records up to 200 messages a conversation and up to 2000 characters a message. Later messages are not recorded.
 - An agent that does not use Home Assistant's chat log has only its spoken reply recorded, without tool calls.
+- A review waits 2 minutes after the last event, and events that keep coming put it off. A review waiting during a restart is lost.
+- A review's plan changes are tasks only. Claude can't propose other changes in a review.
 
 ## Cost
 
-Assist chat and Claude's comments use the Anthropic API and are paid per use, on the key in the Anthropic integration. Each chat message is at least one API call, and more when Claude calls tools. Comments are off by default, and the daily cap limits them. The rules, reminders, the panel and Claude Code or Claude Desktop on your Claude plan cost nothing extra. Check Anthropic's pricing before you choose a model.
+Assist chat and Claude's comments use the Anthropic API and are paid per use, on the key in the Anthropic integration. Each chat message is at least one API call, and more when Claude calls tools. Each review comment is one AI task, which makes several API calls when Claude reads the records with tools, up to 20 tool calls and 3 minutes. Comments are off by default, and the daily cap limits them: with 5 a day, at most 5 comments are asked for each day, however many reviews run. Reviews without a comment cost nothing. The rules, reminders, the panel and Claude Code or Claude Desktop on your Claude plan cost nothing extra. Check Anthropic's pricing before you choose a model.
 
 ## Troubleshooting
 

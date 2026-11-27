@@ -58,6 +58,7 @@ class Source(StrEnum):
     MCP = "mcp"
     RULE = "rule"
     NOTIFICATION = "notification"
+    REVIEW = "review"
 
 
 class ProposalState(StrEnum):
@@ -439,7 +440,7 @@ class Conversation:
 
 @dataclass(slots=True)
 class TankState:
-    """Every record, the history, proposals and conversations of one tank, and the lights' on/off log."""
+    """Every record, the history, proposals, conversations and reviews of one tank, and the lights' on/off log."""
 
     records: dict[Collection, dict[str, Record]] = field(
         default_factory=lambda: {collection: {} for collection in Collection}
@@ -448,6 +449,7 @@ class TankState:
     proposals: dict[str, Proposal] = field(default_factory=dict)
     conversations: dict[str, Conversation] = field(default_factory=dict)
     light_log: list[Record] = field(default_factory=list)
+    reviews: list[Record] = field(default_factory=list)
 
     def get(self, collection: Collection, record_id: str) -> Record | None:
         """The record, or None when it does not exist."""
@@ -489,6 +491,7 @@ class TankState:
             "proposals": [proposal.to_json() for proposal in self.proposals.values()],
             "conversations": [conversation.to_json() for conversation in self.conversations.values()],
             "light_log": list(self.light_log),
+            "reviews": list(self.reviews),
         }
 
     @classmethod
@@ -509,6 +512,7 @@ class TankState:
             proposals={proposal.id: proposal for proposal in proposals},
             conversations={conversation.id: conversation for conversation in conversations},
             light_log=[_record(item) for item in _list(data.get("light_log", []))],
+            reviews=[_record(item) for item in _list(data.get("reviews", []))],
         )
 
 
@@ -729,6 +733,7 @@ def batch_view(state: TankState, proposal: Proposal) -> TankState:
         proposals=state.proposals,
         conversations=state.conversations,
         light_log=state.light_log,
+        reviews=state.reviews,
     )
 
 
@@ -883,9 +888,21 @@ def search_conversations(state: TankState, query: str) -> list[Conversation]:
     return sorted(found, key=lambda conversation: conversation.updated, reverse=True)
 
 
+CODE_KEYS = frozenset({"code", "code_expires", "next_step"})
+
+
 def changes_in_conversation(state: TankState, conversation_id: str) -> list[HistoryEntry]:
     """History entries made in a conversation, oldest first."""
     return [entry for entry in state.history if entry.conversation_id == conversation_id]
+
+
+def without_codes(value: JsonValue) -> JsonValue:
+    """The value with every confirm code, its expiry and the step that uses it left out, at any depth."""
+    if isinstance(value, dict):
+        return {key: without_codes(item) for key, item in value.items() if key not in CODE_KEYS}
+    if isinstance(value, list):
+        return [without_codes(item) for item in value]
+    return value
 
 
 def merge_record(current: Mapping[str, JsonValue], updates: Mapping[str, JsonValue]) -> Record:

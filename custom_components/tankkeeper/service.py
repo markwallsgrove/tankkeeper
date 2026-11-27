@@ -50,6 +50,7 @@ from .domain import (
 )
 from .lights import Light, LightEvent, LightStatus, dose_time, prune_log
 from .plan import REMINDERS_ID, Reminders, Task, TaskStatus, summary_for
+from .reviews import Review, comments_on, kept
 from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
 type Target = tuple[Collection, str, Record | None]
@@ -545,6 +546,24 @@ class TankkeeperService:
             summary=None,
             messages=tuple(messages)[:room],
         )
+        await self._async_save()
+
+    def reviews(self, limit: int) -> list[Review]:
+        """The latest reviews, newest first."""
+        return [Review.from_json(item) for item in reversed(self._state.reviews)][:limit]
+
+    def comments_today(self) -> int:
+        """How many times Claude was asked for a review comment today."""
+        tz = dt_util.get_default_time_zone()
+        reviews = (Review.from_json(item) for item in self._state.reviews)
+        return comments_on(reviews, self._clock().astimezone(tz).date(), tz)
+
+    async def async_add_review(self, review: Review) -> None:
+        """Store a review. Old ones are dropped, but never one from today."""
+        tz = dt_util.get_default_time_zone()
+        reviews = [*(Review.from_json(item) for item in self._state.reviews), review]
+        today = self._clock().astimezone(tz).date()
+        self._state.reviews = [item.to_json() for item in kept(reviews, today, tz)]
         await self._async_save()
 
     async def async_delete_conversation(self, conversation_id: str) -> None:

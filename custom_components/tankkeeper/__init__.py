@@ -17,6 +17,7 @@ from .light_control import LightRunner
 from .llm import TankkeeperAPI
 from .proposal_notify import ProposalNotifier
 from .reminders import ReminderSender
+from .reviewer import ReviewRunner
 from .service import Actor, TankkeeperService, Target
 from .status import StatusRunner
 
@@ -58,6 +59,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TankkeeperConfigEntry) -
     entry.async_on_unload(ReminderSender(hass, service).start())
     entry.async_on_unload(LightRunner(hass, service).start())
     entry.async_on_unload(StatusRunner(hass, service).start())
+    entry.async_on_unload(ReviewRunner(hass, service).start())
     entry.async_on_unload(ProposalNotifier(hass, service).start())
     entry.async_on_unload(await panel.async_register(hass))
     return True
