@@ -2,14 +2,17 @@ import { css, html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openGallery, shared } from "../base";
-import { BACK, textButton } from "../buttons";
+import { BACK, EXPAND, textButton } from "../buttons";
 import { shortTime } from "../format";
 import { finding, heading, photo, photoStyles, verdict } from "../photo";
 import "../tk-dialog";
 import type { PhotoCheck } from "../types";
 
-/** TankKeeper keeps at most this many photo checks, so the gallery asks for all of them. */
+/** TankKeeper keeps at most this many photo checks. */
 export const GALLERY_LIMIT = 200;
+
+/** Photos shown at first and added by Show more. Each Show more asks again, as photo links last 10 minutes. */
+export const GALLERY_PAGE = 20;
 
 const PRUNED = "The photo is no longer kept.";
 
@@ -19,6 +22,7 @@ export class TkGallery extends TkView {
     ...TkView.properties,
     photos: { state: true },
     opened: { state: true },
+    shown: { state: true },
   };
 
   static override styles = [
@@ -68,20 +72,43 @@ export class TkGallery extends TkView {
   declare photos: PhotoCheck[] | undefined;
   /** The photo check shown large, by its id. */
   declare opened: string | undefined;
+  /** How many photo checks to ask for. */
+  declare shown: number;
 
   constructor() {
     super();
     this.photos = undefined;
     this.opened = undefined;
+    this.shown = GALLERY_PAGE;
   }
 
   protected override async load(api: TankkeeperApi): Promise<() => void> {
     const listed = await api.call<{ photos: PhotoCheck[] }>("list_photos", {
-      limit: GALLERY_LIMIT,
+      limit: this.shown,
     });
     return () => {
       this.photos = listed.photos;
     };
+  }
+
+  private showMore(): void {
+    this.shown = Math.min(this.shown + GALLERY_PAGE, GALLERY_LIMIT);
+    void this.reload();
+  }
+
+  /** Show more, while the backend may keep more photo checks than are shown. */
+  private renderMore(photos: PhotoCheck[]): TemplateResult | typeof nothing {
+    if (photos.length < this.shown || this.shown >= GALLERY_LIMIT) return nothing;
+    return html`<div class="row">
+      ${textButton({
+        icon: EXPAND,
+        label: "Show more",
+        className: "more",
+        onClick: () => {
+          this.showMore();
+        },
+      })}
+    </div>`;
   }
 
   private renderCard(check: PhotoCheck): TemplateResult {
@@ -136,12 +163,13 @@ export class TkGallery extends TkView {
           : photos.length === 0
             ? html`<p class="muted">No photos yet.</p>`
             : html`<ul class="photos">
-                ${repeat(
-                  photos,
-                  (check) => check.id,
-                  (check) => this.renderCard(check),
-                )}
-              </ul>`
+                  ${repeat(
+                    photos,
+                    (check) => check.id,
+                    (check) => this.renderCard(check),
+                  )}
+                </ul>
+                ${this.renderMore(photos)}`
       }
       ${this.renderLarge()}
     </section>`;

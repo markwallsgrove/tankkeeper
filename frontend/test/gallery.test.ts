@@ -92,7 +92,7 @@ describe("tk-gallery", () => {
     const conn = connection();
     const element = await view(conn);
 
-    expect(conn.last("list_photos").args).toEqual({ limit: 200 });
+    expect(conn.last("list_photos").args).toEqual({ limit: 20 });
     expect(
       findAll(element, "li.photo-check").map((item) => item.getAttribute("data-check")),
     ).toEqual(["c3", "c2", "c1"]);
@@ -178,6 +178,48 @@ describe("tk-gallery", () => {
     const body = find(element, "div.large");
     expect(find(body, ".note").textContent).toBe("No comment: the daily cap of 5 is reached.");
     expect(body.querySelector(".verdict")).toBeNull();
+  });
+
+  it("shows 20 photos at first and 20 more on Show more, with fresh links", async () => {
+    const many = Array.from({ length: 45 }, (_, index) => ({ ...issue, id: `m${String(index)}` }));
+    const conn = new FakeConnection().on("list_photos", (message) => ({
+      photos: many.slice(0, (message.args as { limit: number }).limit),
+    }));
+    const element = await view(conn);
+    expect(findAll(element, "li.photo-check").length).toBe(20);
+
+    find(element, "button.more").click();
+    await settle(element);
+
+    expect(conn.last("list_photos").args).toEqual({ limit: 40 });
+    expect(findAll(element, "li.photo-check").length).toBe(40);
+
+    find(element, "button.more").click();
+    await settle(element);
+
+    expect(findAll(element, "li.photo-check").length).toBe(45);
+    expect(findAll(element, "button.more")).toEqual([]);
+  });
+
+  it("offers no Show more when every photo is shown", async () => {
+    const element = await view(connection());
+
+    expect(findAll(element, "button.more")).toEqual([]);
+  });
+
+  it("stops at the most photo checks TankKeeper keeps", async () => {
+    const many = Array.from({ length: 200 }, (_, index) => ({ ...issue, id: `m${String(index)}` }));
+    const conn = new FakeConnection().on("list_photos", (message) => ({
+      photos: many.slice(0, (message.args as { limit: number }).limit),
+    }));
+    const element = await view(conn);
+    for (let page = 1; page < 10; page += 1) {
+      find(element, "button.more").click();
+      await settle(element);
+    }
+
+    expect(conn.last("list_photos").args).toEqual({ limit: 200 });
+    expect(findAll(element, "button.more")).toEqual([]);
   });
 
   it("says when no photos are kept", async () => {
