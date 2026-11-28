@@ -39,9 +39,11 @@ from custom_components.tankkeeper.domain import (
     changes_in_conversation,
     check_code,
     check_delete,
+    content_numbers,
     delete_conversation,
     dose_for_volume,
     merge_record,
+    next_content_number,
     plan_changes,
     propose,
     record_turn,
@@ -657,3 +659,77 @@ def test_a_delete_needs_its_code_in_time() -> None:
         check_delete(request, CODE, now=NOW + CODE_LIFETIME)
     with pytest.raises(TooManyAttemptsError):
         check_delete(replace(request, failed_attempts=MAX_CODE_ATTEMPTS), CODE, now=NOW)
+
+
+def test_a_new_contents_item_gets_one_more_than_the_highest_number() -> None:
+    contents: dict[str, Record] = {"a": {"name": "Fern"}, "b": {"name": "Moss", "number": 4}}
+
+    assert next_content_number({}) == 1
+    assert next_content_number(contents) == 5
+
+
+def test_a_number_already_taken_is_replaced_when_the_item_is_added() -> None:
+    state = TankState()
+    _set(state, "h1", Collection.CONTENTS, "a", {"name": "Fern", "number": 1})
+    entry = _set(state, "h2", Collection.CONTENTS, "b", {"name": "Moss", "number": 1})
+
+    assert content_numbers(state.records[Collection.CONTENTS]) == {"a": 1, "b": 2}
+    assert entry.changes[0].after == {"name": "Moss", "number": 2}
+
+
+def test_several_items_added_at_once_with_one_number_get_numbers_in_order() -> None:
+    state = TankState()
+    apply_changes(
+        state,
+        plan_changes(
+            state,
+            [
+                (Collection.CONTENTS, "a", {"name": "Fern", "number": 1}),
+                (Collection.CONTENTS, "b", {"name": "Moss", "number": 1}),
+            ],
+        ),
+        history_id="h1",
+        now=NOW,
+        source=Source.PANEL,
+        conversation_id=None,
+        summary="Setup",
+    )
+
+    assert content_numbers(state.records[Collection.CONTENTS]) == {"a": 1, "b": 2}
+
+
+def test_an_item_with_no_number_is_stored_as_it_is() -> None:
+    state = TankState()
+    _set(state, "h1", Collection.CONTENTS, "a", {"name": "Fern"})
+
+    assert state.records[Collection.CONTENTS]["a"] == {"name": "Fern"}
+
+
+def test_items_from_before_numbers_count_from_one_in_the_order_they_were_added() -> None:
+    contents: dict[str, Record] = {
+        "02": {"name": "Moss"},
+        "01": {"name": "Fern"},
+        "03": {"name": "Rotala", "number": 3},
+    }
+
+    assert content_numbers(contents) == {"01": 1, "02": 2, "03": 3}
+
+
+def test_an_item_stored_with_no_number_never_shares_a_number() -> None:
+    contents: dict[str, Record] = {"01": {"name": "Fern"}, "02": {"name": "Moss", "number": 1}}
+
+    assert content_numbers(contents) == {"01": 2, "02": 1}
+
+
+def test_an_item_put_back_keeps_its_number_from_an_item_stored_with_no_number() -> None:
+    state = TankState()
+    added = _set(state, "h1", Collection.CONTENTS, "a", {"name": "Fern", "number": 1})
+    _set(state, "h2", Collection.CONTENTS, "b", {"name": "Moss"})
+    undone = apply_changes(
+        state, undo_changes(added), history_id="h3", now=NOW, source=Source.PANEL, conversation_id=None, summary="u"
+    )
+    apply_changes(
+        state, undo_changes(undone), history_id="h4", now=NOW, source=Source.PANEL, conversation_id=None, summary="r"
+    )
+
+    assert content_numbers(state.records[Collection.CONTENTS]) == {"a": 1, "b": 2}

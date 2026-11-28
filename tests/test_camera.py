@@ -254,7 +254,7 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
 
 
 async def test_claude_is_told_the_tank_and_what_it_cant_see(call: Caller, camera_on: FakeClaude) -> None:
-    await call.ok("add_content", type="plant", name="Hygrophila", count=3, where="Back left")
+    await call.ok("add_content", type="plant", name="Hygrophila", count=3, where="By the wood", zone="back_left")
     await call.ok("record_test", values={"ammonia": 3})
 
     await call.ok("check_now")
@@ -263,7 +263,15 @@ async def test_claude_is_told_the_tank_and_what_it_cant_see(call: Caller, camera
     assert "taken on 2026-11-26 because the owner asked" in instructions
     contents = json.loads(instructions.partition("<contents>\n")[2].partition("\n</contents>")[0])
     assert contents == [
-        {"type": "plant", "name": "Hygrophila", "count": 3, "where": "Back left", "added": "2026-11-26"}
+        {
+            "number": 1,
+            "type": "plant",
+            "name": "Hygrophila",
+            "count": 3,
+            "where": "By the wood",
+            "zone": "back_left",
+            "added": "2026-11-26",
+        }
     ]
     assert "The rules say: Watch: Ammonia 3 ppm" in instructions
     assert "A camera can't see ammonia, nitrite, nitrate or pH" in instructions

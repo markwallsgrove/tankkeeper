@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 import hmac
+from itertools import count
 import re
 
 type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
@@ -59,6 +60,10 @@ SETUP_COLLECTIONS = (
     Collection.LIGHTS,
     Collection.DECISIONS,
 )
+
+
+# Where a contents item sits, seen from above with the front (the camera side) at the bottom.
+ZONES = ("back_left", "back_middle", "back_right", "front_left", "front_middle", "front_right")
 
 
 class Source(StrEnum):
@@ -651,7 +656,10 @@ def apply_changes(
             raise RecordChangedError(
                 f"The {change.collection.value} record {change.record_id} changed since this change was made"
             )
-    for change in changes:
+    numbered: list[Change] = []
+    for given in changes:
+        change = _numbered(state, given)
+        numbered.append(change)
         records = state.records[change.collection]
         if change.after is None:
             del records[change.record_id]
@@ -663,12 +671,44 @@ def apply_changes(
         source=source,
         conversation_id=conversation_id,
         summary=summary,
-        changes=changes,
+        changes=tuple(numbered),
         proposal_id=proposal_id,
         user_id=user_id,
     )
     state.history.append(entry)
     return entry
+
+
+def content_numbers(contents: Mapping[str, Record]) -> dict[str, int]:
+    """Each contents item's number.
+
+    Items stored with no number count from 1 in the order they were added, skipping the numbers stored on other items.
+    """
+    numbers = _stored_numbers(contents)
+    free = (number for number in count(1) if number not in numbers.values())
+    older = sorted(content_id for content_id in contents if content_id not in numbers)
+    return {**dict(zip(older, free, strict=False)), **numbers}
+
+
+def next_content_number(contents: Mapping[str, Record]) -> int:
+    """The number for a new contents item: one more than the highest, so a number is not given again."""
+    return max(content_numbers(contents).values(), default=0) + 1
+
+
+def _stored_numbers(contents: Mapping[str, Record]) -> dict[str, int]:
+    return {
+        content_id: number for content_id, record in contents.items() if type(number := record.get("number")) is int
+    }
+
+
+def _numbered(state: TankState, change: Change) -> Change:
+    """A contents item added or put back with a number another item has stored takes the next number instead."""
+    if change.collection is not Collection.CONTENTS or change.before is not None or change.after is None:
+        return change
+    contents = state.records[Collection.CONTENTS]
+    if change.after.get("number") not in _stored_numbers(contents).values():
+        return change
+    return replace(change, after={**change.after, "number": next_content_number(contents)})
 
 
 def undo_changes(entry: HistoryEntry) -> tuple[Change, ...]:

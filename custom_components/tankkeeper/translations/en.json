@@ -102,10 +102,14 @@
           "name": "Name",
           "count": "How many",
           "where": "Where",
+          "zone": "Zone",
+          "aliases": "Other names",
           "notes": "Notes"
         },
         "data_description": {
-          "where": "Where it sits in the tank, for example back left."
+          "where": "Where it sits in the tank, for example back left.",
+          "zone": "Where it sits seen from above, with the front (the camera side) at the bottom. Left empty, it is not placed yet.",
+          "aliases": "Other names you use for it, such as the red one."
         }
       },
       "light": {
@@ -394,11 +398,15 @@
           "name": "Name",
           "count": "How many",
           "where": "Where",
+          "zone": "Zone",
+          "aliases": "Other names",
           "notes": "Notes",
           "added": "Added"
         },
         "data_description": {
           "where": "Where it sits in the tank, for example back left.",
+          "zone": "Where it sits seen from above, with the front (the camera side) at the bottom. Left empty, it is not placed yet.",
+          "aliases": "Other names you use for it, such as the red one.",
           "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
         }
       },
@@ -416,11 +424,15 @@
           "name": "Name",
           "count": "How many",
           "where": "Where",
+          "zone": "Zone",
+          "aliases": "Other names",
           "notes": "Notes",
           "added": "Added"
         },
         "data_description": {
           "where": "Where it sits in the tank, for example back left.",
+          "zone": "Where it sits seen from above, with the front (the camera side) at the bottom. Left empty, it is not placed yet.",
+          "aliases": "Other names you use for it, such as the red one.",
           "added": "The day it went into the tank. Left empty, it is today for something new and stays the same for a change."
         }
       },
@@ -679,6 +691,16 @@
         "test": "New tests",
         "task": "Completed or skipped tasks",
         "status": "Status changes"
+      }
+    },
+    "zone": {
+      "options": {
+        "back_left": "Back left",
+        "back_middle": "Back middle",
+        "back_right": "Back right",
+        "front_left": "Front left",
+        "front_middle": "Front middle",
+        "front_right": "Front right"
       }
     }
   }

@@ -23,7 +23,15 @@ PRODUCT_FORM = {
     "notes": "All in one",
 }
 PANEL = Actor(source=Source.PANEL, user_id=None, conversation_id=None)
-CONTENT_FORM = {"type": "plant", "name": "Java fern", "count": 3, "where": "back left", "notes": "On wood"}
+CONTENT_FORM = {
+    "type": "plant",
+    "name": "Java fern",
+    "count": 3,
+    "where": "on the wood",
+    "zone": "back_left",
+    "aliases": ["the fern"],
+    "notes": "On wood",
+}
 
 
 def _service(entry: MockConfigEntry) -> TankkeeperService:
@@ -373,7 +381,7 @@ async def test_contents_are_added_changed_and_removed(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     content_id, content = _one(service, Collection.CONTENTS)
-    assert content == {**CONTENT_FORM, "added": today, "removed": None}
+    assert content == {**CONTENT_FORM, "added": today, "removed": None, "number": 1}
     assert _latest(service, Collection.CONTENTS, content_id) == "Added Java fern"
 
     menu = await _step(hass, loaded_entry, "contents")
@@ -390,7 +398,17 @@ async def test_contents_are_added_changed_and_removed(
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     changed = service.records(Collection.CONTENTS)[content_id]
-    assert changed == {**CONTENT_FORM, "count": None, "where": "front", "notes": "", "added": today, "removed": None}
+    assert changed == {
+        **CONTENT_FORM,
+        "count": None,
+        "where": "front",
+        "zone": None,
+        "aliases": [],
+        "notes": "",
+        "added": today,
+        "removed": None,
+        "number": 1,
+    }
     assert _latest(service, Collection.CONTENTS, content_id) == "Change Java fern"
 
     result = await _submit(

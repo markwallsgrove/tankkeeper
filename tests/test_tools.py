@@ -281,10 +281,55 @@ async def test_update_content_without_a_date(call: Caller) -> None:
         "name": "Java fern",
         "count": 2,
         "where": "Left",
+        "zone": None,
+        "aliases": [],
         "added": "2026-11-26",
         "removed": None,
         "notes": "",
+        "number": 1,
     }
+
+
+async def _contents(call: Caller) -> dict[str, dict[str, JsonValueType]]:
+    items = list_of((await call.ok("list_contents", include_removed=True))["contents"])
+    return {str_of(dict_of(item)["name"]): dict_of(item) for item in items}
+
+
+async def test_contents_have_a_number_a_zone_and_aliases(call: Caller) -> None:
+    fern = str_of(
+        (await call.ok("add_content", type="plant", name="Java fern", zone="back_left", aliases=["the green one"]))[
+            "record_id"
+        ]
+    )
+    await _content(call, "Moss")
+
+    contents = await _contents(call)
+    assert {name: item["number"] for name, item in contents.items()} == {"Java fern": 1, "Moss": 2}
+    assert contents["Java fern"]["zone"] == "back_left"
+    assert contents["Java fern"]["aliases"] == ["the green one"]
+    assert contents["Moss"]["zone"] is None
+
+    change = await call.ok("update_content", content_id=fern, zone=None, reason="Not sure where it is")
+    await call.ok("apply_change", proposal_id=change["proposal_id"], code=change["code"])
+    assert (await _contents(call))["Java fern"]["zone"] is None
+
+
+async def test_a_number_is_never_given_again(call: Caller) -> None:
+    fern = await _content(call)
+    removal = await call.ok("remove_content", content_id=fern, reason="Melted")
+    await call.ok("apply_change", proposal_id=removal["proposal_id"], code=removal["code"])
+    await _content(call, "Rotala")
+
+    contents = await _contents(call)
+    assert contents["Java fern"]["number"] == 1
+    assert contents["Rotala"]["number"] == 2
+
+
+async def test_a_zone_must_be_one_of_the_six(call: Caller) -> None:
+    fern = await _content(call)
+    assert await call.error("add_content", type="plant", name="Moss", zone="middle") == "invalid_input"
+    assert await call.error("update_content", content_id=fern, zone="top", reason="x") == "invalid_input"
+    assert await call.error("update_content", content_id=fern, aliases=[""], reason="x") == "invalid_input"
 
 
 async def test_products_with_label_doses(call: Caller) -> None:

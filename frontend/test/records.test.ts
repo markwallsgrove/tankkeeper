@@ -185,6 +185,7 @@ describe("tk-records for contents and notes", () => {
       contents: [
         {
           id: "c1",
+          number: 2,
           type: "plant",
           name: "Fern",
           count: 2,
@@ -197,8 +198,8 @@ describe("tk-records for contents and notes", () => {
     });
     const element = await records("contents", conn);
 
-    expect(text(element)).toContain("Fern");
-    expect(text(element)).toContain("plant · 2 · Back · added 2026-11-20");
+    expect(text(element)).toContain("2 Fern");
+    expect(text(element)).toContain("plant · 2 · Not placed · Back · added 2026-11-20");
     expect(findAll(element, "tk-form, button")).toEqual([]);
     expect(findAll(element, "ha-icon-button.settings")).toEqual([]);
   });
