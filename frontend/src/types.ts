@@ -327,6 +327,8 @@ export interface CameraInfo {
   after_test: boolean;
   alerts: boolean;
   keep_days: number;
+  check_plants: boolean;
+  check_fish: boolean;
   latest: PhotoCheck | null;
   open: PhotoCheck[];
 }

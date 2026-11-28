@@ -934,6 +934,8 @@ async def set_camera(service: TankkeeperService, data: Record, actor: Actor) -> 
         after_test=bool(data.get("after_test", current.after_test)),
         alerts=bool(data.get("alerts", current.alerts)),
         keep_days=int(cast(int, data.get("keep_days", current.keep_days))),
+        check_plants=bool(data.get("check_plants", current.check_plants)),
+        check_fish=bool(data.get("check_fish", current.check_fish)),
     )
     return await _propose(
         service,
@@ -2220,6 +2222,10 @@ SPECS: tuple[Spec, ...] = (
             p.Optional("after_test", description="Whether a test starts a photo check"): p.Boolean(),
             p.Optional("alerts", description="Whether an issue goes to the status-alert devices"): p.Boolean(),
             p.Optional("keep_days", description=f"Days to keep photos, 1 to {MAX_KEEP_DAYS}"): p.Coerce(int),
+            p.Optional(
+                "check_plants", description="Whether a photo check looks at the health of the plants"
+            ): p.Boolean(),
+            p.Optional("check_fish", description="Whether a photo check looks at the health of the fish"): p.Boolean(),
             **REASON,
             **CONVERSATION,
         },

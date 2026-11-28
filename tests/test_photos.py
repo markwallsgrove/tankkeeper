@@ -50,6 +50,7 @@ def test_settings_read_from_storage_take_defaults_for_what_is_missing_or_wrong()
         check_time=None, alerts=False, after_test=True
     )
     assert CameraSettings.from_json({"check_time": "07:15"}).check_time == time(7, 15)
+    assert CameraSettings.from_json({"check_plants": False, "check_fish": "no"}) == CameraSettings(check_plants=False)
 
 
 def test_a_check_read_from_storage_ignores_what_is_wrong() -> None:

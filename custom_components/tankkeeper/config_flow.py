@@ -106,6 +106,8 @@ CONF_CAMERA = "camera"
 CONF_CHECK_TIME = "check_time"
 CONF_AFTER_TEST = "after_test"
 CONF_ALERTS = "alerts"
+CONF_CHECK_PLANTS = "check_plants"
+CONF_CHECK_FISH = "check_fish"
 CONF_KEEP_DAYS = "keep_days"
 LIGHT_STEPS = ["change_light", "one_day", "remove_light"]
 SETTINGS_STEPS = ["tank", "water", "products", "contents", "reminders", "rules", "claude", "camera", "add_light"]
@@ -926,6 +928,8 @@ CAMERA_SCHEMA = p.Schema(
         p.Required(CONF_KEEP_DAYS): NumberSelector(
             NumberSelectorConfig(min=1, max=MAX_KEEP_DAYS, step=1, mode=NumberSelectorMode.BOX)
         ),
+        p.Required(CONF_CHECK_PLANTS): BooleanSelector(),
+        p.Required(CONF_CHECK_FISH): BooleanSelector(),
     }
 )
 
@@ -948,6 +952,8 @@ def _camera_from(user_input: dict[str, Any]) -> CameraSettings:
         after_test=bool(user_input[CONF_AFTER_TEST]),
         alerts=bool(user_input[CONF_ALERTS]),
         keep_days=int(user_input[CONF_KEEP_DAYS]),
+        check_plants=bool(user_input[CONF_CHECK_PLANTS]),
+        check_fish=bool(user_input[CONF_CHECK_FISH]),
     )
 
 

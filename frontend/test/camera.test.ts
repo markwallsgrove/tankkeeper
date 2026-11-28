@@ -54,6 +54,8 @@ const info: CameraInfo = {
   after_test: true,
   alerts: true,
   keep_days: 30,
+  check_plants: true,
+  check_fish: false,
   latest: issue,
   open: [issue, { ...issue, id: "c3", reason: "test", proposal_ids: ["p2", "p3"] }],
 };
@@ -222,6 +224,8 @@ describe("tk-camera", () => {
     const card = find(element, "#camera");
     expect(text(card)).toContain("Camera entity, such as a Tapo C100 camera.tapo_c100");
     expect(text(card)).toContain("Alert me about issues");
+    expect(text(card)).toContain("Check plant health");
+    expect(text(card)).toContain("Check fish health");
     expect(findAll(card, "tk-form")).toEqual([]);
     expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
     expect(findAll(card, "tk-history")).toEqual([]);

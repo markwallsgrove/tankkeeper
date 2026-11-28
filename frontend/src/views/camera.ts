@@ -25,6 +25,8 @@ const CAMERA_FIELDS: Field[] = [
   { name: "after_test", label: "Check after each test", type: "checkbox" },
   { name: "alerts", label: "Alert me about issues", type: "checkbox" },
   { name: "keep_days", label: "Keep photos for (days)", type: "number" },
+  { name: "check_plants", label: "Check plant health", type: "checkbox" },
+  { name: "check_fish", label: "Check fish health", type: "checkbox" },
 ];
 
 const REASONS: Record<PhotoCheck["reason"], string> = {
