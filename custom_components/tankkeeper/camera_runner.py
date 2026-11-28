@@ -315,7 +315,7 @@ class CameraRunner:
                     task_name=f"{DOMAIN} photo check",
                     entity_id=claude.ai_task,
                     instructions=self._instructions(check, settings),
-                    structure=photo_schema(settings),
+                    structure=_photo_schema(settings),
                     attachments=[
                         {
                             "media_content_id": f"media-source://{DOMAIN}/{check.id}",
@@ -336,7 +336,7 @@ class CameraRunner:
             for proposal_id, proposal in self._service.state.proposals.items()
             if proposal_id not in before and proposal.source is Source.CAMERA
         )
-        return _seen(asked, result.data, proposal_ids, areas(settings))
+        return _seen(asked, result.data, proposal_ids, _areas(settings))
 
     def _instructions(self, check: PhotoCheck, settings: CameraSettings) -> str:
         contents = [
@@ -349,7 +349,7 @@ class CameraRunner:
             date=dt_util.as_local(check.time).date().isoformat(),
             reason=REASON_TEXT[check.reason],
             result=result_text(self._service.status()),
-            areas=_listed([AREA_TEXT[area] for area in areas(settings)]),
+            areas=_listed([AREA_TEXT[area] for area in _areas(settings)]),
             guides=(PLANT_GUIDE if settings.check_plants else "") + (FISH_GUIDE if settings.check_fish else ""),
             # An escaped "<" keeps owner text from closing the <contents> tag.
             contents=json_dumps(contents).replace("<", "\\u003c"),
@@ -405,16 +405,16 @@ class CameraRunner:
             _LOGGER.info("Could not dismiss the photo check %s: %s", check_id, err)
 
 
-def areas(settings: CameraSettings) -> tuple[str, ...]:
+def _areas(settings: CameraSettings) -> tuple[str, ...]:
     """The areas Claude describes: every area, less the plants or the fish when their check is off."""
     off = {"plants"} if not settings.check_plants else set()
     off |= {"fish"} if not settings.check_fish else set()
     return tuple(area for area in AREAS if area not in off)
 
 
-def photo_schema(settings: CameraSettings) -> p.Schema:
+def _photo_schema(settings: CameraSettings) -> p.Schema:
     """The answer Claude gives: a summary, whether it is an issue, a suggestion and each area it describes."""
-    return p.Schema({**ANSWER, **{AREA_FIELDS[area]: str for area in areas(settings)}})
+    return p.Schema({**ANSWER, **{AREA_FIELDS[area]: str for area in _areas(settings)}})
 
 
 def _listed(items: list[str]) -> str:
