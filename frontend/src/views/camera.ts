@@ -1,6 +1,8 @@
 import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
+import type { AskDetail } from "../area-picker";
+import "../area-picker";
 import { TkView, openChat, openGallery, shared } from "../base";
 import {
   CAMERA,
@@ -9,6 +11,7 @@ import {
   CLOSE,
   NOT_A_PROBLEM,
   PHOTOS,
+  SEARCH,
   iconButton,
   textButton,
 } from "../buttons";
@@ -28,13 +31,17 @@ const CAMERA_FIELDS: Field[] = [
   { name: "check_fish", label: "Check fish health", type: "checkbox" },
 ];
 
-/** The camera: the latest photo, Check now, a way to the photos kept, the issues waiting and the settings read-only. */
+/**
+ * The camera: the latest photo, Check now, Look closer at an area, a way to the photos kept, the issues waiting and
+ * the settings read-only.
+ */
 export class TkCamera extends TkView {
   static override properties = {
     ...TkView.properties,
     stamp: { type: Number },
     info: { state: true },
     proposals: { state: true },
+    picking: { state: true },
   };
 
   static override styles = [shared, photoStyles];
@@ -42,12 +49,14 @@ export class TkCamera extends TkView {
   declare stamp: number;
   declare info: CameraInfo | undefined;
   declare proposals: Proposal[];
+  declare picking: boolean;
 
   constructor() {
     super();
     this.stamp = 0;
     this.info = undefined;
     this.proposals = [];
+    this.picking = false;
   }
 
   protected override reloadOn(): string[] {
@@ -65,8 +74,32 @@ export class TkCamera extends TkView {
     };
   }
 
-  private async act(action: (api: TankkeeperApi) => Promise<unknown>): Promise<void> {
-    if (await this.run(action)) this.changed();
+  private async act(action: (api: TankkeeperApi) => Promise<unknown>): Promise<boolean> {
+    const done = await this.run(action);
+    if (done) this.changed();
+    return done;
+  }
+
+  private async askArea(detail: AskDetail): Promise<void> {
+    if (await this.act((api) => api.call("check_area", { ...detail }))) this.picking = false;
+  }
+
+  private renderLatest(latest: PhotoCheck): TemplateResult {
+    if (this.picking && latest.photo_url !== null) {
+      return html`<tk-area-picker
+        src=${latest.photo_url}
+        alt="The tank, to choose an area"
+        ?disabled=${this.busy}
+        @tk-ask=${(event: CustomEvent<AskDetail>) => void this.askArea(event.detail)}
+        @tk-cancel=${() => {
+          this.picking = false;
+        }}
+      ></tk-area-picker>`;
+    }
+    return html`<div class="latest">
+      <div class="muted">${heading(latest)}</div>
+      ${photo(latest)} ${finding(latest)}
+    </div>`;
   }
 
   private renderIssue(check: PhotoCheck): TemplateResult {
@@ -159,14 +192,7 @@ export class TkCamera extends TkView {
     return html`<section id="camera">
         <h2>Camera</h2>
         ${error}
-        ${
-          latest === null
-            ? html`<p class="muted">No photo yet.</p>`
-            : html`<div class="latest">
-                <div class="muted">${heading(latest)}</div>
-                ${photo(latest)} ${finding(latest)}
-              </div>`
-        }
+        ${latest === null ? html`<p class="muted">No photo yet.</p>` : this.renderLatest(latest)}
         <div class="row">
           ${textButton({
             icon: CAMERA,
@@ -176,6 +202,19 @@ export class TkCamera extends TkView {
             disabled: this.busy,
             onClick: () => void this.act((api) => api.call("check_now")),
           })}
+          ${
+            latest?.photo_url == null || this.picking
+              ? nothing
+              : textButton({
+                  icon: SEARCH,
+                  label: "Look closer",
+                  className: "closer",
+                  disabled: this.busy,
+                  onClick: () => {
+                    this.picking = true;
+                  },
+                })
+          }
           ${textButton({
             icon: PHOTOS,
             label: "More photos",

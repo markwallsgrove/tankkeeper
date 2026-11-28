@@ -307,7 +307,7 @@ export interface Review {
 export interface PhotoCheck {
   id: string;
   time: string;
-  reason: "daily" | "test" | "manual" | "chat";
+  reason: "daily" | "test" | "manual" | "chat" | "area";
   content_type: string | null;
   asked: boolean;
   summary: string | null;
@@ -319,6 +319,8 @@ export interface PhotoCheck {
   proposal_ids: string[];
   photo_url: string | null;
   embed: string | null;
+  area: { x: number; y: number; width: number; height: number } | null;
+  question: string | null;
 }
 
 export interface CameraInfo {

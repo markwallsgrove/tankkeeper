@@ -7,6 +7,7 @@ const REASONS: Record<PhotoCheck["reason"], string> = {
   test: "After a test",
   manual: "Check now",
   chat: "Asked in a chat",
+  area: "Area you chose",
 };
 
 const SEEN: [string, string][] = [
@@ -58,6 +59,7 @@ export function verdict(check: PhotoCheck): TemplateResult | typeof nothing {
 export function finding(check: PhotoCheck): TemplateResult {
   const seen = SEEN.filter(([area]) => check.seen[area] !== undefined);
   return html`
+    ${check.question === null ? nothing : html`<div class="question">You asked: ${check.question}</div>`}
     ${check.summary === null ? nothing : html`<div class="summary">${check.summary}</div>`}
     ${check.suggestion === null ? nothing : html`<div>Suggested: ${check.suggestion}</div>`}
     ${

@@ -70,6 +70,7 @@ from .domain import (
 from .lights import InvalidLightError, Light, LightEvent, LightStatus, dose_time, history_periods, on_periods, prune_log
 from .photos import (
     CAMERA_ID,
+    Area,
     CameraSettings,
     CheckReason,
     IssueState,
@@ -103,7 +104,7 @@ from .reviews import Review, comments_on, kept
 from .rules import RULES_ID, Facts, LightCheck, Reading, RuleSettings, Stage, Status, evaluate
 
 type Target = tuple[Collection, str, Record | None]
-type PhotoChecker = Callable[[CheckReason], Awaitable[PhotoCheck]]
+type PhotoChecker = Callable[[CheckReason, Area | None, str | None], Awaitable[PhotoCheck]]
 
 _DRAFT: ContextVar[tuple[TankkeeperService, TankState] | None] = ContextVar("tankkeeper_draft", default=None)
 
@@ -802,11 +803,13 @@ class TankkeeperService:
 
         return remove
 
-    async def async_check_photo(self, reason: CheckReason) -> PhotoCheck:
-        """Take a photo now and ask Claude to look at it."""
+    async def async_check_photo(
+        self, reason: CheckReason, area: Area | None = None, question: str | None = None
+    ) -> PhotoCheck:
+        """Take a photo now and ask Claude to look at it, or at the area cut from it and the owner's question."""
         if self._photo_checker is None:
             raise NotFoundError("Photo checks are not running")
-        return await self._photo_checker(reason)
+        return await self._photo_checker(reason, area, question)
 
     async def async_save_photo_check(self, check: PhotoCheck) -> None:
         """Store a photo check, or update it by id, then let go of old checks and photos."""

@@ -60,7 +60,7 @@ from .lights import (
     remove_summary as light_remove_summary,
     with_control,
 )
-from .photos import MAX_KEEP_DAYS, PHOTO_PATH, CameraSettings, CheckReason, PhotoCheck
+from .photos import MAX_KEEP_DAYS, MAX_TEXT, PHOTO_PATH, Area, CameraSettings, CheckReason, PhotoCheck
 from .plan import (
     MAX_EVERY_DAYS,
     PlanEvent,
@@ -151,7 +151,7 @@ type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObject
 
 NON_EMPTY = p.All(str, p.Length(min=1))
 LIGHT_ONLY = frozenset({"get_light"})
-CAMERA_ONLY = frozenset({"get_photo", "check_now", "list_photos", "get_photo_check", "dismiss_finding"})
+CAMERA_ONLY = frozenset({"get_photo", "check_now", "check_area", "list_photos", "get_photo_check", "dismiss_finding"})
 PHOTO_LINK_MINUTES = 10
 EMBED_NOTE = "embed shows the photo in TankKeeper's panel chat; other clients can ignore it."
 LIGHT_HISTORY = 20
@@ -163,6 +163,8 @@ IMPORT_DAYS_AFTER = 30
 NOTIFY_DOMAIN = "notify"
 POSITIVE = p.All(p.Coerce(float), p.Range(min=0, min_included=False))
 NOT_NEGATIVE = p.All(p.Coerce(float), p.Range(min=0))
+FRACTION = p.All(p.Coerce(float), p.Range(min=0, max=1, max_included=False))
+SIZE = p.All(p.Coerce(float), p.Range(min=0, max=1, min_included=False))
 PH = p.All(p.Coerce(float), p.Range(min=0, max=14))
 CONVERSATION: dict[p.Marker, object] = {
     p.Optional(
@@ -964,6 +966,19 @@ async def set_camera(service: TankkeeperService, data: Record, actor: Actor) -> 
 async def check_now(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Take a photo now and store what Claude sees in it."""
     return photo_json(service, await service.async_check_photo(CheckReason.MANUAL))
+
+
+async def check_area(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Cut a box from a full-resolution photo taken now and ask Claude about it."""
+    x, y, width, height = (float(cast(float, data[key])) for key in ("x", "y", "width", "height"))
+    if x + width > 1 or y + height > 1:
+        raise InvalidInputError("The box must fit in the frame: x + width and y + height are at most 1")
+    question = data.get("question")
+    area = Area(x=x, y=y, width=width, height=height)
+    return photo_json(
+        service,
+        await service.async_check_photo(CheckReason.AREA, area, question if isinstance(question, str) else None),
+    )
 
 
 async def get_photo(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -2253,6 +2268,27 @@ SPECS: tuple[Spec, ...] = (
         f"whether it is an issue. {EMBED_NOTE} Counts toward the daily cap. Fails with lights_off when every light "
         "is off.",
         schema={**CONVERSATION},
+    ),
+    Spec(
+        name="check_area",
+        title="Look closely at an area of the tank",
+        annotations=RECORD,
+        handler=check_area,
+        description="Take a full-resolution photo now, cut a box from it and ask Claude about that area, such as a "
+        "plant, a fish or a patch of algae. Claude sees more detail than in a whole photo. The box is in fractions "
+        "of the frame from the top left: x 0.5 and width 0.25 is the third quarter from the left. Choose it on the "
+        f"latest photo from get_camera. The check is stored like check_now and never alerts. {EMBED_NOTE} Counts "
+        "toward the daily cap. Fails with lights_off when every light is off.",
+        schema={
+            p.Required("x", description="Left edge, from 0 (left) to below 1"): FRACTION,
+            p.Required("y", description="Top edge, from 0 (top) to below 1"): FRACTION,
+            p.Required("width", description="Width, above 0; x + width is at most 1"): SIZE,
+            p.Required("height", description="Height, above 0; y + height is at most 1"): SIZE,
+            p.Optional("question", description="What the owner wants to know about the area"): p.All(
+                str, p.Length(min=1, max=MAX_TEXT)
+            ),
+            **CONVERSATION,
+        },
     ),
     Spec(
         name="get_photo",

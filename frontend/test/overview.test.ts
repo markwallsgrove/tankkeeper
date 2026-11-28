@@ -139,6 +139,8 @@ const check: PhotoCheck = {
   proposal_ids: [],
   photo_url: null,
   embed: null,
+  area: null,
+  question: null,
 };
 
 function connection(lights: Light[] = [light]): FakeConnection {
