@@ -121,6 +121,8 @@ function connection(lights: Light[] = [light]): FakeConnection {
       after_test: false,
       alerts: true,
       keep_days: 30,
+      check_plants: true,
+      check_fish: true,
       latest: null,
       open: [],
     })

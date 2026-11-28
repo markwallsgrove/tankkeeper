@@ -511,14 +511,18 @@
           "check_time": "Daily check time",
           "after_test": "Check after each test",
           "alerts": "Alert me about issues",
-          "keep_days": "Keep photos for"
+          "keep_days": "Keep photos for",
+          "check_plants": "Check plant health",
+          "check_fish": "Check fish health"
         },
         "data_description": {
           "camera": "The camera entity that sees the tank. Leave empty for no photo checks.",
           "check_time": "Check once a day at this time, only while a light is on. Leave empty for no daily check.",
           "after_test": "Also check when a water test is recorded.",
           "alerts": "Send issues from daily and after-test checks to the status alert devices, with the photo.",
-          "keep_days": "Days to keep photos. Open issues and the latest checks are always kept."
+          "keep_days": "Days to keep photos. Open issues and the latest checks are always kept.",
+          "check_plants": "Claude looks for signs of disease or poor health in the plants.",
+          "check_fish": "Claude looks for signs of disease or stress in the fish. Turn off when the tank has no fish."
         }
       },
       "add_light": {

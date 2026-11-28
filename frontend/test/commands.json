@@ -231,7 +231,17 @@
   },
   "set_camera": {
     "required": [],
-    "optional": ["after_test", "alerts", "camera", "check_time", "evidence", "keep_days", "reason"]
+    "optional": [
+      "after_test",
+      "alerts",
+      "camera",
+      "check_fish",
+      "check_plants",
+      "check_time",
+      "evidence",
+      "keep_days",
+      "reason"
+    ]
   },
   "check_now": {
     "required": [],

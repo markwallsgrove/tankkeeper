@@ -24,7 +24,7 @@ MAX_CHECKS = 200
 MAX_DISMISSED = 50
 MAX_TEXT = 500
 PHOTO_PATH = f"/api/{DOMAIN}/photos"
-AREAS = ("water", "algae", "plants", "level")
+AREAS = ("water", "algae", "plants", "fish", "level")
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
 _PHOTO_ID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
@@ -49,13 +49,15 @@ class IssueState(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CameraSettings:
-    """Which camera looks at the tank, when it checks, whether it alerts and how long photos are kept."""
+    """The camera, when it checks, alerts, how long photos are kept and which health checks Claude makes."""
 
     camera: str | None = None
     check_time: time | None = time(14)
     after_test: bool = False
     alerts: bool = True
     keep_days: int = 30
+    check_plants: bool = True
+    check_fish: bool = True
 
     def to_json(self) -> Record:
         """Serialise for storage and tools."""
@@ -65,6 +67,8 @@ class CameraSettings:
             "after_test": self.after_test,
             "alerts": self.alerts,
             "keep_days": self.keep_days,
+            "check_plants": self.check_plants,
+            "check_fish": self.check_fish,
         }
 
     @classmethod
@@ -81,6 +85,8 @@ class CameraSettings:
             after_test=stored.get("after_test") is True,
             alerts=stored.get("alerts", default.alerts) is not False,
             keep_days=keep_days if isinstance(keep_days, int) else default.keep_days,
+            check_plants=stored.get("check_plants") is not False,
+            check_fish=stored.get("check_fish") is not False,
         )
 
 
