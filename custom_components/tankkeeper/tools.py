@@ -22,6 +22,7 @@ from .domain import (
     SETUP_COLLECTIONS,
     TANK_ID,
     WATER_ID,
+    ZONES,
     Change,
     Collection,
     Conversation,
@@ -36,9 +37,11 @@ from .domain import (
     Source,
     Step,
     TankkeeperError,
+    content_numbers,
     dose_for_volume,
     dosing_within_tank,
     merge_record,
+    next_content_number,
 )
 from .light_control import helper_number, helper_time
 from .lights import (
@@ -84,6 +87,10 @@ MCP_PLATFORM = "mcp_server"
 PROMPT = """TankKeeper holds the records of the owner's fish tank: the tank, water, products, \
 contents, a log of doses and tests, notes, the history of every change and past conversations.
 - Record doses, tests, new contents and notes as soon as the owner tells you about them.
+- Each contents item has a number that is never given again, maybe other names (aliases) and maybe a zone: \
+where it sits seen from above, back or front by left, middle or right, with the front on the camera side. \
+When the owner names an item by number, name, alias or zone, find it in tankkeeper__list_contents, and ask \
+which one when more than one matches. Name items by number and name, such as 3 Rotala.
 - Every other change is a proposal. Call the change tool, read its summary and changes back to the \
 owner, and call tankkeeper__apply_change with the confirm code only after the owner says yes. Never \
 apply a change the owner has not seen.
@@ -241,7 +248,9 @@ CONTENT_FIELDS: dict[p.Marker, object] = {
     p.Optional("type"): p.In(CONTENT_TYPES),
     p.Optional("name"): NON_EMPTY,
     p.Optional("count"): p.All(int, p.Range(min=0)),
-    p.Optional("where", description="Where it sits in the tank"): str,
+    p.Optional("where", description="Where it sits in the tank, in the owner's words"): str,
+    p.Optional("zone", description="Where it sits seen from above, or null when not placed"): p.Any(None, p.In(ZONES)),
+    p.Optional("aliases", description="Other names the owner uses for it, such as the red one"): [NON_EMPTY],
     p.Optional("added", description="ISO date it went in"): NON_EMPTY,
     p.Optional("notes", description="Notes for Claude, in the owner's words"): str,
 }
@@ -352,12 +361,14 @@ async def list_products(service: TankkeeperService, data: Record, actor: Actor) 
 
 
 async def list_contents(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
-    """What is in the tank, and with include_removed what was taken out."""
+    """What is in the tank, and with include_removed what was taken out, each with its number."""
     include_removed = data["include_removed"] is True
+    contents = service.records(Collection.CONTENTS)
+    numbers = content_numbers(contents)
     return {
         "contents": [
-            {"id": content_id, **content}
-            for content_id, content in service.records(Collection.CONTENTS).items()
+            {"id": content_id, **content, "number": numbers[content_id]}
+            for content_id, content in contents.items()
             if include_removed or content.get("removed") is None
         ]
     }
@@ -497,6 +508,8 @@ def new_content(data: Record) -> Record:
         "name": data["name"],
         "count": data.get("count"),
         "where": data.get("where", ""),
+        "zone": data.get("zone"),
+        "aliases": data.get("aliases", []),
         "added": _date_or_today(data, "added"),
         "removed": None,
         "notes": data.get("notes", ""),
@@ -510,7 +523,8 @@ async def add_content(service: TankkeeperService, data: Record, actor: Actor) ->
 
 async def record_content(service: TankkeeperService, data: Record, actor: Actor) -> HistoryEntry:
     """Store a new contents item straight away. Adding to the tank is a record, not a proposal."""
-    return await service.async_record(Collection.CONTENTS, new_content(data), actor, f"Added {data['name']}")
+    content = {**new_content(data), "number": next_content_number(service.records(Collection.CONTENTS))}
+    return await service.async_record(Collection.CONTENTS, content, actor, f"Added {data['name']}")
 
 
 async def add_note(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:

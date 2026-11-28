@@ -4,6 +4,7 @@ import type { TankkeeperApi } from "../api";
 import { TkView, shared } from "../base";
 import { DELETE, PENCIL, PLUS, iconButton } from "../buttons";
 import "../tk-history";
+import { type MapItem, type MoveDetail, zoneLabel } from "../tank-map";
 import type { Field, Values } from "../types";
 
 interface Item {
@@ -21,7 +22,7 @@ interface Edit {
   fields: Field[];
 }
 
-/** A kind of record. A setting changes in the options and is read-only here; the rest carry an Edit. */
+/** A kind of record. A setting changes in the options and is read-only here, except for a contents item's zone on the map; the rest carry an Edit. */
 interface Kind {
   title: string;
   /** One record, in words. */
@@ -83,11 +84,20 @@ const KINDS: Record<string, Kind> = {
     list: "list_contents",
     key: "contents",
     canShowRemoved: true,
-    label: (item) => str(item.name),
+    label: (item) => [str(item.number), str(item.name)].filter((part) => part !== "").join(" "),
     lines: (item) => [
-      [str(item.type), str(item.count), str(item.where), `added ${str(item.added)}`]
+      [
+        str(item.type),
+        str(item.count),
+        zoneLabel(item.zone),
+        str(item.where),
+        `added ${str(item.added)}`,
+      ]
         .filter((part) => part !== "")
         .join(" · "),
+      Array.isArray(item.aliases) && item.aliases.length > 0
+        ? `Also called: ${item.aliases.map(str).join(", ")}`
+        : "",
       str(item.notes),
     ],
   },
@@ -164,6 +174,19 @@ export class TkRecords extends TkView {
 
   private async removeRecord(edit: Edit, id: string): Promise<void> {
     await this.run((api) => api.call(edit.remove, { [edit.idArg]: id }));
+  }
+
+  private map(): TemplateResult | typeof nothing {
+    if (this.kind !== "contents") return nothing;
+    const placeable = this.items.filter((item) => typeof item.removed !== "string") as MapItem[];
+    return html`<tk-tank-map
+      .items=${placeable}
+      ?disabled=${this.busy}
+      @tk-move=${(event: CustomEvent<MoveDetail>) =>
+        void this.run((api) =>
+          api.call("update_content", { content_id: event.detail.id, zone: event.detail.zone }),
+        )}
+    ></tk-tank-map>`;
   }
 
   private actions(config: Kind, item: Item): TemplateResult {
@@ -274,7 +297,7 @@ export class TkRecords extends TkView {
           }
           ${this.addButton(config)}
         </div>
-        ${this.renderError()}
+        ${this.renderError()} ${this.map()}
         <ul>
           ${repeat(
             this.items,

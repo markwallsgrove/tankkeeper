@@ -57,7 +57,7 @@
   },
   "add_content": {
     "required": ["name", "type"],
-    "optional": ["added", "count", "notes", "where"]
+    "optional": ["added", "aliases", "count", "notes", "where", "zone"]
   },
   "add_note": {
     "required": ["kind", "text", "topic"],
@@ -111,7 +111,18 @@
   },
   "update_content": {
     "required": ["content_id"],
-    "optional": ["added", "count", "evidence", "name", "notes", "reason", "type", "where"]
+    "optional": [
+      "added",
+      "aliases",
+      "count",
+      "evidence",
+      "name",
+      "notes",
+      "reason",
+      "type",
+      "where",
+      "zone"
+    ]
   },
   "remove_content": {
     "required": ["content_id"],

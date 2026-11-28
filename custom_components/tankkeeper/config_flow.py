@@ -42,6 +42,7 @@ from .const import CONF_DOSING_VOLUME, CONF_SETUP, CONF_TANK_NAME, CONF_VOLUME, 
 from .domain import (
     TANK_ID,
     WATER_ID,
+    ZONES,
     Collection,
     InvalidInputError,
     NothingToChangeError,
@@ -224,6 +225,8 @@ CONTENT_SCHEMA = p.Schema(
             NumberSelectorConfig(min=0, max=10000, step=1, mode=NumberSelectorMode.BOX)
         ),
         p.Optional("where"): TextSelector(),
+        p.Optional("zone"): SelectSelector(SelectSelectorConfig(options=list(ZONES), translation_key="zone")),
+        p.Optional("aliases"): TextSelector(TextSelectorConfig(multiple=True)),
         p.Optional(CONF_NOTES): NOTES,
     }
 )
@@ -319,7 +322,7 @@ class TankkeeperConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None and not str(user_input["name"]).strip():
             return self._name_required("add_content", CONTENT_SCHEMA, user_input)
         if user_input is not None:
-            content = new_content(_content_data(user_input))
+            content = {**new_content(_content_data(user_input)), "number": len(self._contents) + 1}
             self._add(Collection.CONTENTS, ulid_now(), content)
             self._contents.append(str(content["name"]))
             return await self.async_step_contents()
@@ -568,14 +571,15 @@ class TankkeeperOptionsFlow(OptionsFlow):
         assert content_id is not None
         current = self._service().state.require(Collection.CONTENTS, content_id)
         if user_input is None:
-            values = _filled({key: current.get(key) for key in ("type", "name", "count", "where", "added", CONF_NOTES)})
+            fields = ("type", "name", "count", "where", "zone", "aliases", "added", CONF_NOTES)
+            values = _filled({key: current.get(key) for key in fields})
             return self.async_show_form(
                 step_id="edit_content", data_schema=self.add_suggested_values_to_schema(CONTENT_OPTIONS_SCHEMA, values)
             )
         if not str(user_input["name"]).strip():
             return self._form_again("edit_content", CONTENT_OPTIONS_SCHEMA, user_input, {"name": "name_required"})
         fresh = new_content({"added": current.get("added"), **_content_data(user_input)})
-        content = merge_record(fresh, {"removed": current.get("removed")})
+        content = merge_record(fresh, {key: current[key] for key in ("removed", "number") if key in current})
         return await self._async_set([(Collection.CONTENTS, content_id, content)], changed_content_summary(content))
 
     async def async_step_remove_content(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
