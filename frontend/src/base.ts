@@ -65,6 +65,10 @@ export const shared = css`
     color: var(--text-primary-color, #fff);
     background: var(--primary-color);
   }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
   .muted {
     color: var(--secondary-text-color);
     font-size: 0.9em;
