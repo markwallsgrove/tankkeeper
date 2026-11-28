@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TankkeeperApi } from "../src/api";
-import { CHAT } from "../src/base";
-import { CHAT as CHAT_ICON, CHECK, CLOSE, SKIP } from "../src/buttons";
+import { CHANGED, CHAT } from "../src/base";
+import { CAMERA, CHAT as CHAT_ICON, CHECK, CLOSE, SKIP } from "../src/buttons";
 import "../src/views/overview";
 import type { TkOverview } from "../src/views/overview";
-import type { Light } from "../src/types";
+import type { CameraInfo, ClaudeSettings, Light, PhotoCheck } from "../src/types";
 import { FakeConnection, find, findAll, mount, settle, text } from "./fake";
 
 const status = {
@@ -103,6 +103,44 @@ const proposal = {
   batch: false,
 };
 
+const claude: ClaudeSettings = {
+  agent: "conversation.claude",
+  ai_task: "ai_task.claude",
+  review_on: [],
+  comments: true,
+  daily_time: null,
+  daily_cap: 5,
+  chat_agent: "conversation.claude",
+  model_note: "",
+};
+const camera: CameraInfo = {
+  camera: null,
+  check_time: "14:00",
+  after_test: false,
+  alerts: true,
+  keep_days: 30,
+  check_plants: true,
+  check_fish: true,
+  latest: null,
+  open: [],
+};
+const check: PhotoCheck = {
+  id: "c9",
+  time: "2026-11-26T10:00:00+00:00",
+  reason: "manual",
+  content_type: "image/jpeg",
+  asked: true,
+  summary: "Brown film on the plant leaves.",
+  issue: true,
+  suggestion: "Wipe the leaves and dose less.",
+  seen: {},
+  note: null,
+  state: "open",
+  proposal_ids: [],
+  photo_url: null,
+  embed: null,
+};
+
 function connection(lights: Light[] = [light]): FakeConnection {
   return new FakeConnection()
     .on("get_status", status)
@@ -115,17 +153,8 @@ function connection(lights: Light[] = [light]): FakeConnection {
       next_change: { time: "2026-11-26T20:00:00+00:00" },
     })
     .on("list_proposals", { proposals: [proposal] })
-    .on("get_camera", {
-      camera: null,
-      check_time: "14:00",
-      after_test: false,
-      alerts: true,
-      keep_days: 30,
-      check_plants: true,
-      check_fish: true,
-      latest: null,
-      open: [],
-    })
+    .on("get_camera", camera)
+    .on("get_claude", claude)
     .on("get_history", { history: [] })
     .on("skip_task", { applied: true })
     .on("complete_task", { applied: true })
@@ -442,5 +471,138 @@ describe("tk-overview", () => {
     find(element, "#waiting ha-icon-button.accept").click();
     await settle(element);
     expect(find(element, ".error").textContent).toBe("Already decided");
+  });
+
+  describe("Analyse tank now", () => {
+    const withCamera = (lights: Light[] = [light]): FakeConnection =>
+      connection(lights).on("get_camera", { ...camera, camera: "camera.tank" });
+
+    function analyse(element: TkOverview): HTMLButtonElement {
+      return find(element, "#analyse button.analyse") as HTMLButtonElement;
+    }
+
+    it("is hidden while no camera is set", async () => {
+      const element = await view(connection());
+      expect(findAll(element, "#analyse")).toEqual([]);
+    });
+
+    it("has an icon and says what a check costs", async () => {
+      const element = await view(withCamera());
+      const button = analyse(element);
+      expect(button.disabled).toBe(false);
+      expect(button.textContent.trim()).toBe("Analyse tank now");
+      expect(button.querySelector("svg.icon path")?.getAttribute("d")).toBe(CAMERA);
+      expect(text(find(element, "#analyse .cost"))).toContain(
+        "Each check uses paid Anthropic API usage and counts toward Claude's daily cap of 5",
+      );
+      expect(findAll(element, "#analyse .reason, #analyse .no-ai-task")).toEqual([]);
+    });
+
+    it("is disabled, with the reason, while every light is off", async () => {
+      const off = [
+        { ...light, state: "off" },
+        { ...light, id: "light2", state: null },
+      ];
+      const element = await view(withCamera(off));
+      expect(analyse(element).disabled).toBe(true);
+      expect(find(element, "#analyse .reason").textContent).toBe(
+        "Every light is off, so the camera sees nothing.",
+      );
+    });
+
+    it("can check with no lights, and with one light on", async () => {
+      expect(analyse(await view(withCamera([]))).disabled).toBe(false);
+      const element = await view(withCamera([{ ...light, state: "off" }, light]));
+      expect(analyse(element).disabled).toBe(false);
+    });
+
+    it("is disabled, with the reason, while a check runs, then shows the result", async () => {
+      let finish: (value: PhotoCheck) => void = () => undefined;
+      const conn = withCamera().on(
+        "check_now",
+        () => new Promise<PhotoCheck>((resolve) => (finish = resolve)),
+      );
+      const element = await view(conn);
+      let changed = 0;
+      element.addEventListener(CHANGED, () => (changed += 1));
+      analyse(element).click();
+      await settle(element);
+
+      expect(analyse(element).disabled).toBe(true);
+      expect(find(element, "#analyse .reason").textContent).toBe("A check is running.");
+      expect(findAll(element, "#analyse .result")).toEqual([]);
+
+      finish(check);
+      await settle(element);
+
+      expect(analyse(element).disabled).toBe(false);
+      expect(findAll(element, "#analyse .reason")).toEqual([]);
+      const result = text(find(element, "#analyse .result"));
+      expect(result).toContain("Issue found");
+      expect(result).toContain("Brown film on the plant leaves.");
+      expect(result).toContain("Suggested: Wipe the leaves and dose less.");
+      expect(changed).toBe(1);
+    });
+
+    it("says when Claude found no issue, and why Claude did not look", async () => {
+      const quiet = { ...check, issue: false, suggestion: null, summary: "All clear." };
+      const element = await view(withCamera().on("check_now", quiet));
+      analyse(element).click();
+      await settle(element);
+      expect(text(find(element, "#analyse .result"))).toContain("No issue found");
+      expect(text(find(element, "#analyse .result"))).not.toContain("Suggested");
+
+      const unasked = {
+        ...check,
+        asked: false,
+        issue: false,
+        summary: null,
+        suggestion: null,
+        note: "No comment: the daily cap of 5 is reached.",
+      };
+      element.api = new TankkeeperApi(withCamera().on("check_now", unasked));
+      await settle(element);
+      analyse(element).click();
+      await settle(element);
+      const result = text(find(element, "#analyse .result"));
+      expect(result).toContain("No comment: the daily cap of 5 is reached.");
+      expect(result).not.toContain("issue found");
+    });
+
+    it("links to the check in the Camera section", async () => {
+      const scrolled: Element[] = [];
+      vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+        scrolled.push(this);
+      });
+      const element = await view(withCamera().on("check_now", check));
+      analyse(element).click();
+      await settle(element);
+
+      const link = find(element, "#analyse a.camera-link");
+      expect(link.textContent).toBe("See it in the Camera section");
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      link.dispatchEvent(click);
+
+      expect(click.defaultPrevented).toBe(true);
+      expect(scrolled.map((item) => item.tagName)).toEqual(["TK-CAMERA"]);
+      vi.restoreAllMocks();
+    });
+
+    it("says when no AI task entity is set", async () => {
+      const element = await view(withCamera().on("get_claude", { ...claude, ai_task: null }));
+      expect(analyse(element).disabled).toBe(false);
+      expect(text(find(element, "#analyse .no-ai-task"))).toBe(
+        "No AI task entity is set, so a check takes a photo but Claude does not look at it.",
+      );
+    });
+
+    it("shows why a check failed", async () => {
+      const conn = withCamera().fail("check_now", "lights_off", "Every tank light is off");
+      const element = await view(conn);
+      analyse(element).click();
+      await settle(element);
+      expect(find(element, ".error").textContent).toBe("Every tank light is off");
+      expect(findAll(element, "#analyse .result")).toEqual([]);
+    });
   });
 });

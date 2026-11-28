@@ -2,17 +2,20 @@ import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
 import { TkView, openChat, shared } from "../base";
-import { CHAT, CHECK, CLOSE, SKIP, iconButton } from "../buttons";
+import { CAMERA, CHAT, CHECK, CLOSE, SKIP, iconButton, textButton } from "../buttons";
 import { cycleChart, lightRows, parameterCharts, renderChart, renderLightChart } from "../charts";
 import { addDays, changeText, isoDate, shortTime, sourceText } from "../format";
 import { facts } from "../settings";
 import "../tk-history";
 import "./camera";
 import type {
+  CameraInfo,
+  ClaudeSettings,
   Field,
   Level,
   Light,
   LightSchedule,
+  PhotoCheck,
   LightInfo,
   LogEntry,
   Plan,
@@ -84,6 +87,9 @@ export class TkOverview extends TkView {
     log: { state: true },
     lights: { state: true },
     proposals: { state: true },
+    camera: { state: true },
+    claude: { state: true },
+    result: { state: true },
   };
 
   static override styles = shared;
@@ -94,6 +100,10 @@ export class TkOverview extends TkView {
   declare log: LogEntry[];
   declare lights: LightInfo | undefined;
   declare proposals: Proposal[];
+  declare camera: CameraInfo | undefined;
+  declare claude: ClaudeSettings | undefined;
+  /** The check Analyse tank now last ran. */
+  declare result: PhotoCheck | undefined;
 
   constructor() {
     super();
@@ -103,11 +113,14 @@ export class TkOverview extends TkView {
     this.log = [];
     this.lights = undefined;
     this.proposals = [];
+    this.camera = undefined;
+    this.claude = undefined;
+    this.result = undefined;
   }
 
   protected override async load(api: TankkeeperApi): Promise<() => void> {
     const today = isoDate(new Date(), api.timeZone);
-    const [status, tank, plan, log, lights, proposals] = await Promise.all([
+    const [status, tank, plan, log, lights, proposals, camera, claude] = await Promise.all([
       api.call<Status>("get_status"),
       api.call<TankInfo>("get_tank"),
       api.call<Plan>("get_plan", { start: today, end: addDays(today, WEEK_DAYS) }),
@@ -118,6 +131,8 @@ export class TkOverview extends TkView {
       }),
       api.call<LightInfo>("get_light", { days: LIGHT_DAYS }),
       api.call<{ proposals: Proposal[] }>("list_proposals", { state: "pending" }),
+      api.call<CameraInfo>("get_camera"),
+      api.call<ClaudeSettings>("get_claude"),
     ]);
     return () => {
       this.status = status;
@@ -126,6 +141,8 @@ export class TkOverview extends TkView {
       this.log = log.entries;
       this.lights = lights;
       this.proposals = proposals.proposals;
+      this.camera = camera;
+      this.claude = claude;
     };
   }
 
@@ -172,6 +189,71 @@ export class TkOverview extends TkView {
               </li>`,
           )}
       </ul>
+    </section>`;
+  }
+
+  /** Why Analyse tank now can't run, or undefined when it can. */
+  private analyseBlocked(lights: LightInfo): string | undefined {
+    if (this.busy) return "A check is running.";
+    const dark = lights.lights.length > 0 && lights.lights.every((light) => light.state !== "on");
+    return dark ? "Every light is off, so the camera sees nothing." : undefined;
+  }
+
+  private scrollToCamera(event: Event): void {
+    event.preventDefault();
+    this.renderRoot.querySelector("tk-camera")?.scrollIntoView({ block: "start" });
+  }
+
+  /** Analyse tank now: a photo check from the Overview, and what it found. */
+  private renderAnalyse(lights: LightInfo): TemplateResult | typeof nothing {
+    const { claude, result } = this;
+    if (this.camera?.camera == null || claude === undefined) return nothing;
+    const blocked = this.analyseBlocked(lights);
+    return html`<section id="analyse">
+      <div class="row">
+        ${textButton({
+          icon: CAMERA,
+          label: "Analyse tank now",
+          className: "analyse",
+          primary: true,
+          disabled: blocked !== undefined,
+          onClick: () =>
+            void this.act(async (api) => {
+              this.result = await api.call<PhotoCheck>("check_now");
+            }),
+        })}
+      </div>
+      ${blocked === undefined ? nothing : html`<p class="muted reason">${blocked}</p>`}
+      <p class="muted cost">
+        Each check uses paid Anthropic API usage and counts toward Claude's daily cap of
+        ${String(claude.daily_cap)}.
+      </p>
+      ${
+        claude.ai_task === null
+          ? html`<p class="muted no-ai-task">
+              No AI task entity is set, so a check takes a photo but Claude does not look at it.
+            </p>`
+          : nothing
+      }
+      ${
+        result === undefined
+          ? nothing
+          : html`<div class="result">
+              <div class="muted">${shortTime(result.time)}</div>
+              ${result.asked ? html`<strong>${result.issue ? "Issue found" : "No issue found"}</strong>` : nothing}
+              ${result.summary === null ? nothing : html`<div>${result.summary}</div>`}
+              ${result.suggestion === null ? nothing : html`<div>Suggested: ${result.suggestion}</div>`}
+              ${result.note === null ? nothing : html`<div class="muted">${result.note}</div>`}
+              <a
+                class="camera-link"
+                href="#camera"
+                @click=${(event: Event) => {
+                  this.scrollToCamera(event);
+                }}
+                >See it in the Camera section</a
+              >
+            </div>`
+      }
     </section>`;
   }
 
@@ -310,7 +392,7 @@ export class TkOverview extends TkView {
     const week = plan.tasks.filter((task) => task.date > today);
     return html`
       ${this.error ? html`<p class="error">${this.error}</p>` : nothing}
-      ${this.renderStatus(status, tank)}
+      ${this.renderStatus(status, tank)} ${this.renderAnalyse(lights)}
       <section id="today">
         <h2>Today</h2>
         ${todays.length === 0 ? html`<p class="muted">No tasks today</p>` : nothing}
