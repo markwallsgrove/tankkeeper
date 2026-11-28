@@ -32,4 +32,15 @@ describe("tk-dialog", () => {
     expect((find(element, "dialog") as HTMLDialogElement).open).toBe(false);
     expect(closed).toBe(1);
   });
+
+  it("is narrow unless asked to be wide", async () => {
+    const element = mount<TkDialog>("tk-dialog", { heading: "A photo" });
+    await settle(element);
+    expect(element.hasAttribute("wide")).toBe(false);
+
+    element.wide = true;
+    await settle(element);
+
+    expect(element.hasAttribute("wide")).toBe(true);
+  });
 });

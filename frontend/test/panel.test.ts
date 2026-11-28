@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import "../src/tankkeeper-panel";
 import type { TankkeeperPanel } from "../src/tankkeeper-panel";
-import { openChat } from "../src/base";
+import { openChat, openGallery } from "../src/base";
 import type { TkChat } from "../src/views/chat";
 import { FakeConnection, find, findAll, hassWith, mount, settle } from "./fake";
 
@@ -44,6 +44,7 @@ function connection(): FakeConnection {
       chat_agent_name: "Claude",
     })
     .on("get_reviews", { reviews: [] })
+    .on("list_photos", { photos: [] })
     .on("get_claude", {
       agent: null,
       ai_task: null,
@@ -70,6 +71,10 @@ const TABS: [string, string][] = [
 ];
 
 describe("tankkeeper-panel", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("has a tab for each part of the tank and opens on the overview", async () => {
     const conn = connection();
     const element = mount<TankkeeperPanel>("tankkeeper-panel", {
@@ -103,6 +108,62 @@ describe("tankkeeper-panel", () => {
       const view = find(element, tag) as unknown as { kind?: string };
       if (tag === "tk-records") expect(view.kind).toBe(tab);
     }
+  });
+
+  it("opens the photo gallery as a page of the overview, and goes back", async () => {
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(connection()),
+      narrow: false,
+    });
+    await settle(element);
+
+    openGallery(find(element, "tk-overview"));
+    await settle(element);
+
+    expect(findAll(element, "main > *").map((view) => view.tagName.toLowerCase())).toEqual([
+      "tk-gallery",
+    ]);
+    expect(selected(element)).toBe("overview");
+
+    openGallery(find(element, "tk-gallery"), false);
+    await settle(element);
+
+    expect(findAll(element, "main > *").map((view) => view.tagName.toLowerCase())).toEqual([
+      "tk-overview",
+    ]);
+  });
+
+  it("shows the gallery from its top, as More photos is at the bottom of the overview", async () => {
+    const scrolled: Element[] = [];
+    vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (this: Element) {
+      scrolled.push(this);
+    });
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(connection()),
+      narrow: false,
+    });
+    await settle(element);
+
+    openGallery(find(element, "tk-overview"));
+    await settle(element);
+
+    expect(scrolled).toEqual([element]);
+  });
+
+  it("leaves the gallery from the Overview tab", async () => {
+    const element = mount<TankkeeperPanel>("tankkeeper-panel", {
+      hass: hassWith(connection()),
+      narrow: false,
+    });
+    await settle(element);
+    openGallery(find(element, "tk-overview"));
+    await settle(element);
+
+    find(element, "button.tab[data-tab=overview]").click();
+    await settle(element);
+
+    expect(findAll(element, "tk-overview").length).toBe(1);
+    expect(findAll(element, "tk-gallery")).toEqual([]);
   });
 
   it("gives each records tab its own view, so typed text stays on its tab", async () => {
