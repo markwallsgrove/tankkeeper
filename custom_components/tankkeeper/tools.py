@@ -151,7 +151,9 @@ type Handler = Callable[[TankkeeperService, Record, Actor], Awaitable[JsonObject
 
 NON_EMPTY = p.All(str, p.Length(min=1))
 LIGHT_ONLY = frozenset({"get_light"})
-CAMERA_ONLY = frozenset({"get_photo", "check_now", "check_area", "list_photos", "get_photo_check", "dismiss_finding"})
+CAMERA_ONLY = frozenset(
+    {"get_photo", "check_now", "check_area", "check_thorough", "list_photos", "get_photo_check", "dismiss_finding"}
+)
 PHOTO_LINK_MINUTES = 10
 EMBED_NOTE = "embed shows the photo in TankKeeper's panel chat; other clients can ignore it."
 LIGHT_HISTORY = 20
@@ -952,6 +954,9 @@ async def set_camera(service: TankkeeperService, data: Record, actor: Actor) -> 
         keep_days=int(cast(int, data.get("keep_days", current.keep_days))),
         check_plants=bool(data.get("check_plants", current.check_plants)),
         check_fish=bool(data.get("check_fish", current.check_fish)),
+        thorough_days=current.thorough_days
+        if "thorough_days" not in data
+        else tuple(Weekday(str(day)) for day in cast(list[JsonValue], data["thorough_days"])),
     )
     return await _propose(
         service,
@@ -966,6 +971,11 @@ async def set_camera(service: TankkeeperService, data: Record, actor: Actor) -> 
 async def check_now(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
     """Take a photo now and store what Claude sees in it."""
     return photo_json(service, await service.async_check_photo(CheckReason.MANUAL))
+
+
+async def check_thorough(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
+    """Take a full-resolution photo now and ask Claude to look closely at it, tile by tile."""
+    return photo_json(service, await service.async_check_photo(CheckReason.THOROUGH))
 
 
 async def check_area(service: TankkeeperService, data: Record, actor: Actor) -> JsonObjectType:
@@ -2230,9 +2240,10 @@ SPECS: tuple[Spec, ...] = (
         annotations=READ,
         handler=get_camera,
         description="The camera settings: the camera entity, the daily photo check time (only while a light is on), "
-        "whether a test starts a check, whether issues alert the status-alert devices and how many days photos are "
-        "kept. Also the latest photo check and the issues waiting for the owner. photo_url links to the photo for a "
-        "few minutes; MCP can't return the image itself.",
+        "whether a test starts a check, whether issues alert the status-alert devices, how many days photos are "
+        "kept and the weekdays on which the daily check is a thorough check. Also the latest photo check and the "
+        "issues waiting for the owner. photo_url links to the photo for a few minutes; MCP can't return the image "
+        "itself.",
         schema={},
     ),
     Spec(
@@ -2255,6 +2266,10 @@ SPECS: tuple[Spec, ...] = (
                 "check_plants", description="Whether a photo check looks at the health of the plants"
             ): p.Boolean(),
             p.Optional("check_fish", description="Whether a photo check looks at the health of the fish"): p.Boolean(),
+            p.Optional(
+                "thorough_days",
+                description="Weekdays on which the daily check is a thorough check, or empty for none",
+            ): [p.In(list(Weekday))],
             **REASON,
             **CONVERSATION,
         },
@@ -2267,6 +2282,18 @@ SPECS: tuple[Spec, ...] = (
         description="Take a photo now and ask Claude to look at it. The check is stored with what Claude saw and "
         f"whether it is an issue. {EMBED_NOTE} Counts toward the daily cap. Fails with lights_off when every light "
         "is off.",
+        schema={**CONVERSATION},
+    ),
+    Spec(
+        name="check_thorough",
+        title="Check the tank thoroughly with the camera",
+        annotations=RECORD,
+        handler=check_thorough,
+        description="Take a full-resolution photo now and send Claude the whole frame and overlapping tiles of it at "
+        "full resolution, so Claude can find small problems such as spots on a fish or holes in a leaf. It sends up "
+        "to 16 images, so it costs more than check_now, and counts once toward the daily cap. The check is stored "
+        f"with what Claude saw and an issue goes to the status-alert devices. {EMBED_NOTE} Fails with lights_off "
+        "when every light is off.",
         schema={**CONVERSATION},
     ),
     Spec(

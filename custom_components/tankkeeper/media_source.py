@@ -15,7 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .domain import NotFoundError
-from .photos import PHOTO_PATH, is_photo_id
+from .photos import PHOTO_PATH, is_photo_id, tile_files
 from .service import TankkeeperService
 
 TITLE = "TankKeeper photos"
@@ -28,7 +28,7 @@ async def async_get_media_source(hass: HomeAssistant) -> TankkeeperMediaSource:
 
 
 class TankkeeperMediaSource(MediaSource):
-    """Each stored photo, by the id of its check, newest first."""
+    """Each stored photo, by the id of its check, newest first. A tile of a thorough check is id/number."""
 
     name = TITLE
 
@@ -47,16 +47,22 @@ class TankkeeperMediaSource(MediaSource):
     @override
     async def async_resolve_media(self, item: MediaSourceItem) -> PlayMedia:
         service = self._service()
-        if not is_photo_id(item.identifier):
+        check_id, _, tile = item.identifier.partition("/")
+        if not is_photo_id(check_id) or (tile and not (tile.isdecimal() and tile.isascii())):
             raise Unresolvable(f"No photo {item.identifier}")
         try:
-            check = service.photo_check(item.identifier)
+            check = service.photo_check(check_id)
         except NotFoundError as err:
             raise Unresolvable(f"No photo {item.identifier}") from err
         path = service.photo_path(check)
         if path is None or check.content_type is None:
             raise Unresolvable(f"The photo {item.identifier} is no longer kept")
-        return PlayMedia(f"{PHOTO_PATH}/{check.id}", check.content_type, path=path)
+        if not tile:
+            return PlayMedia(f"{PHOTO_PATH}/{check.id}", check.content_type, path=path)
+        tiles = tile_files(service.photo_dir, check)
+        if not 1 <= int(tile) <= len(tiles):
+            raise Unresolvable(f"No photo {item.identifier}")
+        return PlayMedia(f"{PHOTO_PATH}/{check.id}", "image/jpeg", path=tiles[int(tile) - 1])
 
     @override
     async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:

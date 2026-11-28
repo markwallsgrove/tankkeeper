@@ -525,7 +525,8 @@
           "alerts": "Alert me about issues",
           "keep_days": "Keep photos for",
           "check_plants": "Check plant health",
-          "check_fish": "Check fish health"
+          "check_fish": "Check fish health",
+          "thorough_days": "Thorough check on"
         },
         "data_description": {
           "camera": "The camera entity that sees the tank. Leave empty for no photo checks.",
@@ -534,7 +535,8 @@
           "alerts": "Send issues from daily and after-test checks to the status alert devices, with the photo.",
           "keep_days": "Days to keep photos. Open issues and the latest checks are always kept.",
           "check_plants": "Claude looks for signs of disease or poor health in the plants.",
-          "check_fish": "Claude looks for signs of disease or stress in the fish. Turn off when the tank has no fish."
+          "check_fish": "Claude looks for signs of disease or stress in the fish. Turn off when the tank has no fish.",
+          "thorough_days": "On these days the daily check is thorough: Claude gets the whole frame and up to 16 full-resolution tiles of it, to find small problems. It costs more than a daily check."
         }
       },
       "add_light": {
@@ -656,6 +658,17 @@
     }
   },
   "selector": {
+    "weekday": {
+      "options": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday"
+      }
+    },
     "control": {
       "options": {
         "on_off": "On/off",

@@ -8,6 +8,7 @@ const REASONS: Record<PhotoCheck["reason"], string> = {
   manual: "Check now",
   chat: "Asked in a chat",
   area: "Area you chose",
+  thorough: "Thorough",
 };
 
 const SEEN: [string, string][] = [

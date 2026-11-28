@@ -27,6 +27,7 @@ from custom_components.tankkeeper.camera_runner import CHECK_PROMPT, DISMISS
 from custom_components.tankkeeper.const import API_ID
 from custom_components.tankkeeper.domain import Collection, NotFoundError, Source
 from custom_components.tankkeeper.photos import CAMERA_ID, MAX_TEXT, CameraSettings, CheckReason, IssueState
+from custom_components.tankkeeper.plan import Weekday
 from custom_components.tankkeeper.reminders import ACTION_EVENT
 from custom_components.tankkeeper.reviewer import DELAY_SECONDS
 from custom_components.tankkeeper.service import TankkeeperService
@@ -48,7 +49,15 @@ SEEN: JsonObjectType = {
     "level": "Full",
 }
 CLEAR: JsonObjectType = {"summary": "The tank looks clear.", "issue": False}
-CAMERA_TOOLS = {"get_photo", "check_now", "check_area", "list_photos", "get_photo_check", "dismiss_finding"}
+CAMERA_TOOLS = {
+    "get_photo",
+    "check_now",
+    "check_area",
+    "check_thorough",
+    "list_photos",
+    "get_photo_check",
+    "dismiss_finding",
+}
 RIGHT_HALF: JsonObjectType = {"x": 0.5, "y": 0, "width": 0.5, "height": 1}
 
 
@@ -140,6 +149,7 @@ async def test_get_camera_shows_the_defaults(call: Caller) -> None:
         "keep_days": 30,
         "check_plants": True,
         "check_fish": True,
+        "thorough_days": [],
         "latest": None,
         "open": [],
     }
@@ -169,6 +179,7 @@ async def test_set_camera_is_a_proposal(call: Caller, fake_camera: FakeCamera) -
         "keep_days": 7,
         "check_plants": True,
         "check_fish": False,
+        "thorough_days": [],
         "latest": None,
         "open": [],
     }
@@ -238,6 +249,7 @@ async def test_check_now_keeps_the_photo_and_what_claude_saw(
         "proposal_ids": [],
         "area": None,
         "question": None,
+        "tiles": 0,
         "photo_url": check["photo_url"],
         "embed": f"![The tank](tankkeeper:photo/{check_id})",
     }
@@ -865,6 +877,7 @@ async def test_options_save_the_camera_settings(
         "keep_days": 30,
         "check_plants": True,
         "check_fish": True,
+        "thorough_days": [],
     }
 
     result = await hass.config_entries.options.async_configure(
@@ -877,13 +890,20 @@ async def test_options_save_the_camera_settings(
             "keep_days": 14,
             "check_plants": False,
             "check_fish": True,
+            "thorough_days": ["sat"],
         },
     )
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
     service = _service(loaded_entry)
     assert service.camera() == CameraSettings(
-        camera=CAMERA, check_time=time(9, 30), after_test=True, alerts=False, keep_days=14, check_plants=False
+        camera=CAMERA,
+        check_time=time(9, 30),
+        after_test=True,
+        alerts=False,
+        keep_days=14,
+        check_plants=False,
+        thorough_days=(Weekday.SAT,),
     )
     [latest] = service.history(Collection.SETTINGS, CAMERA_ID, 1)
     assert latest.source is Source.PANEL
@@ -1248,3 +1268,172 @@ async def test_the_panel_checks_an_area(camera_on: FakeClaude, fake_camera: Fake
     check = await panel.ok("check_area", **RIGHT_HALF, question="What is this?")
 
     assert (check["reason"], check["question"]) == ("area", "What is this?")
+
+
+def _images(claude: FakeClaude) -> list[Image.Image]:
+    images = []
+    for content_type, photo in claude.ai_task.images:
+        assert content_type == "image/jpeg"
+        images.append(Image.open(io.BytesIO(photo)).convert("RGB"))
+    return images
+
+
+async def _stream(fake_camera: FakeCamera, tmp_path: Path, size: tuple[int, int] = (2304, 1296)) -> None:
+    frame = tmp_path / "frame.png"
+    _halves(size).save(frame)
+    fake_camera.stream_url = str(frame)
+
+
+async def test_check_thorough_sends_the_whole_frame_and_full_resolution_tiles(
+    hass: HomeAssistant, call: Caller, camera_on: FakeClaude, fake_camera: FakeCamera, tmp_path: Path
+) -> None:
+    await _stream(fake_camera, tmp_path)
+    camera_on.ai_task.answers.append(Answer(data={"summary": "A small snail on the left plant.", "issue": False}))
+
+    check = await call.ok("check_thorough")
+
+    assert (check["reason"], check["tiles"], check["summary"]) == ("thorough", 6, "A small snail on the left plant.")
+    whole, *tiles = _images(camera_on)
+    assert whole.size == (1568, 882)
+    assert [tile.size for tile in tiles] == [(1092, 1092)] * 6
+    assert [_is_blue(tile) for tile in tiles] == [False, True, True, False, True, True]
+    check_id = check["id"]
+    assert _photo_files(hass) == [f"{check_id}-{number}.jpg" for number in range(1, 7)] + [f"{check_id}.jpg"]
+    instructions = camera_on.ai_task.tasks[0].instructions
+    assert instructions.startswith(
+        "Look at this photo of the fish tank Nano, taken on 2026-11-26 because it is the thorough photo check."
+    )
+    assert (
+        "The first image is the whole frame, scaled down. The other 6 are overlapping tiles of it at full "
+        "resolution, left to right, then top to bottom. Look closely at each tile for small problems"
+    ) in instructions
+
+
+async def test_a_thorough_check_counts_once_toward_the_daily_cap(
+    call: Caller, camera_on: FakeClaude, fake_camera: FakeCamera, tmp_path: Path
+) -> None:
+    await _stream(fake_camera, tmp_path)
+    await apply(call, await call.ok("set_claude", daily_cap=1, reason="Cap"))
+    assert (await call.ok("check_thorough"))["asked"] is True
+
+    capped = await call.ok("check_thorough")
+
+    assert capped["note"] == "Claude did not look: the daily cap of 1 is reached."
+    assert len(camera_on.ai_task.tasks) == 1
+
+
+async def test_a_thorough_check_sends_an_issue_to_the_devices(
+    call: Caller, camera_on: FakeClaude, fake_camera: FakeCamera, tablet: list[ServiceCall], tmp_path: Path
+) -> None:
+    await _stream(fake_camera, tmp_path)
+    camera_on.ai_task.answers.append(Answer(data={"summary": "White spots on a tetra.", "issue": True}))
+
+    check = await call.ok("check_thorough")
+
+    assert [alert["message"] for alert in _photo_alerts(tablet)] == ["White spots on a tetra.\nStatus: On course."]
+    assert dict_of(_photo_alerts(tablet)[0]["data"])["image"] == f"/api/tankkeeper/photos/{check['id']}"
+
+
+async def test_a_thorough_check_without_a_stream_tiles_the_camera_photo(
+    call: Caller, camera_on: FakeClaude, fake_camera: FakeCamera
+) -> None:
+    fake_camera.photo = _png(_halves((800, 600)))
+
+    check = await call.ok("check_thorough")
+
+    assert check["tiles"] == 1
+    assert [image.size for image in _images(camera_on)] == [(800, 600), (800, 600)]
+
+
+async def test_a_photo_that_cannot_be_tiled_is_noted_and_not_sent(call: Caller, camera_on: FakeClaude) -> None:
+    check = await call.ok("check_thorough")
+
+    assert (check["content_type"], check["asked"], check["tiles"]) == (None, False, 0)
+    assert str_of(check["note"]).startswith("The camera's photo could not be cut: ")
+    assert camera_on.ai_task.tasks == []
+
+
+async def test_a_thorough_check_needs_a_light_on(
+    hass: HomeAssistant, call: Caller, camera_on: FakeClaude, plugs: Devices
+) -> None:
+    plugs.add(PLUG)
+    await apply(
+        call,
+        await call.ok(
+            "set_light",
+            action="add",
+            entity_id=PLUG,
+            model="LED 10120",
+            on="12:00",
+            off="20:00",
+            reason="Light",
+            **PLUG_HELPERS,
+        ),
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+
+    assert await call.error("check_thorough") == "lights_off"
+
+
+async def test_on_a_thorough_day_the_daily_check_is_thorough(
+    hass: HomeAssistant,
+    call: Caller,
+    camera_on: FakeClaude,
+    *,
+    fake_camera: FakeCamera,
+    freezer: FrozenDateTimeFactory,
+    tmp_path: Path,
+) -> None:
+    await _stream(fake_camera, tmp_path)
+    # 2026-11-26 is a Thursday.
+    await _set_camera(call, check_time="14:00", thorough_days=["fri"])
+
+    await _at(hass, freezer, "2026-11-26T14:00:00+00:00")
+    await _at(hass, freezer, "2026-11-27T14:00:00+00:00")
+
+    assert [(check["reason"], check["tiles"]) for check in await _photos(call)] == [("thorough", 6), ("daily", 0)]
+    assert (await call.ok("get_camera"))["thorough_days"] == ["fri"]
+
+
+async def test_set_camera_refuses_an_unknown_weekday(call: Caller, fake_camera: FakeCamera) -> None:
+    assert await call.error("set_camera", thorough_days=["someday"], reason="Weekly") == "invalid_input"
+
+
+async def test_tiles_are_media_and_go_with_their_photo(
+    hass: HomeAssistant,
+    call: Caller,
+    camera_on: FakeClaude,
+    *,
+    fake_camera: FakeCamera,
+    freezer: FrozenDateTimeFactory,
+    tmp_path: Path,
+) -> None:
+    await _stream(fake_camera, tmp_path)
+    await _set_camera(call, keep_days=2)
+    check_id = (await call.ok("check_thorough"))["id"]
+
+    media = await media_source.async_resolve_media(hass, f"media-source://tankkeeper/{check_id}/6", None)
+
+    assert (media.mime_type, media.path) == (
+        "image/jpeg",
+        Path(hass.config.path("tankkeeper", "photos", f"{check_id}-6.jpg")),
+    )
+    for identifier in (f"{check_id}/0", f"{check_id}/7", f"{check_id}/x", f"{check_id}/1/2"):
+        with pytest.raises(Unresolvable):
+            await media_source.async_resolve_media(hass, f"media-source://tankkeeper/{identifier}", None)
+
+    await _at(hass, freezer, "2026-11-29T03:00:00+00:00")
+
+    assert _photo_files(hass) == []
+    with pytest.raises(Unresolvable):
+        await media_source.async_resolve_media(hass, f"media-source://tankkeeper/{check_id}/1", None)
+
+
+async def test_the_panel_runs_a_thorough_check(
+    camera_on: FakeClaude, fake_camera: FakeCamera, panel: Panel, tmp_path: Path
+) -> None:
+    await _stream(fake_camera, tmp_path)
+
+    check = await panel.ok("check_thorough")
+
+    assert (check["reason"], check["tiles"]) == ("thorough", 6)
