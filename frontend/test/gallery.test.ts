@@ -28,6 +28,8 @@ const issue: PhotoCheck = {
   proposal_ids: ["p1"],
   photo_url: "/api/tankkeeper/photos/c3?authSig=x",
   embed: "![The tank](tankkeeper:photo/c3)",
+  area: null,
+  question: null,
 };
 
 const clear: PhotoCheck = {
@@ -114,6 +116,24 @@ describe("tk-gallery", () => {
     expect(text(first)).toContain("Plants Healthy");
     expect(text(first)).toContain("Water level Full");
     expect(find(card(element, "c2"), ".verdict").textContent).toBe("No issue found");
+  });
+
+  it("shows an area check with the owner's question", async () => {
+    const area: PhotoCheck = {
+      ...clear,
+      id: "c4",
+      reason: "area",
+      area: { x: 0.5, y: 0, width: 0.5, height: 1 },
+      question: "Is this white spot?",
+      summary: "No white spot: it is a bubble.",
+    };
+    const element = await view(connection([area]));
+
+    const shown = card(element, "c4");
+    expect(text(shown)).toContain("Area you chose");
+    expect(find(shown, ".question").textContent).toBe("You asked: Is this white spot?");
+    expect(text(shown)).toContain("No white spot: it is a bubble.");
+    expect(card(await view(connection()), "c3").querySelector(".question")).toBeNull();
   });
 
   it("shows a pruned photo's text without the image", async () => {

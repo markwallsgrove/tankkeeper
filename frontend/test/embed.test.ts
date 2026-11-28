@@ -24,6 +24,8 @@ const check: PhotoCheck = {
   proposal_ids: [],
   photo_url: URL,
   embed: `![The tank](tankkeeper:photo/${ID})`,
+  area: null,
+  question: null,
 };
 
 const log: LogEntry[] = [

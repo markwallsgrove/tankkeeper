@@ -8,10 +8,13 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
+import io
 from pathlib import Path
 import re
+from typing import cast
 
 from homeassistant.core import HomeAssistant
+from PIL import Image
 
 from .const import DOMAIN
 from .domain import InvalidInputError, JsonValue, Record
@@ -36,6 +39,7 @@ class CheckReason(StrEnum):
     TEST = "test"
     MANUAL = "manual"
     CHAT = "chat"
+    AREA = "area"
 
 
 class IssueState(StrEnum):
@@ -101,11 +105,45 @@ def check_camera(hass: HomeAssistant, settings: CameraSettings) -> None:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class Area:
+    """A box on the camera's frame, in fractions of its width and height from the top left."""
+
+    x: float
+    y: float
+    width: float
+    height: float
+
+    def to_json(self) -> Record:
+        """Serialise for storage and tools."""
+        return {"x": self.x, "y": self.y, "width": self.width, "height": self.height}
+
+    @classmethod
+    def from_json(cls, data: JsonValue) -> Area | None:
+        """Read from storage, or None when it is not a box."""
+        if not isinstance(data, dict):
+            return None
+        values = [data.get(key) for key in ("x", "y", "width", "height")]
+        if not all(isinstance(value, int | float) and not isinstance(value, bool) for value in values):
+            return None
+        x, y, width, height = (float(cast(float, value)) for value in values)
+        return cls(x=x, y=y, width=width, height=height)
+
+    def box(self, width: int, height: int) -> tuple[int, int, int, int]:
+        """The box in pixels on a frame of this size: left, top, right and bottom, at least one pixel each way."""
+        left = min(width - 1, int(self.x * width))
+        top = min(height - 1, int(self.y * height))
+        right = max(left + 1, min(width, round((self.x + self.width) * width)))
+        bottom = max(top + 1, min(height, round((self.y + self.height) * height)))
+        return left, top, right, bottom
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class PhotoCheck:
     """One photo of the tank and what Claude saw in it.
 
     content_type is None when no photo is kept: it was not taken, or it is older than the camera keeps photos.
     asked says whether Claude was asked, which counts toward the daily cap. state is None when there is no issue.
+    area is the box the photo was cut from, and question what the owner asked about it, for an area check.
     """
 
     id: str
@@ -120,6 +158,8 @@ class PhotoCheck:
     note: str | None = None
     state: IssueState | None = None
     proposal_ids: tuple[str, ...] = ()
+    area: Area | None = None
+    question: str | None = None
 
     def to_json(self) -> Record:
         """Serialise for storage and tools."""
@@ -136,6 +176,8 @@ class PhotoCheck:
             "note": self.note,
             "state": None if self.state is None else self.state.value,
             "proposal_ids": list(self.proposal_ids),
+            "area": None if self.area is None else self.area.to_json(),
+            "question": self.question,
         }
 
     @classmethod
@@ -157,6 +199,8 @@ class PhotoCheck:
             note=_optional_str(data.get("note")),
             state=None if not isinstance(state, str) else IssueState(state),
             proposal_ids=tuple(str(item) for item in proposal_ids) if isinstance(proposal_ids, list) else (),
+            area=Area.from_json(data.get("area")),
+            question=_optional_str(data.get("question")),
         )
 
 
@@ -201,6 +245,19 @@ def without_old_photos(checks: Iterable[PhotoCheck], now: datetime, keep_days: i
 def dismissed_findings(checks: Iterable[PhotoCheck]) -> list[str]:
     """What the owner said is not a problem, oldest first."""
     return [check.summary for check in checks if check.state is IssueState.DISMISSED and check.summary is not None]
+
+
+def cut_photo(data: bytes, area: Area, long_edge: int) -> bytes:
+    """The area cut from the photo as a JPEG, scaled down to long_edge when bigger. Runs in the executor.
+
+    Raises OSError when the photo can't be read.
+    """
+    with Image.open(io.BytesIO(data)) as image:
+        cut = image.convert("RGB").crop(area.box(image.width, image.height))
+    cut.thumbnail((long_edge, long_edge))
+    out = io.BytesIO()
+    cut.save(out, "JPEG", quality=90)
+    return out.getvalue()
 
 
 def write_photo(path: Path, data: bytes) -> None:

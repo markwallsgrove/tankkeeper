@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
+import { ASK, CANCEL, type AskDetail } from "../src/area-picker";
 import { CHAT, GALLERY } from "../src/base";
-import { CAMERA, CHAT as CHAT_ICON, CHECK, CLOSE, NOT_A_PROBLEM, PHOTOS } from "../src/buttons";
+import {
+  CAMERA,
+  CHAT as CHAT_ICON,
+  CHECK,
+  CLOSE,
+  NOT_A_PROBLEM,
+  PHOTOS,
+  SEARCH,
+} from "../src/buttons";
 import "../src/views/camera";
 import type { TkCamera } from "../src/views/camera";
 import type { CameraInfo, PhotoCheck } from "../src/types";
@@ -30,6 +39,8 @@ const issue: PhotoCheck = {
   proposal_ids: ["p1"],
   photo_url: "/api/tankkeeper/photos/c2?authSig=x",
   embed: "![The tank](tankkeeper:photo/c2)",
+  area: null,
+  question: null,
 };
 
 const info: CameraInfo = {
@@ -78,6 +89,7 @@ function connection(answer: CameraInfo = info): FakeConnection {
     .on("list_proposals", { proposals: pending })
     .on("get_history", { history: [] })
     .on("check_now", issue)
+    .on("check_area", { ...issue, id: "c4", reason: "area", question: "Is this white spot?" })
     .on("dismiss_finding", { id: "c2" })
     .on("accept_finding", { id: "c2" })
     .on("reject_finding", { id: "c2" });
@@ -148,6 +160,83 @@ describe("tk-camera", () => {
     expect(count(conn, "check_now")).toBe(1);
     expect(count(conn, "get_camera")).toBe(2);
     expect(changed).toBe(1);
+  });
+
+  it("looks closer at an area of the latest photo and tells the other views", async () => {
+    const conn = connection();
+    const element = await view(conn);
+    const closer = find(element, "button.closer");
+    expect([text(closer), iconOf(closer)]).toEqual(["Look closer", SEARCH]);
+    let changed = 0;
+    document.body.addEventListener("tk-changed", () => (changed += 1));
+
+    closer.click();
+    await settle(element);
+    const picker = find(element, "tk-area-picker") as unknown as { src: string };
+    expect(picker.src).toBe("/api/tankkeeper/photos/c2?authSig=x");
+    expect(findAll(element, ".latest img")).toEqual([]);
+    const detail: AskDetail = {
+      x: 0.5,
+      y: 0,
+      width: 0.5,
+      height: 1,
+      question: "Is this white spot?",
+    };
+    find(element, "tk-area-picker").dispatchEvent(
+      new CustomEvent(ASK, { detail, bubbles: true, composed: true }),
+    );
+    await settle(element);
+
+    expect(count(conn, "check_area")).toBe(1);
+    expect(conn.last("check_area").args).toEqual(detail);
+    expect(count(conn, "get_camera")).toBe(2);
+    expect(changed).toBe(1);
+    expect(findAll(element, "tk-area-picker")).toEqual([]);
+  });
+
+  it("keeps the box when looking closer fails, to try again", async () => {
+    const conn = connection().fail("check_area", "lights_off", "The lights are off.");
+    const element = await view(conn);
+    find(element, "button.closer").click();
+    await settle(element);
+
+    find(element, "tk-area-picker").dispatchEvent(
+      new CustomEvent(ASK, {
+        detail: { x: 0, y: 0, width: 0.5, height: 0.5 },
+        bubbles: true,
+        composed: true,
+      }),
+    );
+    await settle(element);
+
+    expect(find(element, ".error").textContent).toBe("The lights are off.");
+    expect(findAll(element, "tk-area-picker").length).toBe(1);
+  });
+
+  it("goes back to the latest photo when looking closer is cancelled", async () => {
+    const conn = connection();
+    const element = await view(conn);
+    find(element, "button.closer").click();
+    await settle(element);
+
+    find(element, "tk-area-picker").dispatchEvent(
+      new CustomEvent(CANCEL, { bubbles: true, composed: true }),
+    );
+    await settle(element);
+
+    expect(findAll(element, "tk-area-picker")).toEqual([]);
+    expect(findAll(element, ".latest img").length).toBe(1);
+    expect(count(conn, "check_area")).toBe(0);
+  });
+
+  it("offers Look closer only when the latest photo is kept", async () => {
+    const gone = await view(
+      connection({ ...info, latest: { ...issue, photo_url: null, embed: null } }),
+    );
+    const none = await view(connection({ ...info, latest: null, open: [] }));
+
+    expect(findAll(gone, "button.closer")).toEqual([]);
+    expect(findAll(none, "button.closer")).toEqual([]);
   });
 
   it("shows why a check failed", async () => {

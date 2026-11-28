@@ -258,6 +258,10 @@
     "required": [],
     "optional": []
   },
+  "check_area": {
+    "required": ["height", "width", "x", "y"],
+    "optional": ["question"]
+  },
   "get_photo": {
     "required": [],
     "optional": []
