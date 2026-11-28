@@ -223,6 +223,15 @@ export function openChat(from: HTMLElement, start: ChatStart): void {
   );
 }
 
+export const GALLERY = "tk-gallery";
+
+/** Ask the panel to open the photo gallery, or go back from it, from an element inside it. */
+export function openGallery(from: HTMLElement, open = true): void {
+  from.dispatchEvent(
+    new CustomEvent<boolean>(GALLERY, { detail: open, bubbles: true, composed: true }),
+  );
+}
+
 /** A form in its own dialog: what it is called, the fields and values it starts with, and how it saves. */
 export interface FormDialog {
   /** Which dialog this is. One dialog is open at a time. */

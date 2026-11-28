@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { TankkeeperApi } from "../src/api";
-import { CHAT } from "../src/base";
+import { CHAT, GALLERY } from "../src/base";
 import { CAMERA, CHAT as CHAT_ICON, CHECK, CLOSE, NOT_A_PROBLEM, PHOTOS } from "../src/buttons";
 import "../src/views/camera";
 import type { TkCamera } from "../src/views/camera";
@@ -30,22 +30,6 @@ const issue: PhotoCheck = {
   proposal_ids: ["p1"],
   photo_url: "/api/tankkeeper/photos/c2?authSig=x",
   embed: "![The tank](tankkeeper:photo/c2)",
-};
-
-const quiet: PhotoCheck = {
-  ...issue,
-  id: "c1",
-  time: "2026-11-25T14:00:00+00:00",
-  reason: "manual",
-  summary: null,
-  issue: false,
-  suggestion: null,
-  seen: {},
-  note: "No comment: the daily cap of 5 is reached.",
-  state: null,
-  proposal_ids: [],
-  photo_url: null,
-  embed: null,
 };
 
 const info: CameraInfo = {
@@ -94,7 +78,6 @@ function connection(answer: CameraInfo = info): FakeConnection {
     .on("list_proposals", { proposals: pending })
     .on("get_history", { history: [] })
     .on("check_now", issue)
-    .on("list_photos", { photos: [issue, quiet] })
     .on("dismiss_finding", { id: "c2" })
     .on("accept_finding", { id: "c2" })
     .on("reject_finding", { id: "c2" });
@@ -124,6 +107,16 @@ describe("tk-camera", () => {
     expect(text(latest)).toContain("Fish One tetra has white spots");
   });
 
+  it("shows the latest check's text when its photo is no longer kept", async () => {
+    const element = await view(
+      connection({ ...info, latest: { ...issue, photo_url: null, embed: null } }),
+    );
+
+    const latest = find(element, ".latest");
+    expect(latest.querySelector("img")).toBeNull();
+    expect(text(latest)).toContain("Green film on the front glass.");
+  });
+
   it("says when there is no photo yet", async () => {
     const element = await view(connection({ ...info, latest: null, open: [] }));
 
@@ -145,7 +138,7 @@ describe("tk-camera", () => {
     const check = find(element, "button.check");
     expect([text(check), iconOf(check)]).toEqual(["Check now", CAMERA]);
     const photos = find(element, "button.photos");
-    expect([text(photos), iconOf(photos)]).toEqual(["Photos", PHOTOS]);
+    expect([text(photos), iconOf(photos)]).toEqual(["More photos", PHOTOS]);
     let changed = 0;
     document.body.addEventListener("tk-changed", () => (changed += 1));
 
@@ -173,49 +166,22 @@ describe("tk-camera", () => {
     expect(find(element, ".error").textContent).toBe("Not loaded");
   });
 
-  it("lists the photos kept", async () => {
-    const conn = connection();
-    const element = await view(conn);
+  it("asks the panel to open the gallery from More photos", async () => {
+    const element = await view(connection());
+    const opened: boolean[] = [];
+    document.body.addEventListener(GALLERY, (event) => {
+      opened.push((event as CustomEvent<boolean>).detail);
+    });
 
     find(element, "button.photos").click();
-    await settle(element);
 
-    expect(conn.last("list_photos").args).toEqual({ limit: 20 });
-    const items = findAll(element, "li.photo-check").map((item) =>
-      item.textContent.replace(/\s+/g, " ").trim(),
-    );
-    expect(items.length).toBe(2);
-    expect(items[0]).toContain("Green film on the front glass.");
-    expect(items[1]).toContain("Check now");
-    expect(items[1]).toContain("No comment: the daily cap of 5 is reached.");
-    expect(findAll(element, "li.photo-check")[1]?.querySelector("img")).toBeNull();
+    expect(opened).toEqual([true]);
   });
 
-  it("says when no photos are kept", async () => {
-    const conn = connection().on("list_photos", { photos: [] });
-    const element = await view(conn);
+  it("offers More photos only while a camera is set", async () => {
+    const element = await view(connection({ ...info, camera: null, latest: null, open: [] }));
 
-    find(element, "button.photos").click();
-    await settle(element);
-
-    expect(text(element)).toContain("No photos yet.");
-  });
-
-  it("forgets the photos when the camera is removed", async () => {
-    const conn = connection();
-    const element = await view(conn);
-    find(element, "button.photos").click();
-    await settle(element);
-
-    conn.on("get_camera", { ...info, camera: null, latest: null, open: [] });
-    element.stamp = 1;
-    await settle(element);
-    conn.on("get_camera", info);
-    element.stamp = 2;
-    await settle(element);
-
-    expect(findAll(element, "li.photo-check")).toEqual([]);
-    expect(findAll(element, "button.photos").length).toBe(1);
+    expect(findAll(element, "button.photos")).toEqual([]);
   });
 
   it("shows the settings read-only, with their history and no cog", async () => {

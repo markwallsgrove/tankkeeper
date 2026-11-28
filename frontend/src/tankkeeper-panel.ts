@@ -1,7 +1,7 @@
 import { LitElement, css, html, nothing, type PropertyValues, type TemplateResult } from "lit";
 import { keyed } from "lit/directives/keyed.js";
 import { TankkeeperApi } from "./api";
-import { CHAT, type ChatStart } from "./base";
+import { CHAT, GALLERY, type ChatStart } from "./base";
 import { settingsButton } from "./settings";
 import type { HomeAssistant, PanelInfo, Route } from "./types";
 import "./views/chat";
@@ -9,6 +9,7 @@ import type { TkChat } from "./views/chat";
 import "./views/claude";
 import "./views/conversations";
 import "./views/decisions";
+import "./views/gallery";
 import "./views/log";
 import "./views/overview";
 import "./views/plan";
@@ -29,6 +30,9 @@ export function discussed(search: string): ChatStart | undefined {
   }
   return undefined;
 }
+
+/** The photo gallery: a page of the overview, with no tab of its own. */
+const PHOTOS = "photos";
 
 const TABS: [string, string][] = [
   ["overview", "Overview"],
@@ -121,6 +125,9 @@ export class TankkeeperPanel extends LitElement {
     this.addEventListener(CHAT, (event) => {
       this.openChat((event as CustomEvent<ChatStart>).detail);
     });
+    this.addEventListener(GALLERY, (event) => {
+      void this.openGallery((event as CustomEvent<boolean>).detail);
+    });
     this.tab = "overview";
     this.api = undefined;
   }
@@ -140,6 +147,13 @@ export class TankkeeperPanel extends LitElement {
       history.replaceState(history.state, "", window.location.pathname);
     }
     if (start !== undefined) this.openChat(start);
+  }
+
+  /** Open the gallery from its top, since More photos is at the bottom of the overview, or go back to the overview. */
+  private async openGallery(open: boolean): Promise<void> {
+    this.tab = open ? PHOTOS : "overview";
+    await this.updateComplete;
+    if (open) this.scrollIntoView({ block: "start" });
   }
 
   private openChat(start: ChatStart): void {
@@ -176,6 +190,8 @@ export class TankkeeperPanel extends LitElement {
         return html`<tk-decisions .api=${this.api}></tk-decisions>`;
       case "claude":
         return html`<tk-claude .api=${this.api}></tk-claude>`;
+      case PHOTOS:
+        return html`<tk-gallery .api=${this.api}></tk-gallery>`;
       case "conversations":
         return html`<tk-conversations .api=${this.api}></tk-conversations>`;
       case "contents":
@@ -185,6 +201,11 @@ export class TankkeeperPanel extends LitElement {
       default:
         return html`<tk-overview .api=${this.api}></tk-overview>`;
     }
+  }
+
+  /** The tab marked as open. The gallery belongs to the overview. */
+  private selected(): string {
+    return this.tab === PHOTOS ? "overview" : this.tab;
   }
 
   override render(): TemplateResult {
@@ -201,7 +222,7 @@ export class TankkeeperPanel extends LitElement {
               class="tab"
               role="tab"
               data-tab=${tab}
-              aria-selected=${this.tab === tab ? "true" : "false"}
+              aria-selected=${this.selected() === tab ? "true" : "false"}
               @click=${() => (this.tab = tab)}
             >
               ${label}

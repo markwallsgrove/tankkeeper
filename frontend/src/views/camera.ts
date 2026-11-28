@@ -1,7 +1,7 @@
-import { css, html, nothing, type TemplateResult } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { TankkeeperApi } from "../api";
-import { TkView, openChat, shared } from "../base";
+import { TkView, openChat, openGallery, shared } from "../base";
 import {
   CAMERA,
   CHAT,
@@ -12,12 +12,11 @@ import {
   iconButton,
   textButton,
 } from "../buttons";
-import { changeText, shortTime } from "../format";
+import { changeText } from "../format";
+import { finding, heading, photo, photoStyles } from "../photo";
 import { facts } from "../settings";
 import "../tk-history";
 import type { CameraInfo, Field, PhotoCheck, Proposal } from "../types";
-
-export const PHOTOS_SHOWN = 20;
 
 const CAMERA_FIELDS: Field[] = [
   { name: "camera", label: "Camera entity, such as a Tapo C100", type: "text" },
@@ -29,89 +28,25 @@ const CAMERA_FIELDS: Field[] = [
   { name: "check_fish", label: "Check fish health", type: "checkbox" },
 ];
 
-const REASONS: Record<PhotoCheck["reason"], string> = {
-  daily: "Daily",
-  test: "After a test",
-  manual: "Check now",
-  chat: "Asked in a chat",
-};
-
-const SEEN: [string, string][] = [
-  ["water", "Water"],
-  ["algae", "Algae"],
-  ["plants", "Plants"],
-  ["fish", "Fish"],
-  ["level", "Water level"],
-];
-
-function photo(check: PhotoCheck): TemplateResult | typeof nothing {
-  return check.photo_url === null
-    ? nothing
-    : html`<img class="photo" src=${check.photo_url} alt="The tank at ${shortTime(check.time)}" />`;
-}
-
-function heading(check: PhotoCheck): string {
-  return `${shortTime(check.time)} · ${REASONS[check.reason]}`;
-}
-
-/** What Claude saw in a photo, or why it did not look. */
-function finding(check: PhotoCheck): TemplateResult {
-  const seen = SEEN.filter(([area]) => check.seen[area] !== undefined);
-  return html`
-    ${check.summary === null ? nothing : html`<div class="summary">${check.summary}</div>`}
-    ${check.suggestion === null ? nothing : html`<div>Suggested: ${check.suggestion}</div>`}
-    ${
-      seen.length === 0
-        ? nothing
-        : html`<ul class="seen">
-            ${seen.map(([area, label]) => html`<li><strong>${label}</strong> ${check.seen[area]}</li>`)}
-          </ul>`
-    }
-    ${check.note === null ? nothing : html`<div class="muted note">${check.note}</div>`}
-  `;
-}
-
-/** The camera: the latest photo, Check now, the photos kept, the issues waiting and the settings read-only. */
+/** The camera: the latest photo, Check now, a way to the photos kept, the issues waiting and the settings read-only. */
 export class TkCamera extends TkView {
   static override properties = {
     ...TkView.properties,
     stamp: { type: Number },
     info: { state: true },
-    photos: { state: true },
     proposals: { state: true },
   };
 
-  static override styles = [
-    shared,
-    css`
-      .photo {
-        display: block;
-        width: 100%;
-        max-width: 640px;
-        height: auto;
-        border-radius: 8px;
-        margin: 8px 0;
-      }
-      .summary {
-        font-weight: 500;
-      }
-      ul.seen li {
-        border: none;
-        padding: 2px 0;
-      }
-    `,
-  ];
+  static override styles = [shared, photoStyles];
 
   declare stamp: number;
   declare info: CameraInfo | undefined;
-  declare photos: PhotoCheck[] | undefined;
   declare proposals: Proposal[];
 
   constructor() {
     super();
     this.stamp = 0;
     this.info = undefined;
-    this.photos = undefined;
     this.proposals = [];
   }
 
@@ -127,21 +62,11 @@ export class TkCamera extends TkView {
     return () => {
       this.info = info;
       this.proposals = pending.proposals;
-      if (info.camera === null) this.photos = undefined;
     };
   }
 
   private async act(action: (api: TankkeeperApi) => Promise<unknown>): Promise<void> {
     if (await this.run(action)) this.changed();
-  }
-
-  private async showPhotos(): Promise<void> {
-    await this.run(async (api) => {
-      const listed = await api.call<{ photos: PhotoCheck[] }>("list_photos", {
-        limit: PHOTOS_SHOWN,
-      });
-      this.photos = listed.photos;
-    });
   }
 
   private renderIssue(check: PhotoCheck): TemplateResult {
@@ -202,32 +127,6 @@ export class TkCamera extends TkView {
     </li>`;
   }
 
-  private renderPhotos(): TemplateResult {
-    const photos = this.photos;
-    if (photos === undefined) {
-      return textButton({
-        icon: PHOTOS,
-        label: "Photos",
-        className: "photos",
-        disabled: this.busy,
-        onClick: () => void this.showPhotos(),
-      });
-    }
-    return html`<h3>Photos</h3>
-      ${photos.length === 0 ? html`<p class="muted">No photos yet.</p>` : nothing}
-      <ul class="photos">
-        ${repeat(
-          photos,
-          (check) => check.id,
-          (check) =>
-            html`<li class="photo-check">
-              <div class="muted">${heading(check)}</div>
-              ${photo(check)} ${finding(check)}
-            </li>`,
-        )}
-      </ul>`;
-  }
-
   private renderSettings(info: CameraInfo): TemplateResult {
     return html`<details class="settings">
       <summary>Camera settings</summary>
@@ -277,8 +176,16 @@ export class TkCamera extends TkView {
             disabled: this.busy,
             onClick: () => void this.act((api) => api.call("check_now")),
           })}
+          ${textButton({
+            icon: PHOTOS,
+            label: "More photos",
+            className: "photos",
+            onClick: () => {
+              openGallery(this);
+            },
+          })}
         </div>
-        ${this.renderPhotos()} ${this.renderSettings(info)}
+        ${this.renderSettings(info)}
       </section>
       ${
         info.open.length === 0

@@ -8,6 +8,7 @@ const CLOSED = "tk-dialog-closed";
 export class TkDialog extends LitElement {
   static override properties = {
     heading: {},
+    wide: { type: Boolean, reflect: true },
   };
 
   static override styles = [
@@ -23,6 +24,9 @@ export class TkDialog extends LitElement {
         border-radius: var(--ha-card-border-radius, 12px);
         color: var(--primary-text-color);
         background: var(--ha-card-background, var(--card-background-color, #fff));
+      }
+      :host([wide]) dialog {
+        width: min(960px, calc(100vw - 32px));
       }
       dialog::backdrop {
         background: rgb(0 0 0 / 40%);
@@ -42,10 +46,13 @@ export class TkDialog extends LitElement {
   ];
 
   declare heading: string;
+  /** Room for a large photo. */
+  declare wide: boolean;
 
   constructor() {
     super();
     this.heading = "";
+    this.wide = false;
   }
 
   private get dialog(): HTMLDialogElement | null {
