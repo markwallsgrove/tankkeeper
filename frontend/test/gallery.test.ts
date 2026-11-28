@@ -30,6 +30,7 @@ const issue: PhotoCheck = {
   embed: "![The tank](tankkeeper:photo/c3)",
   area: null,
   question: null,
+  tiles: 0,
 };
 
 const clear: PhotoCheck = {

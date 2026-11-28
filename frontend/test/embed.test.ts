@@ -26,6 +26,7 @@ const check: PhotoCheck = {
   embed: `![The tank](tankkeeper:photo/${ID})`,
   area: null,
   question: null,
+  tiles: 0,
 };
 
 const log: LogEntry[] = [

@@ -80,6 +80,7 @@ from .photos import (
     kept_checks,
     photo_file,
     remove_unused,
+    tile_files,
     without_old_photos,
 )
 from .plan import (
@@ -880,6 +881,7 @@ class TankkeeperService:
         kept = without_old_photos(kept_checks(checks, now.astimezone(tz).date(), tz), now, self.camera().keep_days)
         self._state.photo_checks = [check.to_json() for check in kept]
         used = {path.name for check in kept if (path := self.photo_path(check)) is not None}
+        used |= {path.name for check in kept for path in tile_files(self.photo_dir, check)}
         await self.hass.async_add_executor_job(remove_unused, self.photo_dir, used)
         await self._async_save()
 

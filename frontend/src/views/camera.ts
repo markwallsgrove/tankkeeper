@@ -12,6 +12,7 @@ import {
   NOT_A_PROBLEM,
   PHOTOS,
   SEARCH,
+  THOROUGH,
   iconButton,
   textButton,
 } from "../buttons";
@@ -29,11 +30,12 @@ const CAMERA_FIELDS: Field[] = [
   { name: "keep_days", label: "Keep photos for (days)", type: "number" },
   { name: "check_plants", label: "Check plant health", type: "checkbox" },
   { name: "check_fish", label: "Check fish health", type: "checkbox" },
+  { name: "thorough_days", label: "Thorough check on", type: "weekdays" },
 ];
 
 /**
- * The camera: the latest photo, Check now, Look closer at an area, a way to the photos kept, the issues waiting and
- * the settings read-only.
+ * The camera: the latest photo, Check now, Thorough check, Look closer at an area, a way to the photos kept, the issues
+ * waiting and the settings read-only.
  */
 export class TkCamera extends TkView {
   static override properties = {
@@ -201,6 +203,13 @@ export class TkCamera extends TkView {
             primary: true,
             disabled: this.busy,
             onClick: () => void this.act((api) => api.call("check_now")),
+          })}
+          ${textButton({
+            icon: THOROUGH,
+            label: "Thorough check",
+            className: "thorough",
+            disabled: this.busy,
+            onClick: () => void this.act((api) => api.call("check_thorough")),
           })}
           ${
             latest?.photo_url == null || this.picking

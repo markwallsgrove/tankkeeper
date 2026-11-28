@@ -10,6 +10,7 @@ import {
   NOT_A_PROBLEM,
   PHOTOS,
   SEARCH,
+  THOROUGH,
 } from "../src/buttons";
 import "../src/views/camera";
 import type { TkCamera } from "../src/views/camera";
@@ -41,6 +42,7 @@ const issue: PhotoCheck = {
   embed: "![The tank](tankkeeper:photo/c2)",
   area: null,
   question: null,
+  tiles: 0,
 };
 
 const info: CameraInfo = {
@@ -51,6 +53,7 @@ const info: CameraInfo = {
   keep_days: 30,
   check_plants: true,
   check_fish: false,
+  thorough_days: ["sat", "sun"],
   latest: issue,
   open: [issue, { ...issue, id: "c3", reason: "test", proposal_ids: ["p2", "p3"] }],
 };
@@ -89,6 +92,7 @@ function connection(answer: CameraInfo = info): FakeConnection {
     .on("list_proposals", { proposals: pending })
     .on("get_history", { history: [] })
     .on("check_now", issue)
+    .on("check_thorough", { ...issue, id: "c5", reason: "thorough", tiles: 6 })
     .on("check_area", { ...issue, id: "c4", reason: "area", question: "Is this white spot?" })
     .on("dismiss_finding", { id: "c2" })
     .on("accept_finding", { id: "c2" })
@@ -160,6 +164,30 @@ describe("tk-camera", () => {
     expect(count(conn, "check_now")).toBe(1);
     expect(count(conn, "get_camera")).toBe(2);
     expect(changed).toBe(1);
+  });
+
+  it("checks thoroughly and tells the other views", async () => {
+    const conn = connection();
+    const element = await view(conn);
+    const thorough = find(element, "button.thorough");
+    expect([text(thorough), iconOf(thorough)]).toEqual(["Thorough check", THOROUGH]);
+    let changed = 0;
+    document.body.addEventListener("tk-changed", () => (changed += 1));
+
+    thorough.click();
+    await settle(element);
+
+    expect(count(conn, "check_thorough")).toBe(1);
+    expect(count(conn, "get_camera")).toBe(2);
+    expect(changed).toBe(1);
+  });
+
+  it("names a thorough check", async () => {
+    const element = await view(
+      connection({ ...info, latest: { ...issue, reason: "thorough", tiles: 6 } }),
+    );
+
+    expect(text(find(element, ".latest"))).toContain("Thorough");
   });
 
   it("looks closer at an area of the latest photo and tells the other views", async () => {
@@ -281,6 +309,7 @@ describe("tk-camera", () => {
     expect(text(card)).toContain("Alert me about issues");
     expect(text(card)).toContain("Check plant health");
     expect(text(card)).toContain("Check fish health");
+    expect(text(card)).toContain("Thorough check on sat, sun");
     expect(findAll(card, "tk-form")).toEqual([]);
     expect(findAll(card, "ha-icon-button.settings")).toEqual([]);
     expect(findAll(card, "tk-history")).toEqual([]);

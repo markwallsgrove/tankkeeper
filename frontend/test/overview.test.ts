@@ -121,6 +121,7 @@ const camera: CameraInfo = {
   keep_days: 30,
   check_plants: true,
   check_fish: true,
+  thorough_days: [],
   latest: null,
   open: [],
 };
@@ -141,6 +142,7 @@ const check: PhotoCheck = {
   embed: null,
   area: null,
   question: null,
+  tiles: 0,
 };
 
 function connection(lights: Light[] = [light]): FakeConnection {

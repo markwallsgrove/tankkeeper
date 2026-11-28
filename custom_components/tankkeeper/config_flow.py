@@ -54,7 +54,7 @@ from .domain import (
 )
 from .lights import SWITCH_DOMAINS, Control, Light
 from .photos import CAMERA_DOMAIN, MAX_KEEP_DAYS, CameraSettings
-from .plan import REMINDERS_ID, Reminders, format_time, parse_time
+from .plan import REMINDERS_ID, Reminders, Weekday, format_time, parse_time
 from .rules import RuleSettings, Stage
 from .service import Actor, TankkeeperService, Target, light_target
 from .tools import (
@@ -109,6 +109,7 @@ CONF_AFTER_TEST = "after_test"
 CONF_ALERTS = "alerts"
 CONF_CHECK_PLANTS = "check_plants"
 CONF_CHECK_FISH = "check_fish"
+CONF_THOROUGH_DAYS = "thorough_days"
 CONF_KEEP_DAYS = "keep_days"
 LIGHT_STEPS = ["change_light", "one_day", "remove_light"]
 SETTINGS_STEPS = ["tank", "water", "products", "contents", "reminders", "rules", "claude", "camera", "add_light"]
@@ -934,6 +935,9 @@ CAMERA_SCHEMA = p.Schema(
         ),
         p.Required(CONF_CHECK_PLANTS): BooleanSelector(),
         p.Required(CONF_CHECK_FISH): BooleanSelector(),
+        p.Optional(CONF_THOROUGH_DAYS): SelectSelector(
+            SelectSelectorConfig(options=list(Weekday), multiple=True, translation_key="weekday")
+        ),
     }
 )
 
@@ -958,6 +962,7 @@ def _camera_from(user_input: dict[str, Any]) -> CameraSettings:
         keep_days=int(user_input[CONF_KEEP_DAYS]),
         check_plants=bool(user_input[CONF_CHECK_PLANTS]),
         check_fish=bool(user_input[CONF_CHECK_FISH]),
+        thorough_days=tuple(Weekday(day) for day in user_input.get(CONF_THOROUGH_DAYS, [])),
     )
 
 

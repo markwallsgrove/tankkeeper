@@ -18,9 +18,13 @@ from custom_components.tankkeeper.photos import (
     IssueState,
     PhotoCheck,
     cut_photo,
+    cut_tiles,
     kept_checks,
     photo_file,
+    tile_boxes,
+    tile_files,
 )
+from custom_components.tankkeeper.plan import Weekday
 
 DAY = date(2026, 11, 26)
 START = datetime(2026, 1, 1, tzinfo=UTC)
@@ -130,3 +134,67 @@ def test_a_cut_bigger_than_claude_reads_is_scaled_down() -> None:
 
     with Image.open(io.BytesIO(cut)) as image:
         assert image.size == (1568, 392)
+
+
+@pytest.mark.parametrize(
+    ("size", "boxes"),
+    [
+        ((1000, 800), [(0, 0, 1000, 800)]),
+        ((1092, 1092), [(0, 0, 1092, 1092)]),
+        (
+            (2304, 1296),
+            [
+                (0, 0, 1092, 1092),
+                (606, 0, 1698, 1092),
+                (1212, 0, 2304, 1092),
+                (0, 204, 1092, 1296),
+                (606, 204, 1698, 1296),
+                (1212, 204, 2304, 1296),
+            ],
+        ),
+    ],
+)
+def test_tiles_cover_the_frame_in_reading_order_and_overlap(
+    size: tuple[int, int], boxes: list[tuple[int, int, int, int]]
+) -> None:
+    assert tile_boxes(*size) == boxes
+
+
+def test_each_tile_overlaps_the_next_by_at_least_a_seventh() -> None:
+    boxes = tile_boxes(3840, 2160)
+
+    assert len(boxes) == 12
+    assert boxes[0][2] - boxes[1][0] >= 1092 // 7
+    assert boxes[0][3] - boxes[4][1] >= 1092 // 7
+    assert (boxes[-1][2], boxes[-1][3]) == (3840, 2160)
+
+
+def test_tiles_are_full_resolution_jpegs_of_the_frame() -> None:
+    tiles = cut_tiles(_image((2304, 1296)))
+
+    assert len(tiles) == 6
+    for tile in tiles:
+        with Image.open(io.BytesIO(tile)) as image:
+            assert (image.format, image.size) == ("JPEG", (1092, 1092))
+
+
+def test_a_frame_bigger_than_4k_is_scaled_down_before_it_is_cut() -> None:
+    assert len(cut_tiles(_image((7680, 4320)))) == 12
+
+
+def test_a_check_with_tiles_survives_storage_and_names_its_tile_files(tmp_path: Path) -> None:
+    check = replace(_check(1, content_type="image/jpeg"), reason=CheckReason.THOROUGH, tiles=2)
+
+    assert PhotoCheck.from_json(check.to_json()) == check
+    assert PhotoCheck.from_json({**check.to_json(), "tiles": "2"}).tiles == 0
+    assert tile_files(tmp_path, check) == [tmp_path / f"{check.id}-1.jpg", tmp_path / f"{check.id}-2.jpg"]
+    assert tile_files(tmp_path, replace(check, content_type=None)) == []
+
+
+def test_thorough_days_survive_storage_in_week_order() -> None:
+    settings = CameraSettings(thorough_days=(Weekday.SUN, Weekday.MON))
+
+    assert settings.thorough_days == (Weekday.MON, Weekday.SUN)
+    assert CameraSettings.from_json(settings.to_json()) == settings
+    assert CameraSettings.from_json({"thorough_days": ["sun", "someday", 3]}).thorough_days == (Weekday.SUN,)
+    assert CameraSettings.from_json({"thorough_days": "sun"}).thorough_days == ()

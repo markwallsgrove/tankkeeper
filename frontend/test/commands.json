@@ -251,10 +251,15 @@
       "check_time",
       "evidence",
       "keep_days",
-      "reason"
+      "reason",
+      "thorough_days"
     ]
   },
   "check_now": {
+    "required": [],
+    "optional": []
+  },
+  "check_thorough": {
     "required": [],
     "optional": []
   },

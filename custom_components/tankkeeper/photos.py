@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 import io
+import math
 from pathlib import Path
 import re
 from typing import cast
@@ -18,7 +19,7 @@ from PIL import Image
 
 from .const import DOMAIN
 from .domain import InvalidInputError, JsonValue, Record
-from .plan import format_time, parse_time
+from .plan import Weekday, format_time, parse_time
 
 CAMERA_ID = "camera"
 CAMERA_DOMAIN = "camera"
@@ -29,6 +30,11 @@ MAX_TEXT = 500
 PHOTO_PATH = f"/api/{DOMAIN}/photos"
 AREAS = ("water", "algae", "plants", "fish", "level")
 IMAGE_TYPES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}
+# Claude reads an image of up to about 1.15 megapixels without scaling it down: 1092 pixels each way.
+TILE = 1092
+TILE_OVERLAP = TILE * 3 // 20
+# A bigger frame is scaled down to this long edge before it is cut, so a check sends at most 16 tiles.
+MAX_FRAME = 3840
 _PHOTO_ID = re.compile(r"[0-9A-HJKMNP-TV-Z]{26}")
 
 
@@ -40,6 +46,7 @@ class CheckReason(StrEnum):
     MANUAL = "manual"
     CHAT = "chat"
     AREA = "area"
+    THOROUGH = "thorough"
 
 
 class IssueState(StrEnum):
@@ -53,7 +60,10 @@ class IssueState(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class CameraSettings:
-    """The camera, when it checks, alerts, how long photos are kept and which health checks Claude makes."""
+    """The camera, when it checks, alerts, how long photos are kept and which health checks Claude makes.
+
+    On the thorough_days, the daily check is a thorough check.
+    """
 
     camera: str | None = None
     check_time: time | None = time(14)
@@ -62,6 +72,11 @@ class CameraSettings:
     keep_days: int = 30
     check_plants: bool = True
     check_fish: bool = True
+    thorough_days: tuple[Weekday, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Keep the thorough days once each, in week order."""
+        object.__setattr__(self, "thorough_days", tuple(sorted(set(self.thorough_days), key=lambda day: day.number)))
 
     def to_json(self) -> Record:
         """Serialise for storage and tools."""
@@ -73,6 +88,7 @@ class CameraSettings:
             "keep_days": self.keep_days,
             "check_plants": self.check_plants,
             "check_fish": self.check_fish,
+            "thorough_days": [day.value for day in self.thorough_days],
         }
 
     @classmethod
@@ -83,6 +99,7 @@ class CameraSettings:
         camera = stored.get("camera")
         check_time = stored.get("check_time", format_time(time(14)))
         keep_days = stored.get("keep_days")
+        days = stored.get("thorough_days")
         return cls(
             camera=camera if isinstance(camera, str) and camera else None,
             check_time=parse_time(check_time) if isinstance(check_time, str) else None,
@@ -91,6 +108,9 @@ class CameraSettings:
             keep_days=keep_days if isinstance(keep_days, int) else default.keep_days,
             check_plants=stored.get("check_plants") is not False,
             check_fish=stored.get("check_fish") is not False,
+            thorough_days=tuple(Weekday(day) for day in days if isinstance(day, str) and day in list(Weekday))
+            if isinstance(days, list)
+            else (),
         )
 
 
@@ -144,6 +164,7 @@ class PhotoCheck:
     content_type is None when no photo is kept: it was not taken, or it is older than the camera keeps photos.
     asked says whether Claude was asked, which counts toward the daily cap. state is None when there is no issue.
     area is the box the photo was cut from, and question what the owner asked about it, for an area check.
+    tiles is how many full-resolution tiles of the frame are stored beside the photo, for a thorough check.
     """
 
     id: str
@@ -160,6 +181,7 @@ class PhotoCheck:
     proposal_ids: tuple[str, ...] = ()
     area: Area | None = None
     question: str | None = None
+    tiles: int = 0
 
     def to_json(self) -> Record:
         """Serialise for storage and tools."""
@@ -178,6 +200,7 @@ class PhotoCheck:
             "proposal_ids": list(self.proposal_ids),
             "area": None if self.area is None else self.area.to_json(),
             "question": self.question,
+            "tiles": self.tiles,
         }
 
     @classmethod
@@ -186,6 +209,7 @@ class PhotoCheck:
         seen = data.get("seen")
         state = data.get("state")
         proposal_ids = data.get("proposal_ids")
+        tiles = data.get("tiles")
         return cls(
             id=str(data["id"]),
             time=datetime.fromisoformat(str(data["time"])),
@@ -201,6 +225,7 @@ class PhotoCheck:
             proposal_ids=tuple(str(item) for item in proposal_ids) if isinstance(proposal_ids, list) else (),
             area=Area.from_json(data.get("area")),
             question=_optional_str(data.get("question")),
+            tiles=tiles if isinstance(tiles, int) and not isinstance(tiles, bool) and tiles > 0 else 0,
         )
 
 
@@ -215,6 +240,13 @@ def photo_file(directory: Path, check: PhotoCheck) -> Path | None:
         return None
     extension = IMAGE_TYPES.get(check.content_type)
     return None if extension is None else directory / f"{check.id}{extension}"
+
+
+def tile_files(directory: Path, check: PhotoCheck) -> list[Path]:
+    """Where the check's tiles are stored, first to last, or none when its photo is not kept."""
+    if photo_file(directory, check) is None:
+        return []
+    return [directory / f"{check.id}-{number}.jpg" for number in range(1, check.tiles + 1)]
 
 
 def asked_on(checks: Iterable[PhotoCheck], day: date, tz: tzinfo) -> int:
@@ -260,6 +292,30 @@ def cut_photo(data: bytes, area: Area, long_edge: int) -> bytes:
     return out.getvalue()
 
 
+def tile_boxes(width: int, height: int) -> list[tuple[int, int, int, int]]:
+    """Boxes of at most TILE pixels each way that cover the frame and overlap, left to right, then top to bottom."""
+    columns = _starts(width)
+    return [
+        (left, top, min(width, left + TILE), min(height, top + TILE)) for top in _starts(height) for left in columns
+    ]
+
+
+def cut_tiles(data: bytes) -> list[bytes]:
+    """The frame cut into overlapping tiles as JPEGs, at full resolution up to MAX_FRAME. Runs in the executor.
+
+    Raises OSError when the photo can't be read.
+    """
+    with Image.open(io.BytesIO(data)) as image:
+        frame = image.convert("RGB")
+    frame.thumbnail((MAX_FRAME, MAX_FRAME))
+    tiles = []
+    for box in tile_boxes(frame.width, frame.height):
+        out = io.BytesIO()
+        frame.crop(box).save(out, "JPEG", quality=90)
+        tiles.append(out.getvalue())
+    return tiles
+
+
 def write_photo(path: Path, data: bytes) -> None:
     """Store a photo, making its folder when needed. Runs in the executor."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -273,6 +329,14 @@ def remove_unused(directory: Path, used: set[str]) -> None:
     for path in directory.iterdir():
         if path.name not in used and path.is_file():
             path.unlink()
+
+
+def _starts(length: int) -> list[int]:
+    """Where the tiles start along one edge, spread evenly so each overlaps the next by at least TILE_OVERLAP."""
+    if length <= TILE:
+        return [0]
+    count = math.ceil((length - TILE_OVERLAP) / (TILE - TILE_OVERLAP))
+    return [round(index * (length - TILE) / (count - 1)) for index in range(count)]
 
 
 def _optional_str(value: JsonValue) -> str | None:

@@ -307,7 +307,7 @@ export interface Review {
 export interface PhotoCheck {
   id: string;
   time: string;
-  reason: "daily" | "test" | "manual" | "chat" | "area";
+  reason: "daily" | "test" | "manual" | "chat" | "area" | "thorough";
   content_type: string | null;
   asked: boolean;
   summary: string | null;
@@ -321,6 +321,7 @@ export interface PhotoCheck {
   embed: string | null;
   area: { x: number; y: number; width: number; height: number } | null;
   question: string | null;
+  tiles: number;
 }
 
 export interface CameraInfo {
@@ -331,6 +332,7 @@ export interface CameraInfo {
   keep_days: number;
   check_plants: boolean;
   check_fish: boolean;
+  thorough_days: string[];
   latest: PhotoCheck | null;
   open: PhotoCheck[];
 }
